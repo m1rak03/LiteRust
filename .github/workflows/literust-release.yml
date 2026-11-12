@@ -1,0 +1,40 @@
+name: Build LiteRust full installer
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/literust-release.yml'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Extract sources and build
+        shell: pwsh
+        run: |
+          Expand-Archive release-source/literust-browser-0.11.0-alpha.1-source.zip -DestinationPath build
+          Set-Location build/literust-browser
+          cargo test --locked --no-default-features --lib
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+          cargo build --locked --release
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          $loader = Get-ChildItem "$env:USERPROFILE/.cargo/registry/src" -Filter WebView2Loader.dll -Recurse | Where-Object { $_.FullName -match 'webview2-com-sys-0.39.1.*[\\/]x64[\\/]' } | Select-Object -First 1
+          if (-not $loader) { throw 'Loader DLL missing' }
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/?linkid=2124701' -OutFile runtime-installer.exe
+          ./packaging/build-bundled-runtime.ps1 -BrowserExe target/release/literust-browser.exe -XrayExe vendor/xray/xray.exe -WebViewLoaderDll $loader.FullName -RuntimeInstaller runtime-installer.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+          $exe = 'packaging/LiteRust-0.11.0-alpha.1-Full-Setup-x64.exe'
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  LiteRust-0.11.0-alpha.1-Full-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+      - name: Upload and publish prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload v0.11.0-alpha.1 --repo $env:GITHUB_REPOSITORY build/literust-browser/packaging/LiteRust-0.11.0-alpha.1-Full-Setup-x64.exe build/literust-browser/packaging/SHA256SUMS.txt release-source/literust-browser-0.11.0-alpha.1-source.zip --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
+          gh release edit v0.11.0-alpha.1 --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
