@@ -9,6 +9,7 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -34,7 +35,7 @@ jobs:
               Start-Sleep -Seconds 2
               if (Test-Path $log) {
                 $content = Get-Content $log -Raw
-                if ($content -match 'Toolbar JavaScript ready') { $ready = $true; break }
+                if ($content -match 'Main toolbar IPC ready') { $ready = $true; break }
               }
               if ($app.HasExited) { break }
             }
