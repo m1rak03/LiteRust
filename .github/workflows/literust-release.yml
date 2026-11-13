@@ -15,7 +15,7 @@ jobs:
       - name: Extract sources and build
         shell: pwsh
         run: |
-          Expand-Archive release-source/literust-browser-0.11.0-alpha.1-source.zip -DestinationPath build
+          Expand-Archive release-source/literust-browser-0.11.0-alpha.2-source.zip -DestinationPath build
           Set-Location build/literust-browser
           cargo test --locked --no-default-features --lib
           if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
@@ -24,17 +24,36 @@ jobs:
           $loader = Get-ChildItem "$env:USERPROFILE/.cargo/registry/src" -Filter WebView2Loader.dll -Recurse | Where-Object { $_.FullName -match 'webview2-com-sys-0.39.1.*[\\/]x64[\\/]' } | Select-Object -First 1
           if (-not $loader) { throw 'Loader DLL missing' }
           Invoke-WebRequest 'https://go.microsoft.com/fwlink/?linkid=2124701' -OutFile runtime-installer.exe
+          Start-Process ./runtime-installer.exe -ArgumentList '/silent','/install' -Wait
+          Copy-Item $loader.FullName target/release/WebView2Loader.dll
+          $app = Start-Process target/release/literust-browser.exe -PassThru
+          $log = "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/startup.log"
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Seconds 2
+              if (Test-Path $log) {
+                $content = Get-Content $log -Raw
+                if ($content -match 'Toolbar JavaScript ready') { $ready = $true; break }
+              }
+              if ($app.HasExited) { break }
+            }
+            if (Test-Path $log) { Get-Content $log }
+            if (-not $ready) { throw 'Native Windows UI did not become ready' }
+          } finally {
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          }
           ./packaging/build-bundled-runtime.ps1 -BrowserExe target/release/literust-browser.exe -XrayExe vendor/xray/xray.exe -WebViewLoaderDll $loader.FullName -RuntimeInstaller runtime-installer.exe
           if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
-          $exe = 'packaging/LiteRust-0.11.0-alpha.1-Full-Setup-x64.exe'
+          $exe = 'packaging/LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe'
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  LiteRust-0.11.0-alpha.1-Full-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+          "$hash  LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
       - name: Upload and publish prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v0.11.0-alpha.1 --repo $env:GITHUB_REPOSITORY build/literust-browser/packaging/LiteRust-0.11.0-alpha.1-Full-Setup-x64.exe build/literust-browser/packaging/SHA256SUMS.txt release-source/literust-browser-0.11.0-alpha.1-source.zip --clobber
+          gh release upload v0.11.0-alpha.2 --repo $env:GITHUB_REPOSITORY build/literust-browser/packaging/LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe build/literust-browser/packaging/SHA256SUMS.txt release-source/literust-browser-0.11.0-alpha.2-source.zip --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
-          gh release edit v0.11.0-alpha.1 --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+          gh release edit v0.11.0-alpha.2 --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
