@@ -6,16 +6,16 @@
 
 Экспериментальный браузер для Windows с настраиваемым интерфейсом и встроенным VPN-хабом.
 
-[![Release](https://img.shields.io/badge/release-0.11.0--alpha.2-8b5cf6?style=flat-square)](https://github.com/m1rak03/LiteRust-/releases/tag/v0.11.0-alpha.2)
+[![Release](https://img.shields.io/badge/release-0.12.0--alpha.1-8b5cf6?style=flat-square)](https://github.com/m1rak03/LiteRust-/releases/tag/v0.12.0-alpha.1)
 ![Windows](https://img.shields.io/badge/platform-Windows_x64-0078D4?style=flat-square)
 ![Rust](https://img.shields.io/badge/built_with-Rust-dea584?style=flat-square)
 [![Build](https://github.com/m1rak03/LiteRust-/actions/workflows/literust-release.yml/badge.svg)](https://github.com/m1rak03/LiteRust-/actions/workflows/literust-release.yml)
 
-### [↓ Скачать для Windows](https://github.com/m1rak03/LiteRust-/releases/download/v0.11.0-alpha.2/LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe)
+### [↓ Скачать для Windows](https://github.com/m1rak03/LiteRust-/releases/download/v0.12.0-alpha.1/LiteRust-0.12.0-alpha.1-Setup-x64.exe)
 
-**Полный установщик · x64 · ≈ 242 МБ · WebView2 включён**
+**Полный установщик · x64 · ≈ 219 МиБ · WebView2 включён**
 
-[Все релизы](https://github.com/m1rak03/LiteRust-/releases) · [Исходный код](release-source/literust-browser-0.11.0-alpha.2-source.zip) · [Сообщить об ошибке](https://github.com/m1rak03/LiteRust-/issues/new?template=bug_report.yml)
+[Все релизы](https://github.com/m1rak03/LiteRust-/releases) · [Исходный код](release-source/literust-browser-0.12.0-alpha.1-source.zip) · [Сообщить об ошибке](https://github.com/m1rak03/LiteRust-/issues/new?template=bug_report.yml)
 
 </div>
 
@@ -29,7 +29,7 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 | :--- | :--- |
 | 🎨 Оформление | 5 вариантов дизайна и 55 тем, включая светлые и тёмные |
 | 🧭 Боковая панель | Расположение слева, справа, сверху или снизу; быстрый доступ к настройкам и инструментам |
-| 🔎 Новая вкладка | Поиск Google, ярлыки из закладок и ссылки на сервисы Google |
+| 🔎 Новая вкладка | Выбор Google, Яндекса, DuckDuckGo, Bing и Brave; ярлыки из закладок и ссылки на сервисы Google |
 | 👤 Аккаунт Google | Открытие официальной страницы входа в постоянном профиле браузера |
 | 🌐 VPN-хаб | Импорт поддерживаемых ключей и подписок, выбор сервера и проверка соединения через Xray |
 | 💤 Управление вкладками | Выгрузка фоновых страниц и ограничение числа одновременно загруженных вкладок |
@@ -37,7 +37,7 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 
 ## Установка
 
-1. Скачайте **[LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe](https://github.com/m1rak03/LiteRust-/releases/download/v0.11.0-alpha.2/LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe)**.
+1. Скачайте **[LiteRust-0.12.0-alpha.1-Setup-x64.exe](https://github.com/m1rak03/LiteRust-/releases/download/v0.12.0-alpha.1/LiteRust-0.12.0-alpha.1-Setup-x64.exe)**.
 2. Закройте ранее запущенный LiteRust и откройте скачанный файл.
 3. Если WebView2 отсутствует, установщик предложит установить включённый в комплект Runtime.
 
@@ -45,13 +45,15 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 
 > Репозиторий приватный: для скачивания нужен вход в GitHub под аккаунтом с доступом. Если видите **404**, проверьте аккаунт и доступ к репозиторию.
 
-## Что изменилось в alpha.2
+## Что изменилось в 0.12.0-alpha.1
 
-Исправлена блокировка начальной загрузки встроенного интерфейса, вызывавшая пустое чёрное окно. Добавлены отдельный кэш интерфейса, программный рендеринг для совместимости и расширенный журнал запуска.
+Обычный мастер установки размещает файлы в `%LOCALAPPDATA%\Programs\LiteRust`, создаёт ярлыки на рабочем столе и в меню «Пуск» и добавляет удаление через Windows. Скачанный установщик после установки можно удалить. Профиль браузера хранится отдельно и сохраняется при удалении программы.
 
-Перед публикацией сборка прошла **40 тестов** и запуск настоящего Windows-приложения с проверкой ответа основной панели и загрузки новой вкладки. Это проверка запуска, а не полное тестирование на всех конфигурациях Windows.
+Добавлены выбор поисковика и короткие анимации с учётом системной настройки уменьшения движения. WebView2 входит в комплект и устанавливается только при необходимости. Tor с мостами пока не включён.
 
-[Релиз и контрольная сумма SHA-256 →](https://github.com/m1rak03/LiteRust-/releases/tag/v0.11.0-alpha.2)
+Перед публикацией проверяются 42 теста, запуск интерфейса, установка, файлы и ярлыки, запуск установленной копии и удаление на Windows.
+
+[Релиз и контрольная сумма SHA-256 →](https://github.com/m1rak03/LiteRust-/releases/tag/v0.12.0-alpha.1)
 
 ## Важно знать
 
