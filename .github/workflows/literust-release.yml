@@ -54,7 +54,7 @@ jobs:
           if (-not $install.WaitForExit(180000)) { Stop-Process -Id $install.Id -Force; throw 'Installer timed out' }
           $install.Refresh()
           if ($install.ExitCode -ne 0) { throw 'Installation failed' }
-          $folder = "$env:LOCALAPPDATA/Programs/LiteRust"
+          $folder = Join-Path $env:LOCALAPPDATA 'Programs\LiteRust'
           $desktop = [Environment]::GetFolderPath('Desktop')
           $programs = [Environment]::GetFolderPath('Programs')
           foreach ($file in @("$folder/literust-browser.exe", "$folder/xray.exe", "$folder/literust.ico", "$folder/Uninstall.exe", "$desktop/LiteRust.lnk", "$programs/LiteRust/LiteRust.lnk")) {
@@ -72,11 +72,11 @@ jobs:
               if ((Test-Path $log) -and ((Get-Content $log -Raw) -match 'Main toolbar IPC ready')) { $ready = $true; break }
             }
             if (-not $ready) { throw 'Installed application failed startup' }
-          } finally { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
+          } finally { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue; $app.WaitForExit() }
           Copy-Item "$folder/Uninstall.exe" "$env:TEMP/LiteRustUninstall.exe"
           $uninstall = Start-Process "$env:TEMP/LiteRustUninstall.exe" -ArgumentList "/S _?=$folder" -Wait -PassThru
           if (Test-Path "$desktop/LiteRust.lnk") { throw 'Desktop shortcut not removed' }
-          if (Test-Path "$folder/literust-browser.exe") { throw 'Installed browser not removed' }
+          if (Test-Path "$folder/literust-browser.exe") { Get-ChildItem $folder; throw "Installed browser not removed, uninstall exit: $($uninstall.ExitCode)" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           "$hash  LiteRust-0.12.0-alpha.1-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
       - name: Upload and publish prerelease
