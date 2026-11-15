@@ -50,7 +50,9 @@ jobs:
           & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/setup.nsi
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
           $exe = 'packaging/LiteRust-0.12.0-alpha.1-Setup-x64.exe'
-          $install = Start-Process $exe -ArgumentList '/S' -Wait -PassThru
+          $install = Start-Process $exe -ArgumentList '/S' -PassThru
+          if (-not $install.WaitForExit(180000)) { Stop-Process -Id $install.Id -Force; throw 'Installer timed out' }
+          $install.Refresh()
           if ($install.ExitCode -ne 0) { throw 'Installation failed' }
           $folder = "$env:LOCALAPPDATA/Programs/LiteRust"
           $desktop = [Environment]::GetFolderPath('Desktop')
