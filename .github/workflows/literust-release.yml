@@ -1,4 +1,4 @@
-name: Build LiteRust full installer
+name: Build LiteRust installer and verify upgrade and TUN
 on:
   workflow_dispatch:
   push:
