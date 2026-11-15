@@ -1,0 +1,39 @@
+name: Ошибка в LiteRust
+description: Помогите воспроизвести и исправить проблему.
+title: "[Ошибка]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Не прикладывайте пароли, VPN-ключи, cookies или файлы профиля."
+  - type: input
+    id: version
+    attributes:
+      label: Версия LiteRust
+      placeholder: 0.11.0-alpha.2
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Версия Windows
+      placeholder: Windows 11, 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Как воспроизвести
+      description: Что вы сделали, что ожидали и что произошло?
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Журнал запуска
+      description: Содержимое %LOCALAPPDATA%\LiteRustBrowser\diagnostics\startup.log без личных данных.
+      render: text
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Скриншот и дополнительная информация
+      description: Можно перетащить изображение в это поле.
