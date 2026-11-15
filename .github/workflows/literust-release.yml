@@ -16,7 +16,7 @@ jobs:
       - name: Extract sources and build
         shell: pwsh
         run: |
-          Expand-Archive release-source/literust-browser-0.11.0-alpha.2-source.zip -DestinationPath build
+          Expand-Archive release-source/literust-browser-0.12.0-alpha.1-source.zip -DestinationPath build
           Set-Location build/literust-browser
           cargo test --locked --no-default-features --lib
           if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
@@ -44,17 +44,45 @@ jobs:
           } finally {
             Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           }
-          ./packaging/build-bundled-runtime.ps1 -BrowserExe target/release/literust-browser.exe -XrayExe vendor/xray/xray.exe -WebViewLoaderDll $loader.FullName -RuntimeInstaller runtime-installer.exe
-          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
-          $exe = 'packaging/LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe'
+          Copy-Item $loader.FullName packaging/WebView2Loader.dll
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
+          & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/setup.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          $exe = 'packaging/LiteRust-0.12.0-alpha.1-Setup-x64.exe'
+          $install = Start-Process $exe -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'Installation failed' }
+          $folder = "$env:LOCALAPPDATA/Programs/LiteRust"
+          $desktop = [Environment]::GetFolderPath('Desktop')
+          $programs = [Environment]::GetFolderPath('Programs')
+          foreach ($file in @("$folder/literust-browser.exe", "$folder/xray.exe", "$folder/literust.ico", "$folder/Uninstall.exe", "$desktop/LiteRust.lnk", "$programs/LiteRust/LiteRust.lnk")) {
+            if (-not (Test-Path $file)) { throw "Missing installed file: $file" }
+          }
+          $shell = New-Object -ComObject WScript.Shell
+          $link = $shell.CreateShortcut("$desktop/LiteRust.lnk")
+          if ($link.TargetPath -ne "$folder/literust-browser.exe".Replace('/', '\')) { throw 'Incorrect shortcut target' }
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $app = Start-Process $link.TargetPath -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Seconds 2
+              if ((Test-Path $log) -and ((Get-Content $log -Raw) -match 'Main toolbar IPC ready')) { $ready = $true; break }
+            }
+            if (-not $ready) { throw 'Installed application failed startup' }
+          } finally { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
+          Copy-Item "$folder/Uninstall.exe" "$env:TEMP/LiteRustUninstall.exe"
+          $uninstall = Start-Process "$env:TEMP/LiteRustUninstall.exe" -ArgumentList "/S _?=$folder" -Wait -PassThru
+          if (Test-Path "$desktop/LiteRust.lnk") { throw 'Desktop shortcut not removed' }
+          if (Test-Path "$folder/literust-browser.exe") { throw 'Installed browser not removed' }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+          "$hash  LiteRust-0.12.0-alpha.1-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
       - name: Upload and publish prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v0.11.0-alpha.2 --repo $env:GITHUB_REPOSITORY build/literust-browser/packaging/LiteRust-0.11.0-alpha.2-Full-Setup-x64.exe build/literust-browser/packaging/SHA256SUMS.txt release-source/literust-browser-0.11.0-alpha.2-source.zip --clobber
+          gh release upload v0.12.0-alpha.1 --repo $env:GITHUB_REPOSITORY build/literust-browser/packaging/LiteRust-0.12.0-alpha.1-Setup-x64.exe build/literust-browser/packaging/SHA256SUMS.txt release-source/literust-browser-0.12.0-alpha.1-source.zip --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
-          gh release edit v0.11.0-alpha.2 --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+          gh release edit v0.12.0-alpha.1 --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
