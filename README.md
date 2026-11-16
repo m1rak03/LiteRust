@@ -6,16 +6,16 @@
 
 Экспериментальный браузер для Windows с настраиваемым интерфейсом и встроенным VPN-хабом.
 
-[![Release](https://img.shields.io/badge/release-0.13.0--alpha.1-8b5cf6?style=flat-square)](https://github.com/m1rak03/LiteRust/releases/tag/v0.13.0-alpha.1)
+[![Release](https://img.shields.io/badge/release-0.13.0--alpha.2-8b5cf6?style=flat-square)](https://github.com/m1rak03/LiteRust/releases/tag/v0.13.0-alpha.2)
 ![Windows](https://img.shields.io/badge/platform-Windows_x64-0078D4?style=flat-square)
 ![Rust](https://img.shields.io/badge/built_with-Rust-dea584?style=flat-square)
 [![Build](https://github.com/m1rak03/LiteRust/actions/workflows/literust-release.yml/badge.svg)](https://github.com/m1rak03/LiteRust/actions/workflows/literust-release.yml)
 
-### [↓ Скачать для Windows](https://github.com/m1rak03/LiteRust/releases/download/v0.13.0-alpha.1/LiteRust-0.13.0-alpha.1-Setup-x64.exe)
+### [↓ Скачать для Windows](https://github.com/m1rak03/LiteRust/releases/download/v0.13.0-alpha.2/LiteRust-0.13.0-alpha.2-Setup-x64.exe)
 
 **Полный установщик · x64 · ≈ 240 МиБ · WebView2 включён**
 
-[Все релизы](https://github.com/m1rak03/LiteRust/releases) · [Исходный код](release-source/literust-browser-0.13.0-alpha.1-source.zip) · [Сообщить об ошибке](https://github.com/m1rak03/LiteRust/issues/new?template=bug_report.yml)
+[Все релизы](https://github.com/m1rak03/LiteRust/releases) · [Исходный код](release-source/literust-browser-0.13.0-alpha.2-source.zip) · [Сообщить об ошибке](https://github.com/m1rak03/LiteRust/issues/new?template=bug_report.yml)
 
 </div>
 
@@ -38,7 +38,7 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 
 ## Установка
 
-1. Скачайте **[LiteRust-0.13.0-alpha.1-Setup-x64.exe](https://github.com/m1rak03/LiteRust/releases/download/v0.13.0-alpha.1/LiteRust-0.13.0-alpha.1-Setup-x64.exe)**.
+1. Скачайте **[LiteRust-0.13.0-alpha.2-Setup-x64.exe](https://github.com/m1rak03/LiteRust/releases/download/v0.13.0-alpha.2/LiteRust-0.13.0-alpha.2-Setup-x64.exe)**.
 2. Закройте ранее запущенный LiteRust и откройте скачанный файл.
 3. Если WebView2 отсутствует, установщик предложит установить включённый в комплект Runtime.
 
@@ -46,7 +46,13 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 
 > Репозиторий приватный: для скачивания нужен вход в GitHub под аккаунтом с доступом. Если видите **404**, проверьте аккаунт и доступ к репозиторию.
 
-## Что изменилось в 0.13.0-alpha.1
+## Защита в 0.13.0-alpha.2
+
+История, закладки, вкладки, настройки и их резервные копии теперь шифруются Windows DPAPI. Старый профиль переносится автоматически. Для панели управления введён CSP nonce; для сайтов отключены WebMessage, COM host objects и DevTools. Включены проверка репутации WebView2 и изоляция сайтов по процессам (она может увеличить расход ОЗУ).
+
+**Границы защиты:** это не шифрование всего диска и не защита от вредоносного ПО под вашей учётной записью. Кэш WebView2, загрузки и экспорт закладок сюда не входят. Старые версии LiteRust не читают мигрированный профиль. Для переноса закладок используйте экспорт. [Политика безопасности, проверки и оставшиеся ограничения →](SECURITY.md)
+
+## Возможности версии 0.13
 
 - Самостоятельный дизайн новой вкладки: часы, приветствие, поиск и карточки закладок.
 - Плавное открытие и переключение вкладок; анимации можно отключить. Системная настройка уменьшения движения также учитывается.
@@ -55,9 +61,9 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 - Установщик находит существующую копию и штатно закрывает её перед обновлением, сохраняя профиль. **Это обновление при запуске нового установщика, а не фоновое скачивание версий.**
 - VPN можно направить только в браузер либо включить дополнительный системный TUN через sing-box. Системный режим требует подтверждения администратора и действует, пока LiteRust открыт. При его остановке Windows возвращается к обычной сети; постоянного системного kill switch нет. UDP зависит от выбранного сервера и протокола.
 
-Проверки выпуска: 45 Rust-тестов, Windows-target Clippy, Chromium UI, запуск Windows-приложения, TUN → тестовый SOCKS-сервер на резервном диапазоне адресов, очистка маршрута, обновление работающей версии 0.12 с сохранением настроек и удаление. Тест не подтверждает совместимость со всеми провайдерами, UDP-сервисами и конфигурациями Windows.
+Проверки выпуска: 46 Linux / 47 Windows Rust-тестов, проверка блокировки внедрённых скриптов и Windows DPAPI, Windows-target Clippy, Chromium UI, запуск Windows-приложения, TUN → тестовый SOCKS-сервер на резервном диапазоне адресов, очистка маршрута, обновление работающей версии 0.12 с сохранением настроек и удаление. Тест не подтверждает совместимость со всеми провайдерами, UDP-сервисами и конфигурациями Windows.
 
-[Релиз и контрольная сумма SHA-256 →](https://github.com/m1rak03/LiteRust/releases/tag/v0.13.0-alpha.1)
+[Релиз и контрольная сумма SHA-256 →](https://github.com/m1rak03/LiteRust/releases/tag/v0.13.0-alpha.2)
 
 ## Важно знать
 
