@@ -1,4 +1,4 @@
-name: Build LiteRust installer and verify upgrade and TUN
+name: Build LiteRust installer and verify native VPN and upgrade
 on:
   workflow_dispatch:
   push:
@@ -43,6 +43,8 @@ jobs:
           $tunTest = Start-Process target/release/literust-browser.exe -ArgumentList '--tun-self-test' -PassThru
           if (-not $tunTest.WaitForExit(90000)) { Stop-Process -Id $tunTest.Id -Force; throw 'TUN test timed out' }
           Get-Content target/release/tun-self-test.log
+          if (Test-Path target/release/system-vpn.ps1.stderr.log) { Get-Content target/release/system-vpn.ps1.stderr.log }
+          Get-NetAdapter | Select-Object Name,Status,InterfaceDescription
           if (Test-Path target/release/tun-helper-error.log) { Get-Content target/release/tun-helper-error.log }
           $tunTest.Refresh()
           if ($tunTest.ExitCode -ne 0) { throw 'Windows TUN routing test failed' }
