@@ -1,4 +1,4 @@
-name: Build LiteRust installer and verify native VPN and upgrade
+name: Build LiteRust installer with native Windows validation
 on:
   workflow_dispatch:
   push:
@@ -14,11 +14,17 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+      - name: Extract release source
+        shell: pwsh
+        run: Expand-Archive release-source/literust-browser-0.13.0-alpha.1-source.zip -DestinationPath build
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: build/literust-browser
+          cache-on-failure: true
       - name: Extract sources and build
         shell: pwsh
         run: |
-          Expand-Archive release-source/literust-browser-0.13.0-alpha.1-source.zip -DestinationPath build
           Set-Location build/literust-browser
           Invoke-WebRequest 'https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-windows-amd64.zip' -OutFile sing-box.zip
           if ((Get-FileHash sing-box.zip -Algorithm SHA256).Hash.ToLower() -ne '99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df') { throw 'sing-box checksum mismatch' }
@@ -43,6 +49,7 @@ jobs:
           $tunTest = Start-Process target/release/literust-browser.exe -ArgumentList '--tun-self-test' -PassThru
           if (-not $tunTest.WaitForExit(90000)) { Stop-Process -Id $tunTest.Id -Force; throw 'TUN test timed out' }
           Get-Content target/release/tun-self-test.log
+          Get-ChildItem target/release/system-vpn.ps1.*.log | ForEach-Object { Write-Output $_.Name; Get-Content $_.FullName }
           if (Test-Path target/release/system-vpn.ps1.stderr.log) { Get-Content target/release/system-vpn.ps1.stderr.log }
           Get-NetAdapter | Select-Object Name,Status,InterfaceDescription
           if (Test-Path target/release/tun-helper-error.log) { Get-Content target/release/tun-helper-error.log }
@@ -124,6 +131,15 @@ jobs:
           if (Test-Path "$folder/literust-browser.exe") { Get-ChildItem $folder; throw "Installed browser not removed, uninstall exit: $($uninstall.ExitCode)" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           "$hash  LiteRust-0.13.0-alpha.1-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+      - name: Preserve Windows diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-diagnostics
+          path: |
+            build/literust-browser/target/release/*.log
+            build/literust-browser/target/release/literust-browser.exe
+            build/literust-browser/target/release/WebView2Loader.dll
       - name: Upload and publish prerelease
         shell: pwsh
         env:
