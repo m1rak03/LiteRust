@@ -917,6 +917,7 @@ impl Browser {
             && matches!(
                 &command,
                 UiCommand::NewTab
+                    | UiCommand::DuplicateTab
                     | UiCommand::SelectTab { .. }
                     | UiCommand::Home
                     | UiCommand::ShowBookmarks
@@ -1136,7 +1137,13 @@ impl Browser {
             UiCommand::DockReady => self.sync_toolbar(),
             UiCommand::DuplicateTab => {
                 let url = self.data.tabs[self.data.active].url.clone();
+                let before = self.data.tabs.len();
                 self.new_tab(Some(&url));
+                if self.data.tabs.len() > before {
+                    self.data.active = self.data.tabs.len() - 1;
+                    self.show_active();
+                    self.persist();
+                }
             }
             UiCommand::SetAccountPrompt { always } => {
                 self.data.account_prompt_seen = true;
