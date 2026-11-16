@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru"><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__TITLE__ • LiteRust</title>
+<style>
+:root{color-scheme:dark;font-family:Segoe UI,Arial,sans-serif}*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 0,#22313c,#10151c 70%);color:#f2f7fb}
+main{max-width:900px;margin:0 auto;padding:48px 24px 90px}
+.eyebrow{letter-spacing:.16em;text-transform:uppercase;color:#9ac8bb;font-size:11px;font-weight:800}
+h1{font-size:42px;letter-spacing:-1px;margin:10px 0}p{color:#94a8bb;margin:0 0 25px;line-height:1.5}
+#filter{width:100%;background:#222f3a;border:1px solid #435262;color:white;padding:14px 17px;border-radius:12px;margin-bottom:18px;font-size:15px;outline:none}
+#filter:focus{border-color:#86b9a5}
+.entry{width:100%;display:flex;align-items:center;justify-content:space-between;text-decoration:none;color:inherit;gap:20px;margin:7px 0;padding:17px;background:#1e2933;border:1px solid #2e404d;border-radius:14px}
+[hidden]{display:none!important}
+a.entry:hover{background:#293b45;border-color:#8caf9f}.entry-text{min-width:0;display:grid;gap:6px}
+strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650;font-size:15px}
+small{color:#9cabb9;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12px}
+.tag{border:1px solid #4c6a5f;border-radius:9px;padding:5px 9px;color:#b4d4c4;font-size:12px;white-space:nowrap}
+.empty{text-align:center;color:#889cab;padding:55px 10px;border:1px dashed #40515d;border-radius:15px}
+</style></head><body><main>
+<div class="eyebrow">LiteRust / Библиотека</div><h1>__TITLE__</h1><p>__LEAD__</p>
+<input id="filter" type="search" autocomplete="off" placeholder="Поиск по списку..." aria-label="Фильтр списка">
+<section id="list"><!-- ENTRIES --></section>
+</main><script>
+'use strict';const filter=document.getElementById('filter');
+filter.oninput=()=>{let query=filter.value.toLocaleLowerCase();for(const item of document.querySelectorAll('.entry'))item.hidden=!item.textContent.toLocaleLowerCase().includes(query);};
+</script></body></html>

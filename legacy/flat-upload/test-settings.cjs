@@ -1,0 +1,23 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),{execFileSync}=require('node:child_process');
+const fixture=(name,...args)=>execFileSync(require('node:path').join(require('node:os').homedir(),'.cargo','bin',process.platform==='win32'?'cargo.exe':'cargo'),['run','--quiet','--locked','--no-default-features','--example',name,'--',...args],{encoding:'utf8'});
+(async()=>{const browser=await chromium.launch({headless:true});try{
+const page=await browser.newPage({viewport:{width:1280,height:800}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+await page.setContent(fixture('security_controls'));await page.evaluate(()=>{window.sent=[];window.ipc={postMessage:m=>sent.push(JSON.parse(m))};window.openPanel('settings');});
+await page.locator('#pref-custom_accent').check();await page.locator('#pref-accent').fill('#22aaff');await page.locator('#pref-accent').dispatchEvent('change');
+assert.equal(await page.evaluate(()=>sent.at(-1).value.accent),0x22aaff);assert.equal((await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--accent'))).trim(),'#22aaff');
+await page.locator('#pref-font_size').selectOption('16');assert.equal(await page.evaluate(()=>sent.at(-1).value.font_size),16);
+await page.locator('#pref-corner_radius').focus();await page.locator('#pref-corner_radius').evaluate(el=>{el.value='17';el.dispatchEvent(new Event('input'));});await page.evaluate(()=>window.browserUpdate({...state}));assert.equal(await page.locator('#pref-corner_radius').inputValue(),'17');await page.locator('#pref-corner_radius').dispatchEvent('change');assert.equal(await page.evaluate(()=>sent.at(-1).value.corner_radius),17);
+await page.locator('#browser-home_url').fill('https://home.example/');await page.evaluate(()=>window.browserUpdate({...state,url:'https://elsewhere.example'}));assert.equal(await page.locator('#browser-home_url').inputValue(),'https://home.example/');
+await page.locator('#browser-startup').selectOption('home');await page.locator('#browser-zoom_percent').selectOption('125');await page.locator('#browser-history_enabled').uncheck();await page.locator('#save-browser-settings').click();
+const saved=await page.evaluate(()=>sent.at(-1));assert.equal(saved.action,'set_browser_settings');assert.equal(saved.value.startup,'home');assert.equal(saved.value.zoom_percent,125);assert.equal(saved.value.history_enabled,false);
+await page.locator('#browser-home_url').fill('https://user:password@example.org');const n=await page.evaluate(()=>sent.length);await page.locator('#save-browser-settings').click();assert.equal(await page.evaluate(()=>sent.length),n);
+await page.locator('#settings-search').fill('размытие');assert.equal(await page.locator('.settings-cards>article:visible').count(),1);await page.locator('#settings-search').fill('');
+await page.locator('#reset-browser-settings').click();assert.equal(await page.evaluate(()=>sent.at(-1).value.zoom_percent),100);
+await page.locator('#reset-customization').click();assert.equal(await page.evaluate(()=>sent.at(-1).value.accent),null);
+await page.setViewportSize({width:690,height:800});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+for(const layout of ['0','1','2']){await page.setContent(fixture('newtab_settings',layout));assert.equal(await page.locator('.shortcut').count(),16);assert(!(await page.locator('.header-actions').isVisible()));if(layout==='2')assert(!(await page.locator('.workspace').isVisible()));for(const width of [1280,690]){await page.setViewportSize({width,height:800});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}}
+await page.evaluate(()=>window.applyCustomization({accent:0}));assert.equal(await page.locator('.search-submit').evaluate(el=>getComputedStyle(el).color),'rgb(255, 255, 255)');
+await page.evaluate(()=>window.applyCustomization({accent:0xffffff}));assert.equal(await page.locator('.search-submit').evaluate(el=>getComputedStyle(el).color),'rgb(17, 24, 39)');
+await page.evaluate(()=>window.applyCustomization({accent:null}));assert.equal(await page.locator('.search-submit').evaluate(el=>getComputedStyle(el).color),'rgb(23, 19, 39)');
+assert.deepEqual(errors,[]);console.log('PASS: appearance controls, safe home, draft preservation, search, reset, slider drafts, accent contrast, layouts and responsive pages');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});
