@@ -1,0 +1,23 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:var(--bg,#15191f);color:var(--text,#eee);overflow:hidden;font:12px Segoe UI,sans-serif}
+nav{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 4px;height:100%;overflow:auto;border:1px solid var(--line,#34404d);scrollbar-width:none}
+nav.horizontal{flex-direction:row;padding:4px 8px}button{width:40px;min-height:36px;flex-shrink:0;border:0;border-radius:10px;background:transparent;color:inherit;font:20px Segoe UI;cursor:pointer}button:hover,button:focus-visible{background:var(--surface,#29333b);color:var(--accent,#b6d5c6);outline:1px solid var(--accent)}#vpn.on{color:var(--accent);background:var(--surface)}#vpn.failed{color:#ff9c9c}
+.spacer{flex:1;min-height:4px;min-width:4px}
+
+@media(prefers-reduced-motion:no-preference){button,a{transition:background-color 140ms ease,color 140ms ease,border-color 140ms ease,transform 140ms ease}button:active{transform:scale(.97)}.hub-panel:not([hidden]),.apps-grid:not([hidden]){animation:panel-in 160ms ease-out}.shortcut:hover{transform:translateY(-3px)}@keyframes panel-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}}
+body.motion-off *{animation:none!important;transition:none!important}.ui-icon{width:19px;height:19px;vertical-align:middle;flex-shrink:0;object-fit:contain}.power-icon .ui-icon{width:34px;height:34px}.favicon .ui-icon,.tab-close .ui-icon{width:14px;height:14px}.selected-symbol .ui-icon{width:28px;height:28px}</style></head><body><nav aria-label="Панель функций">
+<button data-action="home" title="Новая вкладка" aria-label="Новая вкладка"><span data-icon="home"></span></button>
+<button data-action="show_bookmarks" title="Закладки" aria-label="Закладки"><span data-icon="bookmarks"></span></button>
+<button data-action="show_history" title="История" aria-label="История"><span data-icon="history"></span></button>
+<button data-action="show_downloads" title="Загрузки" aria-label="Загрузки"><span data-icon="downloads"></span></button>
+<button id="vpn" data-action="show_vpn" title="VPN-хаб" aria-label="VPN-хаб"><span data-icon="shield"></span></button>
+<div class="spacer"></div>
+<button data-action="show_appearance" title="Оформление" aria-label="Оформление"><span data-icon="appearance"></span></button>
+<button data-action="show_settings" title="Настройки" aria-label="Настройки"><span data-icon="settings"></span></button>
+</nav><script>
+/* APPEARANCE_SCRIPT */
+function send(action){window.ipc?.postMessage(JSON.stringify({action}));}
+document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>send(b.dataset.action));
+window.dockUpdate=s=>{document.body.classList.toggle("motion-off",s.animations===false);window.applyAppearance(s.appearance);window.applyCustomization(s.customization);document.querySelector('nav').classList.toggle('horizontal',['top','bottom'].includes(s.position));const b=document.getElementById('vpn');b.classList.toggle('on',s.vpn_running);b.classList.toggle('failed',s.vpn_enabled&&!s.vpn_running);b.title=s.vpn_enabled?(s.vpn_running?'VPN: движок работает':'VPN: соединение остановлено'):'VPN выключен';};
+window.applyAppearance();window.refreshLiteIcons();send('ready');
+</script></body></html>

@@ -1,0 +1,46 @@
+name: LiteRust Windows Build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tools/check-source.mjs
+      - run: cargo fmt --all -- --check
+      - run: cargo check --locked --all-targets
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --locked --release
+      - run: |
+          Copy-Item vendor/xray/xray.exe target/release/xray.exe
+          Copy-Item vendor/xray/LICENSE target/release/XRAY-LICENSE.txt
+          Copy-Item vendor/xray/SOURCE.txt target/release/XRAY-SOURCE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiteRust-0.11-alpha.1-Windows-unverified-runtime
+          path: |
+            target/release/literust-browser.exe
+            target/release/xray.exe
+            target/release/XRAY-LICENSE.txt
+            target/release/XRAY-SOURCE.txt
+          if-no-files-found: error
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo test --locked --no-default-features --lib
+      - run: cargo clippy --locked --no-default-features --lib --tests -- -D warnings

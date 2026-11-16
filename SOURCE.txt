@@ -1,0 +1,6 @@
+Unmodified sing-box 1.14.4, GPL-3.0-or-later with upstream naming notice.
+Corresponding source: https://github.com/SagerNet/sing-box/tree/v1.14.4
+Source archive: https://github.com/SagerNet/sing-box/archive/refs/tags/v1.14.4.tar.gz
+Windows archive: https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-windows-amd64.zip
+SHA256: 99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df
+The core is a separate process, not a modified or rebranded sing-box build.
