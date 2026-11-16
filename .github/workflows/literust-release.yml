@@ -1,4 +1,4 @@
-name: Build LiteRust installer with native Windows validation
+name: Build LiteRust installer and validate Windows socket handshake
 on:
   workflow_dispatch:
   push:
