@@ -1,4 +1,4 @@
-name: Build customization release and validate profile upgrade
+name: Build customization release with history privacy checks
 on:
   workflow_dispatch:
   push:
