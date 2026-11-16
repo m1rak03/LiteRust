@@ -6,16 +6,16 @@
 
 Экспериментальный браузер для Windows с настраиваемым интерфейсом и встроенным VPN-хабом.
 
-[![Release](https://img.shields.io/badge/release-0.12.0--alpha.1-8b5cf6?style=flat-square)](https://github.com/m1rak03/LiteRust-/releases/tag/v0.12.0-alpha.1)
+[![Release](https://img.shields.io/badge/release-0.13.0--alpha.1-8b5cf6?style=flat-square)](https://github.com/m1rak03/LiteRust/releases/tag/v0.13.0-alpha.1)
 ![Windows](https://img.shields.io/badge/platform-Windows_x64-0078D4?style=flat-square)
 ![Rust](https://img.shields.io/badge/built_with-Rust-dea584?style=flat-square)
-[![Build](https://github.com/m1rak03/LiteRust-/actions/workflows/literust-release.yml/badge.svg)](https://github.com/m1rak03/LiteRust-/actions/workflows/literust-release.yml)
+[![Build](https://github.com/m1rak03/LiteRust/actions/workflows/literust-release.yml/badge.svg)](https://github.com/m1rak03/LiteRust/actions/workflows/literust-release.yml)
 
-### [↓ Скачать для Windows](https://github.com/m1rak03/LiteRust-/releases/download/v0.12.0-alpha.1/LiteRust-0.12.0-alpha.1-Setup-x64.exe)
+### [↓ Скачать для Windows](https://github.com/m1rak03/LiteRust/releases/download/v0.13.0-alpha.1/LiteRust-0.13.0-alpha.1-Setup-x64.exe)
 
-**Полный установщик · x64 · ≈ 219 МиБ · WebView2 включён**
+**Полный установщик · x64 · ≈ 240 МиБ · WebView2 включён**
 
-[Все релизы](https://github.com/m1rak03/LiteRust-/releases) · [Исходный код](release-source/literust-browser-0.12.0-alpha.1-source.zip) · [Сообщить об ошибке](https://github.com/m1rak03/LiteRust-/issues/new?template=bug_report.yml)
+[Все релизы](https://github.com/m1rak03/LiteRust/releases) · [Исходный код](release-source/literust-browser-0.13.0-alpha.1-source.zip) · [Сообщить об ошибке](https://github.com/m1rak03/LiteRust/issues/new?template=bug_report.yml)
 
 </div>
 
@@ -27,7 +27,8 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 
 | Возможность | Что доступно |
 | :--- | :--- |
-| 🎨 Оформление | 5 вариантов дизайна и 55 тем, включая светлые и тёмные |
+| 🎨 Оформление | 5 дизайнов, 55 тем, фон с компьютера или по HTTPS-ссылке, затемнение фона |
+| ✨ Персонализация | Выключатель анимаций, компактные вкладки, часы и приветствие; свои иконки кнопок, сайтов и LiteRust в Windows |
 | 🧭 Боковая панель | Расположение слева, справа, сверху или снизу; быстрый доступ к настройкам и инструментам |
 | 🔎 Новая вкладка | Выбор Google, Яндекса, DuckDuckGo, Bing и Brave; ярлыки из закладок и ссылки на сервисы Google |
 | 👤 Аккаунт Google | Открытие официальной страницы входа в постоянном профиле браузера |
@@ -37,7 +38,7 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 
 ## Установка
 
-1. Скачайте **[LiteRust-0.12.0-alpha.1-Setup-x64.exe](https://github.com/m1rak03/LiteRust-/releases/download/v0.12.0-alpha.1/LiteRust-0.12.0-alpha.1-Setup-x64.exe)**.
+1. Скачайте **[LiteRust-0.13.0-alpha.1-Setup-x64.exe](https://github.com/m1rak03/LiteRust/releases/download/v0.13.0-alpha.1/LiteRust-0.13.0-alpha.1-Setup-x64.exe)**.
 2. Закройте ранее запущенный LiteRust и откройте скачанный файл.
 3. Если WebView2 отсутствует, установщик предложит установить включённый в комплект Runtime.
 
@@ -45,22 +46,25 @@ LiteRust объединяет оболочку на **Rust** и движок **M
 
 > Репозиторий приватный: для скачивания нужен вход в GitHub под аккаунтом с доступом. Если видите **404**, проверьте аккаунт и доступ к репозиторию.
 
-## Что изменилось в 0.12.0-alpha.1
+## Что изменилось в 0.13.0-alpha.1
 
-Обычный мастер установки размещает файлы в `%LOCALAPPDATA%\Programs\LiteRust`, создаёт ярлыки на рабочем столе и в меню «Пуск» и добавляет удаление через Windows. Скачанный установщик после установки можно удалить. Профиль браузера хранится отдельно и сохраняется при удалении программы.
+- Самостоятельный дизайн новой вкладки: часы, приветствие, поиск и карточки закладок.
+- Плавное открытие и переключение вкладок; анимации можно отключить. Системная настройка уменьшения движения также учитывается.
+- Свой фон из файла или по HTTPS-ссылке, настройка затемнения, компактные вкладки и показ часов/приветствия.
+- Единые SVG-значки и загрузка своих иконок для кнопок, сайтов и LiteRust в Windows. Настройки находятся в разделе «Свои иконки».
+- Установщик находит существующую копию и штатно закрывает её перед обновлением, сохраняя профиль. **Это обновление при запуске нового установщика, а не фоновое скачивание версий.**
+- VPN можно направить только в браузер либо включить дополнительный системный TUN через sing-box. Системный режим требует подтверждения администратора и действует, пока LiteRust открыт. При его остановке Windows возвращается к обычной сети; постоянного системного kill switch нет. UDP зависит от выбранного сервера и протокола.
 
-Добавлены выбор поисковика и короткие анимации с учётом системной настройки уменьшения движения. WebView2 входит в комплект и устанавливается только при необходимости. Tor с мостами пока не включён.
+Проверки выпуска: 45 Rust-тестов, Windows-target Clippy, Chromium UI, запуск Windows-приложения, TUN → тестовый SOCKS-сервер на резервном диапазоне адресов, очистка маршрута, обновление работающей версии 0.12 с сохранением настроек и удаление. Тест не подтверждает совместимость со всеми провайдерами, UDP-сервисами и конфигурациями Windows.
 
-Перед публикацией проверяются 42 теста, запуск интерфейса, установка, файлы и ярлыки, запуск установленной копии и удаление на Windows.
-
-[Релиз и контрольная сумма SHA-256 →](https://github.com/m1rak03/LiteRust-/releases/tag/v0.12.0-alpha.1)
+[Релиз и контрольная сумма SHA-256 →](https://github.com/m1rak03/LiteRust/releases/tag/v0.13.0-alpha.1)
 
 ## Важно знать
 
 LiteRust находится на стадии **alpha**: возможны ошибки и изменения поведения.
 
 - **Google:** вход выполняется на официальных страницах. Синхронизация Chrome и автозаполнение из Google Password Manager не реализованы. Google может ограничивать вход во встроенном браузере; бессрочная сессия не гарантируется.
-- **VPN:** поддерживаются VLESS, VMess AEAD, Trojan, Shadowsocks, SOCKS5, HTTP(S), совместимые HTTPS-подписки и обычные обёртки `happ://add/`. Hysteria2, TUIC, WireGuard, зашифрованные Happ-ссылки и новые варианты шифрования VLESS пока не поддерживаются. VPN относится к трафику браузера, а не всей Windows. Изменение VPN требует перезапуска; уже открытые отдельные приватные окна тоже нужно перезапустить.
+- **VPN:** поддерживаются VLESS, VMess AEAD, Trojan, Shadowsocks, SOCKS5, HTTP(S), совместимые HTTPS-подписки и обычные обёртки `happ://add/`. Tor с мостами, Hysteria2, TUIC, WireGuard, зашифрованные Happ-ссылки и новые варианты шифрования VLESS пока не поддерживаются. В режиме «Только браузер» VPN относится к вкладкам LiteRust; режим «Весь компьютер» использует отдельный TUN-компонент. Изменение VPN требует перезапуска; уже открытые отдельные приватные окна тоже нужно перезапустить.
 - **Память:** есть инструменты выгрузки вкладок, но преимущество в потреблении ОЗУ перед другими браузерами пока не подтверждено сравнительными измерениями.
 
 ## Если что-то не работает
@@ -71,7 +75,7 @@ LiteRust находится на стадии **alpha**: возможны оши
 %LOCALAPPDATA%\LiteRustBrowser\diagnostics\startup.log
 ```
 
-Приложите к [сообщению об ошибке](https://github.com/m1rak03/LiteRust-/issues/new?template=bug_report.yml) версию Windows, версию LiteRust, шаги воспроизведения и журнал. Не публикуйте пароли, VPN-ключи, cookies или содержимое профиля.
+Приложите к [сообщению об ошибке](https://github.com/m1rak03/LiteRust/issues/new?template=bug_report.yml) версию Windows, версию LiteRust, шаги воспроизведения и журнал. Не публикуйте пароли, VPN-ключи, cookies или содержимое профиля.
 
 При проблеме запуска с включённым VPN параметр `--vpn-off` отключает его для восстановления доступа к настройкам.
 
@@ -95,7 +99,7 @@ cargo build --locked --release
 | `vendor/xray/` | VPN-движок и сведения о стороннем компоненте |
 | `docs/` | Дополнительная документация |
 
-Автоматическая сборка и проверка запуска описаны в [GitHub Actions](.github/workflows/literust-release.yml). Компоненты WebView2 и Xray распространяются на условиях их правообладателей; сведения о них входят в исходный архив.
+Автоматическая сборка и проверка запуска описаны в [GitHub Actions](.github/workflows/literust-release.yml). Компоненты WebView2, Xray и sing-box распространяются на условиях их правообладателей; сведения о них входят в исходный архив.
 
 ---
 
