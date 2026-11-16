@@ -117,7 +117,7 @@ html,body{height:100%;width:100%;margin:0;overflow:hidden;background:var(--bg);c
 <article><h3>Запуск и вкладки</h3>
 <p><label>При запуске <select id="browser-startup"><option value="restore">Восстановить вкладки</option><option value="new_tab">Новая вкладка</option><option value="home">Домашняя страница</option></select></label></p>
 <p><label>Домашняя страница <input id="browser-home_url" type="url" placeholder="https://example.org" style="width:100%"></label></p><small>Пустое поле — главный экран LiteRust. Кнопка «Домой» использует этот адрес.</small>
-<p><label><input id="browser-home_in_new_tabs" type="checkbox"> Домашняя страница в новых вкладках</label></p>
+<p><small>Новая вкладка всегда открывает стартовый экран LiteRust. Домашний адрес используется кнопкой «Домой».</small></p>
 <p><label><input id="browser-background_links" type="checkbox"> Открывать новые ссылки в фоне</label></p>
 <p><label>Масштаб страниц <select id="browser-zoom_percent"><option>50</option><option>75</option><option>90</option><option>100</option><option>110</option><option>125</option><option>150</option><option>175</option><option>200</option></select> %</label></p>
 <p><label><input id="browser-history_enabled" type="checkbox"> Записывать историю посещений</label></p><small>Выключение не удаляет старую историю и не включает приватный режим: вкладки и данные сайтов сохраняются.</small>
@@ -479,7 +479,7 @@ function saveCustomization(){const value={};for(const key of customBools)value[k
 for(const key of [...customBools,...customNumbers,'custom_accent','accent'])document.getElementById('pref-'+key).onchange=saveCustomization;
 document.getElementById('pref-wallpaper_dim').oninput=e=>document.getElementById('dim-value').textContent=e.target.value+'%';
 document.getElementById('reset-customization').onclick=()=>{document.activeElement?.blur();state.customization={...window.customizationDefaults};render();send('set_customization',{value:state.customization});};
-const browserDefaults={home_url:'',startup:'restore',home_in_new_tabs:false,background_links:false,history_enabled:true,zoom_percent:100};
+const browserDefaults={home_url:'',startup:'restore',background_links:false,history_enabled:true,zoom_percent:100};
 let browserSettingsDirty=false;
 function renderBrowserSettings(){if(browserSettingsDirty)return;const p={...browserDefaults,...state.browser_settings};for(const key of Object.keys(browserDefaults)){const el=document.getElementById('browser-'+key);if(el.type==='checkbox')el.checked=p[key];else el.value=p[key];}}
 for(const key of Object.keys(browserDefaults))document.getElementById('browser-'+key).oninput=()=>{browserSettingsDirty=true;};

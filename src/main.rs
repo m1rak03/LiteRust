@@ -24,7 +24,7 @@ use storage::{
 };
 use tao::{
     dpi::LogicalSize,
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
     window::{Fullscreen, Window, WindowBuilder},
 };
@@ -890,13 +890,6 @@ impl Browser {
         }
         let background =
             url.is_some_and(valid_web_url) && self.data.browser_settings.background_links;
-        let home = self.data.browser_settings.home().to_owned();
-        let url = url.or_else(|| {
-            self.data
-                .browser_settings
-                .home_in_new_tabs
-                .then_some(home.as_str())
-        });
         let mut tab = match url {
             Some(url) if valid_web_url(url) => Tab::web(url),
             Some(url) if storage::valid_tab_url(url) => Tab::internal(url),
@@ -1201,6 +1194,11 @@ impl Browser {
                 let _ = self.toolbar.set_visible(!self.fullscreen.get());
                 let _ = self.dock.set_visible(!self.fullscreen.get());
                 self.resize();
+                if self.appearance_open {
+                    let _ = self.toolbar.focus();
+                } else if let Some(page) = self.pages.get(&self.active_id()) {
+                    let _ = page.view.focus();
+                }
                 self.window.request_redraw();
                 self.sync_toolbar();
             }
@@ -1361,6 +1359,9 @@ impl Browser {
             }
             UiCommand::AppearancePanel { open } => {
                 self.appearance_open = open;
+                if open {
+                    let _ = self.toolbar.focus();
+                }
                 for (id, page) in &self.pages {
                     let _ = page.view.set_visible(!open && *id == self.active_id());
                 }
@@ -2200,6 +2201,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 running,
                 ok,
             }) => browser.on_download_state(id, &file, running, ok),
+            Event::WindowEvent { event: WindowEvent::KeyboardInput { event, is_synthetic: false, .. }, .. }
+                if event.state == ElementState::Pressed && !event.repeat => {
+                match event.logical_key {
+                    tao::keyboard::Key::F11 => browser.handle(UiCommand::ToggleFullscreen),
+                    tao::keyboard::Key::Escape if browser.fullscreen.get() => browser.handle(UiCommand::ExitFullscreen),
+                    _ => {}
+                }
+            }
+            Event::WindowEvent { event: WindowEvent::Focused(true), .. } => {
+                if browser.appearance_open { let _ = browser.toolbar.focus(); }
+                else if let Some(page) = browser.pages.get(&browser.active_id()) { let _ = page.view.focus(); }
+            }
             Event::WindowEvent {
                 event: WindowEvent::Resized(_),
                 ..

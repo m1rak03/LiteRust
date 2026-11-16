@@ -71,6 +71,7 @@ jobs:
             Start-Sleep -Milliseconds 500
             $shellKeys.SendKeys('{F11}')
             Start-Sleep -Seconds 2
+            Get-Content $log
             if ((Get-Content $log -Raw) -notmatch 'Fullscreen enabled') { throw 'Native F11 failed' }
             $shellKeys.SendKeys('{ESC}')
             Start-Sleep -Seconds 2
