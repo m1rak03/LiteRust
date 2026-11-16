@@ -1,4 +1,4 @@
-//! LiteRust Browser 0.15-alpha.1: per-site network-filter exceptions, permission prompts,
+//! LiteRust Browser 0.15-alpha.2: per-site network-filter exceptions, permission prompts,
 //! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -26,7 +26,7 @@ use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
-    window::{Window, WindowBuilder},
+    window::{Fullscreen, Window, WindowBuilder},
 };
 use wry::{
     dpi::{LogicalPosition, LogicalSize as WebLogicalSize},
@@ -97,6 +97,8 @@ enum UiCommand {
         engine: literust_browser::navigation::SearchEngine,
     },
     Ready,
+    ToggleFullscreen,
+    ExitFullscreen,
     DockReady,
     ShowTools,
     DuplicateTab,
@@ -302,6 +304,7 @@ struct Browser {
     next_tab_id: u64,
     next_generation: u64,
     usage_clock: u64,
+    fullscreen: std::rc::Rc<std::cell::Cell<bool>>,
     appearance_open: bool,
     account_prompt_checked: bool,
 }
@@ -351,6 +354,7 @@ impl Browser {
             next_tab_id,
             next_generation: 1,
             usage_clock: 0,
+            fullscreen: std::rc::Rc::new(std::cell::Cell::new(false)),
             appearance_open: false,
             account_prompt_checked: false,
         }
@@ -563,6 +567,9 @@ impl Browser {
     }
 
     fn toolbar_height(&self) -> f64 {
+        if self.fullscreen.get() {
+            return 0.0;
+        }
         let height = self
             .window
             .inner_size()
@@ -591,6 +598,12 @@ impl Browser {
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
+        if self.fullscreen.get() {
+            return (
+                rect(0.0, 0.0, 1.0, 1.0),
+                rect(0.0, 0.0, size.width, size.height),
+            );
+        }
         let (dock, page) = layout::arrange(
             size.width,
             size.height,
@@ -620,7 +633,8 @@ impl Browser {
         } else {
             WebViewBuilder::new_with_web_context(self.context.as_mut().expect("normal WebContext"))
         };
-        let builder = routed_builder(builder, self.vpn_port);
+        let builder =
+            routed_builder(builder, self.vpn_port).with_background_color((16, 20, 33, 255));
         let allow_internal_navigation = std::rc::Rc::new(std::cell::Cell::new(true));
         let navigation_mode = allow_internal_navigation.clone();
         let pending_html_navigation = std::rc::Rc::new(std::cell::Cell::new(false));
@@ -699,8 +713,9 @@ impl Browser {
             }
         }
         #[cfg(windows)]
-        let downloads = windows_platform::configure(&view, self.proxy.clone())
-            .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
+        let downloads =
+            windows_platform::configure(&view, self.proxy.clone(), self.fullscreen.clone())
+                .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(not(windows))]
         let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
         Ok(LivePage {
@@ -776,9 +791,6 @@ impl Browser {
             #[cfg(windows)]
             let _ = page.view.set_memory_usage_level(MemoryUsageLevel::Normal);
             let _ = page.view.focus();
-            if self.data.customization.animations {
-                let _ = page.view.evaluate_script("if(!matchMedia('(prefers-reduced-motion: reduce)').matches){document.documentElement.animate([{opacity:.72},{opacity:1}],{duration:150,easing:'ease-out'});}");
-            }
         }
         self.sync_toolbar();
     }
@@ -804,6 +816,9 @@ impl Browser {
             }
             #[cfg(not(windows))]
             let _ = block_for_url;
+            if html.is_some() {
+                let _ = page.view.set_background_color((16, 20, 33, 255));
+            }
             page.loading = valid_web_url(&url);
             page.allow_internal_navigation.set(html.is_some());
             page.pending_html_navigation.set(html.is_some());
@@ -901,12 +916,16 @@ impl Browser {
         if self.appearance_open
             && matches!(
                 &command,
-                UiCommand::Home
+                UiCommand::NewTab
+                    | UiCommand::SelectTab { .. }
+                    | UiCommand::Home
                     | UiCommand::ShowBookmarks
                     | UiCommand::ShowHistory
                     | UiCommand::ShowDownloads
             )
         {
+            self.appearance_open = false;
+            self.resize();
             let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
         }
         match command {
@@ -1112,6 +1131,8 @@ impl Browser {
                     self.notice("Не удалось открыть системный браузер");
                 }
             }
+            UiCommand::ToggleFullscreen => self.set_fullscreen(!self.fullscreen.get()),
+            UiCommand::ExitFullscreen => self.set_fullscreen(false),
             UiCommand::DockReady => self.sync_toolbar(),
             UiCommand::DuplicateTab => {
                 let url = self.data.tabs[self.data.active].url.clone();
@@ -1169,8 +1190,9 @@ impl Browser {
                     }
                 }
                 startup_log("Toolbar JavaScript ready");
-                let _ = self.toolbar.set_visible(true);
-                let _ = self.dock.set_visible(true);
+                self.window.set_visible(true);
+                let _ = self.toolbar.set_visible(!self.fullscreen.get());
+                let _ = self.dock.set_visible(!self.fullscreen.get());
                 self.resize();
                 self.window.request_redraw();
                 self.sync_toolbar();
@@ -1201,7 +1223,7 @@ impl Browser {
                 let home = self.data.browser_settings.home().to_owned();
                 self.navigate_internal(&home);
             }
-            UiCommand::NewTab => self.new_tab(None),
+            UiCommand::NewTab => self.new_tab(Some(NEW_TAB)),
             UiCommand::SelectTab { index } => {
                 if index < self.data.tabs.len() && index != self.data.active {
                     self.data.active = index;
@@ -1522,6 +1544,10 @@ impl Browser {
         let enabled_for_url = self.filter_enabled_for(&url);
         if let Some(page) = self.pages.get_mut(&tab_id) {
             page.loading = loading;
+            if !loading && valid_web_url(&url) {
+                // Preserve readable default HTML on sites that do not specify a background.
+                let _ = page.view.set_background_color((255, 255, 255, 255));
+            }
             // Handles in-page/cross-site navigation and redirects, possibly after
             // the first request. Do not present this as comprehensive blocking.
             #[cfg(windows)]
@@ -1595,6 +1621,30 @@ impl Browser {
             self.load_active();
         } else {
             self.sync_toolbar();
+        }
+    }
+
+    fn set_fullscreen(&mut self, enabled: bool) {
+        if self.fullscreen.replace(enabled) == enabled {
+            return;
+        }
+        if enabled {
+            self.appearance_open = false;
+            let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
+        }
+        startup_log(if enabled {
+            "Fullscreen enabled"
+        } else {
+            "Fullscreen disabled"
+        });
+        self.window
+            .set_fullscreen(enabled.then_some(Fullscreen::Borderless(None)));
+        let _ = self.toolbar.set_visible(!enabled);
+        let _ = self.dock.set_visible(!enabled);
+        self.resize();
+        if let Some(page) = self.pages.get(&self.active_id()) {
+            let _ = page.view.set_visible(true);
+            let _ = page.view.focus();
         }
     }
 
@@ -1785,7 +1835,7 @@ fn main() {
     if fs::create_dir_all(&diagnostics).is_ok() {
         let _ = fs::write(
             diagnostics.join("startup.log"),
-            b"LiteRust 0.15.0-alpha.1 startup\n",
+            b"LiteRust 0.15.0-alpha.2 startup\n",
         );
     }
     if let Err(error) = run() {
@@ -1831,6 +1881,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     let window = WindowBuilder::new()
         .with_visible(false)
+        .with_background_color((16, 20, 33, 255))
         .with_window_icon(
             tao::window::Icon::from_rgba(
                 include_bytes!("../packaging/default-icon.rgba").to_vec(),
@@ -1840,9 +1891,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok(),
         )
         .with_title(if private_mode {
-            "LiteRust 0.15-alpha.1 — приватное окно"
+            "LiteRust 0.15-alpha.2 — приватное окно"
         } else {
-            "LiteRust Browser 0.15-alpha.1"
+            "LiteRust Browser 0.15-alpha.2"
         })
         .with_inner_size(LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(LogicalSize::new(690.0, 400.0))
@@ -1929,6 +1980,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     let toolbar_initial_document = std::cell::Cell::new(true);
     let toolbar = routed_builder(toolbar_builder, vpn_port)
+        .with_visible(false)
+        .with_background_color((16, 20, 33, 255))
         .with_incognito(private_mode)
         .with_permission_handler(|_| PermissionResponse::Deny)
         .with_html(security::control_document(
@@ -1972,6 +2025,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     let dock_initial_document = std::cell::Cell::new(true);
     let dock = routed_builder(dock_builder, vpn_port)
+        .with_visible(false)
+        .with_background_color((16, 20, 33, 255))
         .with_incognito(private_mode)
         .with_permission_handler(|_| PermissionResponse::Deny)
         .with_html(security::control_document(
@@ -2008,6 +2063,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         command,
                         UiCommand::DockReady
                             | UiCommand::ShowAccounts
+                            | UiCommand::ToggleFullscreen
+                            | UiCommand::NewTab
+                            | UiCommand::NewPrivateWindow
+                            | UiCommand::DuplicateTab
+                            | UiCommand::PrintPage
                             | UiCommand::ShowTools
                             | UiCommand::Home
                             | UiCommand::ShowSettings
@@ -2034,6 +2094,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         event_loop.create_proxy(),
         private_mode,
     );
+    #[cfg(windows)]
+    {
+        windows_platform::install_shortcuts(
+            &browser.toolbar,
+            browser.proxy.clone(),
+            browser.fullscreen.clone(),
+        )?;
+        windows_platform::install_shortcuts(
+            &browser.dock,
+            browser.proxy.clone(),
+            browser.fullscreen.clone(),
+        )?;
+    }
     browser.vpn_vault = vpn_vault;
     browser.vpn_port = vpn_port;
     browser.vpn_running = vpn_port.is_some();
@@ -2045,7 +2118,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     browser.resize();
     startup_log("Toolbar WebView created; creating active page");
     browser.show_active();
-    browser.window.set_visible(true);
+
     startup_log("Entering event loop");
 
     event_loop.run(move |event, _, control_flow| {

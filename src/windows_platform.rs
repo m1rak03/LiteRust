@@ -18,7 +18,9 @@ static NEXT_DOWNLOAD: AtomicU64 = AtomicU64::new(1);
 pub fn configure(
     view: &wry::WebView,
     proxy: EventLoopProxy<AppEvent>,
+    fullscreen: Rc<Cell<bool>>,
 ) -> windows::core::Result<Rc<Cell<usize>>> {
+    install_shortcuts(view, proxy.clone(), fullscreen)?;
     let active = Rc::new(Cell::new(0usize));
     let pending = active.clone();
     // Fail view creation if these settings cannot be applied. Google's vault is
@@ -91,4 +93,49 @@ pub fn configure(
         )?;
     }
     Ok(active)
+}
+
+/// Native accelerator events work while a site, not the toolbar, owns focus.
+/// Sites retain no access to privileged IPC.
+pub fn install_shortcuts(
+    view: &wry::WebView,
+    proxy: EventLoopProxy<AppEvent>,
+    fullscreen: Rc<Cell<bool>>,
+) -> windows::core::Result<()> {
+    unsafe {
+        view.controller().add_AcceleratorKeyPressed(
+            &webview2_com::AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else {
+                    return Ok(());
+                };
+                let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
+                args.KeyEventKind(&mut kind)?;
+                if kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+                    && kind != COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN
+                {
+                    return Ok(());
+                }
+                let mut key = 0;
+                args.VirtualKey(&mut key)?;
+                let control = windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x11) < 0;
+                let command = match key {
+                    0x54 if control => Some(super::UiCommand::NewTab),
+                    0x7a => Some(super::UiCommand::ToggleFullscreen), // F11
+                    0x1b if fullscreen.get() => Some(super::UiCommand::ExitFullscreen),
+                    _ => None,
+                };
+                if let Some(command) = command {
+                    args.SetHandled(true)?;
+                    let mut physical = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
+                    args.PhysicalKeyStatus(&mut physical)?;
+                    if !physical.WasKeyDown.as_bool() {
+                        let _ = proxy.send_event(AppEvent::Ui(command));
+                    }
+                }
+                Ok(())
+            })),
+            &mut 0,
+        )?;
+    }
+    Ok(())
 }

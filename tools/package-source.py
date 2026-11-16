@@ -15,7 +15,7 @@ if output == root or root in output.parents:
 output.mkdir(parents=True, exist_ok=True)
 version = tomllib.loads((root / 'Cargo.toml').read_text())['package']['version']
 archive = output / f'literust-browser-{version}-source.zip'
-skip = {'target', '.git', 'node_modules', 'audit-logs', '__pycache__'}
+skip = {'target', '.git', 'node_modules', 'audit-logs', '__pycache__', 'release-source', 'legacy'}
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     for path in sorted(root.rglob('*')):
         relative = path.relative_to(root)

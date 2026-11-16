@@ -1,5 +1,9 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 pub const ACTIONS: &[&str] = &[
+    "fullscreen",
+    "copy",
+    "print",
+    "private",
     "app",
     "back",
     "forward",
