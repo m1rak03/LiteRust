@@ -1,4 +1,4 @@
-name: Build security update and validate first-launch profile migration
+name: Build security update with trusted Windows utility paths
 on:
   workflow_dispatch:
   push:
