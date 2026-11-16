@@ -1,0 +1,39 @@
+{
+  "packages": 312,
+  "findings": [
+    {
+      "package": "fxhash",
+      "version": "0.2.1",
+      "vulns": [
+        {
+          "id": "RUSTSEC-2025-0057",
+          "modified": "2025-09-05T19:09:01Z"
+        }
+      ]
+    },
+    {
+      "package": "glib",
+      "version": "0.18.5",
+      "vulns": [
+        {
+          "id": "GHSA-wrw7-89jp-8q8g",
+          "modified": "2025-10-28T06:29:26.473225Z"
+        },
+        {
+          "id": "RUSTSEC-2024-0429",
+          "modified": "2025-10-28T06:29:26.473225Z"
+        }
+      ]
+    },
+    {
+      "package": "proc-macro-error",
+      "version": "1.0.4",
+      "vulns": [
+        {
+          "id": "RUSTSEC-2024-0370",
+          "modified": "2026-06-07T20:00:03.923932Z"
+        }
+      ]
+    }
+  ]
+}
