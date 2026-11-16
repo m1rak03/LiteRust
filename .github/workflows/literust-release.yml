@@ -1,4 +1,4 @@
-name: Build security update and validate encrypted profile migration
+name: Build security update and validate first-launch profile migration
 on:
   workflow_dispatch:
   push:
@@ -101,6 +101,20 @@ jobs:
           if ($install.ExitCode -ne 0) { throw 'Installation failed' }
           $oldApp.Refresh()
           if (-not $oldApp.HasExited) { throw 'Upgrade did not close old browser' }
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $migrating = Start-Process "$folder/literust-browser.exe" -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Seconds 2
+              if ((Test-Path $log) -and ((Get-Content $log -Raw) -match 'Main toolbar IPC ready')) { $ready = $true; break }
+              if ($migrating.HasExited) { break }
+            }
+            if (Test-Path $log) { Get-Content $log }
+            if (-not $ready) { throw 'First launch after upgrade did not migrate profile' }
+            if (-not $migrating.CloseMainWindow()) { throw 'Cannot close upgraded browser' }
+            if (-not $migrating.WaitForExit(15000)) { throw 'Upgraded browser did not exit' }
+          } finally { if (-not $migrating.HasExited) { Stop-Process -Id $migrating.Id -Force } }
           Add-Type -AssemblyName System.Security.Cryptography.ProtectedData
           $bytes = [IO.File]::ReadAllBytes("$profile/browser-data.json")
           $magic = [Text.Encoding]::ASCII.GetBytes("LiteRustDPAPI1`0")
