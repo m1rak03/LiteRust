@@ -1,0 +1,16 @@
+name: Предложение функции
+description: Расскажите, какую задачу должен решать LiteRust.
+title: "[Идея]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу хотите решить?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Как должно работать?
+    validations:
+      required: true

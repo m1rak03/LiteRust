@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LiteRust • Controls</title>
+<style>
+:root{color-scheme:dark;--bg:#15191f;--line:#34404d;--text:#e7edf7;--muted:#9ba9b8;--accent:#b6d5c6}
+*{box-sizing:border-box}
+html,body{height:100%;width:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font-family:Segoe UI,Arial,sans-serif;font-size:13px}
+.tabs{height:43px;display:flex;gap:5px;align-items:end;padding:5px 9px 0;border-bottom:1px solid #222932;overflow-x:auto;scrollbar-width:thin}
+.tab{height:35px;min-width:91px;max-width:215px;flex:0 1 178px;display:flex;align-items:center;gap:7px;padding:0 6px 0 10px;background:#1b2028;color:#a6b1be;border-radius:10px 10px 0 0;border:1px solid #252b35;border-bottom:0;cursor:pointer;font:inherit}
+.tab.active{background:#2a313c;color:white;border-color:#3a4552}
+.favicon{width:15px;height:15px;border-radius:4px;background:#4a6762;color:#fff;display:grid;place-items:center;font-size:10px;flex-shrink:0}
+.tab-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}
+.tab-close{font-size:16px;line-height:17px;border:0;color:#a5b2c0;background:none;padding:1px 4px;border-radius:5px;cursor:pointer}
+.tab-close:hover{background:#53606c;color:#fff}
+.new{align-self:center;flex-shrink:0;background:none;color:#9caab8;border:0;font-size:23px;width:28px;height:29px;cursor:pointer;border-radius:7px}
+.new:hover,.btn:hover{background:#343d49;color:#fff}
+.controls{display:flex;align-items:center;gap:5px;padding:10px 11px;height:65px}
+.btn{flex-shrink:0;background:none;border:0;color:#bbc7d5;font-size:19px;width:31px;height:34px;border-radius:8px;cursor:pointer}
+.btn.active{color:#b9dfcc}.btn:disabled{opacity:.35;cursor:default}
+.sep{height:23px;width:1px;background:#3a4450;margin:0 2px}
+.address-wrap{min-width:105px;flex:1;height:39px;background:#282f39;border:1px solid #414a57;border-radius:10px;display:flex;align-items:center;gap:7px;padding:0 11px}
+.secure{color:#a5c7b5;font-size:16px}
+#address{flex:1;min-width:0;width:100%;font-family:inherit;font-size:13px;background:transparent;border:0;outline:0;color:#e8eef7}
+#address::placeholder{color:#7d8a99}.loading{color:#abcac0;font-size:11px;white-space:nowrap;display:none}.loading.show{display:block}
+.mark.private{color:#f5c7f4}.mark{color:#c8d6dc;font-size:10px;font-weight:750;letter-spacing:.8px;white-space:nowrap}
+#menu{display:none;position:absolute;top:2px;right:10px;width:min(920px,calc(100% - 20px));height:104px;grid-template-columns:repeat(3,minmax(0,1fr));overflow-y:auto;background:#2a343f;border:1px solid #485664;border-radius:10px;z-index:4;padding:3px;box-shadow:0 5px 16px #0009}
+#menu.open{display:grid}#menu button{font:11px Segoe UI,Arial,sans-serif;background:none;border:0;color:#eef4fa;text-align:left;padding:4px 7px;cursor:pointer;border-radius:7px;white-space:normal;line-height:1.2;min-width:0}#menu button:hover{background:#3b4b58}#menu button:disabled{opacity:.45;cursor:default}
+#notice{display:none;position:absolute;bottom:1px;left:20%;width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;color:#c6efdb;background:#273a39;border:1px solid #608c79;border-radius:8px;padding:3px 10px;z-index:6;font-size:11px;box-shadow:0 3px 12px #0006}#notice.show{display:block}
+@media(max-width:820px){#menu{grid-template-columns:repeat(2,minmax(0,1fr));}#menu button{font-size:10px;padding:2px 6px}.mark{display:none}.sep{display:none}.controls{gap:3px;padding:10px 6px}.btn{width:29px}.loading{display:none!important}}
+
+[hidden]{display:none!important}
+#appearance{position:absolute;inset:108px 0 0;background:var(--bg);padding:20px 28px;overflow:auto;border-top:1px solid var(--line)}
+.panel-heading,.theme-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.panel-heading h2{font-size:24px;margin:6px 0 18px;letter-spacing:-.6px}.eyebrow{font-size:10px;letter-spacing:2px}
+#close-appearance,select{background:var(--surface);color:var(--text);border:1px solid var(--line);padding:8px 12px;border-radius:8px;cursor:pointer}
+#designs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.design-choice{padding:14px 8px;font:inherit;cursor:pointer;border:1px solid var(--line)}
+.design-preview{display:block;height:27px;border:1px solid var(--line);margin-bottom:10px;border-top:6px solid var(--accent);border-radius:inherit}
+#themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:8px}.theme-choice{display:flex;align-items:center;gap:8px;padding:10px;font:inherit;font-size:11px;cursor:pointer;border:1px solid var(--line);text-align:left}.swatch{width:22px;height:22px;border:1px solid #888;border-radius:50%;flex-shrink:0}
+[aria-pressed=true]{outline:2px solid var(--accent);outline-offset:1px}.panel-note{font-size:11px;margin-top:16px}.theme-heading h3{font-size:16px}.theme-heading label{font-size:11px}
+@media(max-width:700px){#appearance{padding:14px}#designs{gap:5px}.design-choice{font-size:11px;padding:9px 3px}.panel-heading h2{font-size:20px}}
+
+.tabstrip{display:flex;height:43px}.tabstrip .tabs{flex:1;min-width:0}#profile-account{display:flex;align-items:center;gap:9px;width:166px;flex-shrink:0;border:0;border-right:1px solid var(--line);background:var(--surface);color:var(--text);text-align:left;padding:5px 10px;font:11px Segoe UI;cursor:pointer}#profile-account small{display:block;font-size:9px;margin-top:3px}.google-g{display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;width:26px;height:26px;color:var(--accent);font-size:18px;font-weight:bold}
+.hub-panel{position:absolute;inset:108px 0 0;background:var(--bg);color:var(--text);padding:20px 28px;overflow:auto;border-top:1px solid var(--line)}.hub-panel button,.dock-options button{padding:10px 14px;border:1px solid var(--line);border-radius:var(--radius,10px);background:var(--surface);color:var(--text);cursor:pointer;font:inherit}.hub-panel button:hover{border-color:var(--accent)}.hub-panel button:disabled{opacity:.45;cursor:default}.hub-panel p{font-size:13px;line-height:1.6;margin:10px 0}.hub-panel small{display:block;line-height:1.6}.dock-options{display:flex;gap:10px;flex-wrap:wrap}.settings-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}article{border:1px solid var(--line);padding:18px;border-radius:var(--radius,12px);min-width:0}article h3{margin:0 0 14px}article button{margin:4px 3px 4px 0}
+.vpn-banner{display:flex;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--line);border-radius:var(--radius,12px);background:var(--surface);margin-bottom:18px}.vpn-banner p{margin:3px 0 0}.vpn-dot{width:12px;height:12px;border-radius:50%;background:var(--muted)}.vpn-dot.on{background:var(--accent);box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 15%,transparent)}.vpn-dot.failed{background:#e88c82}.vpn-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.vpn-grid label{display:block;font-size:12px;margin:12px 0 8px}#vpn-key{width:100%;min-height:90px;resize:vertical;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:12px;font:12px monospace}#vpn-server{width:100%}.vpn-actions{margin-top:18px}#vpn-connect,#vpn-import{border-color:var(--accent);color:var(--accent)}
+@media(max-width:800px){.settings-cards{grid-template-columns:1fr}.vpn-grid{grid-template-columns:1fr}.hub-panel{padding:16px}#profile-account{width:140px}}
+
+#vpn.vpn-workspace{padding:0;display:grid;grid-template-columns:minmax(290px,48%) 1fr;overflow:hidden}.vpn-servers{padding:22px 24px 0;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}.vpn-title{display:flex;align-items:center;justify-content:space-between}.vpn-title h2{font-size:25px;margin:6px 0 18px;letter-spacing:-.4px}.vpn-title>button{font-size:24px;padding:2px 10px}.server-search{display:flex;align-items:center;border:1px solid var(--line);border-radius:var(--radius);padding:0 12px;height:40px;flex-shrink:0;background:var(--surface);margin-bottom:16px}.server-search input{width:100%;background:none;border:0;outline:none;color:var(--text);padding:10px 0;font:13px Segoe UI}.server-search span{font-size:24px;color:var(--muted)}.server-group{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius) var(--radius) 0 0}.server-group small{font-size:10px;margin-top:5px}.group-badge{color:var(--accent);font-size:9px;letter-spacing:1px;border:1px solid var(--line);padding:4px 6px;border-radius:5px}#vpn-server-list{overflow:auto;min-height:0;flex:1;scrollbar-width:thin}.server-row{width:100%;display:flex;align-items:center;gap:12px;text-align:left;border-radius:0!important;border:1px solid var(--line)!important;border-top:0!important;padding:13px 14px!important;margin:0!important;background:var(--bg)!important;min-height:62px}.server-row.selected{background:var(--surface)!important;box-shadow:inset 3px 0 var(--accent)}.server-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:var(--surface);color:var(--accent);flex-shrink:0;font-size:18px}.server-copy{flex:1;min-width:0}.server-copy strong{display:block;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.server-copy small{font-size:9px;text-transform:uppercase;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}.server-chevron{color:var(--muted)}.vpn-list-footer{padding:12px 0;font-size:10px;color:var(--muted)}.vpn-empty{padding:32px 15px;text-align:center;color:var(--muted);line-height:1.8;font-size:13px}
+.vpn-connection{position:relative;display:flex;flex-direction:column;align-items:center;padding:20px 26px 12px;overflow:auto;background:linear-gradient(135deg,transparent 50%,color-mix(in srgb,var(--surface) 35%,transparent) 50%),linear-gradient(35deg,var(--bg) 60%,var(--surface))}.vpn-mode-row{width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px}.vpn-mode{background:var(--surface);border:1px solid var(--line);font-size:11px;padding:9px 14px;border-radius:8px;color:var(--muted);flex:1}.vpn-close{font-size:20px!important;padding:2px 10px!important}.power-orbit{margin:20px 0 6px;flex-shrink:0;width:174px;height:174px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);border-radius:50%;box-shadow:inset 0 0 0 16px color-mix(in srgb,var(--surface) 65%,transparent)}#vpn-power{width:132px;height:132px;border-radius:50%;border:2px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--bg);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent);padding:8px}.power-icon{font-size:35px;color:var(--accent);line-height:1}#vpn-power strong{font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-top:6px}#vpn-power-label{font-size:10px;color:var(--muted)}#vpn-power.running{border-color:var(--accent)}.connection-note{font-size:10px!important;text-align:center;max-width:300px;min-height:28px;margin:3px 0!important}.selected-server{margin-top:auto;padding-top:8px;width:100%;max-width:290px;text-align:center}.selected-symbol{font-size:28px;color:var(--accent)}.selected-server h3{font-size:15px;font-weight:500;margin:5px 0}.selected-server>p{font-size:9px!important;text-transform:uppercase;margin:3px 0 8px!important}.selected-server select{max-width:100%;font-size:11px;padding:6px 10px}#vpn-probe{width:100%;margin-top:12px;color:var(--bg);background:var(--accent);border-color:var(--accent);font-size:12px;padding:8px}#vpn-probe-result{font-size:10px;margin-top:7px;color:var(--muted)}.vpn-connection .vpn-actions{display:none}.connection-footnote{font-size:9px!important;text-align:center;max-width:330px;margin:10px 0 0!important;color:var(--muted)}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#vpn-import-dialog{position:absolute;inset:0;z-index:10;background:#0008;display:grid;place-items:center;padding:18px}.import-sheet{width:min(500px,100%);max-height:100%;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);padding:22px;background:var(--bg);box-shadow:0 20px 60px #0005}.import-sheet label{display:block;font-size:12px;margin:12px 0 8px}.import-sheet select{width:100%}.import-sheet small{font-size:10px}.import-sheet h3{font-size:20px;margin:0}
+@media(max-width:750px){#vpn.vpn-workspace{grid-template-columns:45% 55%}.vpn-servers{padding:16px 12px 0}.vpn-connection{padding:12px}.power-orbit{width:140px;height:140px;margin-top:12px}#vpn-power{width:110px;height:110px}.vpn-title h2{font-size:21px}.server-row{padding:10px 8px!important;gap:7px}.server-avatar{width:22px}.selected-server{padding-top:4px}.vpn-mode{font-size:9px;padding:7px}.selected-symbol{display:none}}
+
+#appearance,.hub-panel{left:var(--dock-left,54px);right:var(--dock-right,0px);top:calc(108px + var(--dock-top,0px));bottom:var(--dock-bottom,0px)}
+
+@media(prefers-reduced-motion:no-preference){button,a{transition:background-color 140ms ease,color 140ms ease,border-color 140ms ease,transform 140ms ease}button:active{transform:scale(.97)}.hub-panel:not([hidden]),.apps-grid:not([hidden]){animation:panel-in 160ms ease-out}.shortcut:hover{transform:translateY(-3px)}@keyframes panel-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}}
+@media(prefers-reduced-motion:no-preference){.tab{transition:background-color 180ms ease,border-color 180ms ease,box-shadow 180ms ease,transform 180ms ease}.tab.active{box-shadow:inset 0 -2px var(--accent)}.tab-enter{animation:tab-open 180ms ease-out}@keyframes tab-open{from{opacity:0;transform:translateY(8px) scale(.94)}to{opacity:1;transform:none}}}body.motion-off *,body.motion-off *::before,body.motion-off *::after{animation:none!important;transition:none!important}.compact-tabs .tab{min-width:75px;max-width:145px;padding:6px 8px}.settings-cards label{font-size:13px;line-height:1.8}.ui-icon{width:19px;height:19px;vertical-align:middle;flex-shrink:0;object-fit:contain}.power-icon .ui-icon{width:34px;height:34px}.favicon .ui-icon,.tab-close .ui-icon{width:14px;height:14px}.selected-symbol .ui-icon{width:28px;height:28px}
+.settings-cards input[type=url],#settings-search{box-sizing:border-box;max-width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);font:inherit}
+.settings-cards input[type=range]{width:100%;accent-color:var(--accent)}
+.settings-cards input[type=checkbox]{accent-color:var(--accent)}
+.settings-cards input[type=color]{width:48px;height:34px;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--surface);vertical-align:middle}
+.settings-cards input:focus-visible,#settings-search:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Appearance workbench: consistent spacing, readable controls, real tab previews. */
+#appearance{padding:30px 32px;scrollbar-width:thin}.panel-heading{align-items:center;gap:20px}.panel-heading h2{font-size:30px;line-height:1.2;margin:8px 0;letter-spacing:-1px}.eyebrow{font-size:10px;letter-spacing:2.2px}.appearance-intro{max-width:680px;font-size:13px;line-height:1.7;color:var(--muted);margin:10px 0 22px}.preset-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:26px}.preset{border:1px solid var(--line);border-radius:999px;padding:9px 16px;color:var(--text);background:var(--surface);cursor:pointer}.preset:hover{border-color:var(--accent)}.catalog-label{display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:600;margin:16px 0}.catalog-label span{font-size:11px;color:var(--muted);font-weight:400}
+#designs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-height:350px;overflow:auto;padding:3px 5px 8px 3px;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.design-choice{display:flex;flex-direction:column;align-items:stretch;text-align:left;gap:7px;padding:12px;border:1px solid var(--line);border-radius:14px!important;cursor:pointer;min-width:0;position:relative;box-shadow:none}.design-choice[aria-pressed=true]{border-color:var(--accent);outline:2px solid color-mix(in srgb,var(--accent) 30%,transparent);outline-offset:1px}.design-choice strong{font-size:13px;font-weight:600}.design-choice small{font-size:10px;line-height:1.4;min-height:28px}.design-choice .design-preview{height:77px;min-height:77px;width:100%;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;padding:8px 7px;box-sizing:border-box}
+.preview-tabs{display:flex;align-items:end;gap:3px;height:28px;width:100%;overflow:hidden}.sample-tab{font:9px 'Segoe UI',sans-serif;display:block;min-width:0;flex:1;max-width:100%;padding:6px 4px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);background:var(--surface);border:1px solid transparent;border-radius:var(--preview-radius) var(--preview-radius) 0 0;box-sizing:border-box;height:25px!important;margin-bottom:0!important}.sample-tab.active{border-color:var(--accent);color:var(--text);box-shadow:inset 0 2px var(--accent)}.sample-tab:last-child{flex:0 0 22px}.preview-address{display:block;margin-top:5px;border:1px solid var(--line);border-radius:5px;font-size:8px;padding:4px 7px;color:var(--muted);text-align:left;line-height:1}
+.theme-heading{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:28px 0 14px}.theme-heading h3{font-size:16px;margin:0;margin-right:auto}.theme-heading input,.theme-heading select{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px 12px;font:12px 'Segoe UI',sans-serif;max-width:100%;box-sizing:border-box}.theme-heading label{font-size:11px;color:var(--muted)}#themes{grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:9px;max-height:280px;overflow:auto;scrollbar-width:thin;padding:3px}.theme-choice{display:flex;gap:9px;align-items:center;text-align:left;padding:10px;border-radius:10px!important;font-size:11px;min-width:0}.theme-choice .swatch{width:25px;height:25px;border-radius:50%;flex-shrink:0}.theme-choice[aria-pressed=true]{outline:2px solid var(--accent);outline-offset:-1px}.hub-panel input:not([type=checkbox]):not([type=range]):not([type=color]):not([type=file]),.hub-panel select,.hub-panel textarea{max-width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit}.hub-panel textarea{resize:vertical}.hub-panel article{padding:22px}.hub-panel h3{font-size:15px;letter-spacing:-.2px}.hub-panel button{font-size:12px}#accounts>p{max-width:760px}#accounts [data-account]{min-width:130px;padding:18px;margin:4px}.hub-panel .settings-cards{align-items:start}.tab-close{flex-shrink:0}
+@media(max-width:900px){#designs{grid-template-columns:repeat(2,minmax(0,1fr))}#appearance{padding:22px 18px}.theme-heading input{width:160px}}@media(max-width:500px){#designs{grid-template-columns:1fr}.panel-heading h2{font-size:24px}}
+
+#profile-account{width:106px!important;gap:6px;padding:5px 8px;font-size:11px;justify-content:center}#profile-account small{display:none}#profile-account .google-g{width:22px;height:22px;border:0}#profile-account .ui-icon{width:17px;height:17px}#profile-account:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+#settings{padding:26px 32px}#settings>.panel-heading{margin-bottom:24px}#settings .settings-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;max-width:1180px}#settings .settings-cards>article{padding:22px 24px;line-height:1.6}#settings article h3{font-size:16px;margin-bottom:18px}#settings article p{margin:13px 0}#settings article small{font-size:12px;line-height:1.6}#settings article label{font-size:13px}#settings article button{min-height:36px}#settings-search{max-width:600px!important}.settings-categories{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 22px}.settings-categories button{border-radius:999px;font-size:12px}.settings-categories [aria-pressed=true]{border-color:var(--accent);background:var(--surface);color:var(--accent)}#settings-empty{padding:24px;border-left:2px solid var(--accent)}#tools-tabs{display:flex;flex-direction:column;gap:5px;max-height:250px;overflow:auto}#tools-tabs button{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:800px){#settings .settings-cards{grid-template-columns:1fr}#settings{padding:18px}#settings .settings-cards>article{padding:18px}}
+</style></head><body>
+<div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div></div>
+<div class="controls">
+  <button class="btn" id="back" title="Назад" aria-label="Назад"><span data-icon="back"></span></button>
+  <button class="btn" id="forward" title="Вперёд" aria-label="Вперёд"><span data-icon="forward"></span></button>
+  <button class="btn" id="reload" title="Обновить" aria-label="Обновить"><span data-icon="reload"></span></button>
+  <button class="btn" id="home" title="Новая вкладка" aria-label="Домой"><span data-icon="home"></span></button>
+  <div class="address-wrap"><span class="secure" id="secure">&#9675;</span>
+    <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="Адрес сайта или поисковый запрос" aria-label="Адресная строка">
+    <span class="loading" id="loading">Загрузка...</span>
+  </div>
+  <button class="btn" id="bookmark" title="Добавить в закладки" aria-label="Добавить в закладки"><span data-icon="bookmark"></span></button>
+  <span class="sep"></span>
+  <button class="btn" id="bookmarks" title="Закладки" aria-label="Закладки"><span data-icon="bookmarks"></span></button>
+  <button class="btn" id="history" title="История" aria-label="История"><span data-icon="history"></span></button>
+  <button class="btn" id="downloads" title="Загрузки" aria-label="Загрузки"><span data-icon="downloads"></span></button>
+  <button class="btn" id="google-passwords" title="Google Password Manager — открыть официальный сайт" aria-label="Google Password Manager"><span data-icon="key"></span></button>
+  <button class="btn" id="more" title="Ещё" aria-label="Ещё"><span data-icon="more"></span></button>
+  <div class="mark" id="mode-badge">LiteRust 0.15-alpha.2</div>
+</div>
+<section id="appearance" hidden aria-label="Оформление">
+  <div class="panel-heading"><div><span class="eyebrow">ВАШ LITERUST</span><h2>Пространство по вкусу</h2></div><button id="close-appearance" aria-label="Закрыть оформление">Готово ✓</button></div>
+  <p class="appearance-intro">Сначала выберите характер интерфейса, затем — палитру. Все стили сочетаются с тёмными и светлыми темами.</p><div class="preset-row" id="presets"></div><h3 class="catalog-label">Форма вкладок <span>30 вариантов</span></h3><div id="designs" aria-label="30 стилей вкладок"></div>
+  <div class="theme-heading"><h3>330 тем</h3><input id="theme-search" type="search" placeholder="Название темы" aria-label="Поиск темы"><label>Показать <select id="theme-filter"><option value="all">Все темы</option><option value="dark">Тёмные</option><option value="light">Светлые</option><option value="contrast">Контрастные</option></select></label></div>
+  <div id="themes" aria-label="Цветовые темы"></div>
+  <p class="panel-note">Выбор сохраняется автоматически · Оформление панели и внутренних страниц</p>
+</section>
+<section id="settings" class="hub-panel" hidden aria-label="Настройки">
+<div class="panel-heading"><div><span class="eyebrow">LITERUST / НАСТРОЙКИ</span><h2>Ваш браузер, ваши правила</h2></div><button class="close-panel">Готово ✓</button></div>
+<h3>Положение панели функций</h3><div class="dock-options">
+<button data-position="left">← Слева</button><button data-position="right">Справа →</button><button data-position="top">↑ Сверху</button><button data-position="bottom">↓ Снизу</button></div>
+<label for="search-engine">Поисковая система </label><select id="search-engine" style="padding:10px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--line)"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select><p><input id="settings-search" type="search" placeholder="Найти раздел настроек…" aria-label="Поиск настроек" style="width:100%;padding:10px"></p><nav class="settings-categories" aria-label="Разделы настроек"><button data-settings-category="all" aria-pressed="true">Все</button><button data-settings-category="appearance" aria-pressed="false">Оформление</button><button data-settings-category="browser" aria-pressed="false">Браузер и аккаунты</button><button data-settings-category="privacy" aria-pressed="false">Данные и память</button><button data-settings-category="network" aria-pressed="false">Сеть</button></nav><p id="settings-empty" hidden>Ничего не найдено. Измените запрос или выберите «Все».</p><div class="settings-cards"><article><h3>Текст и форма</h3>
+<p><label>Размер текста <select id="pref-font_size"><option value="12">Мелкий</option><option value="13">Обычный</option><option value="14">Средний</option><option value="16">Крупный</option></select></label></p>
+<p><label><input id="pref-custom_tab_shape" type="checkbox"> Свой радиус вкладок вместо формы стиля</label></p><p><label>Скругление <input id="pref-corner_radius" type="range" min="0" max="24"></label></p>
+<p><label><input id="pref-custom_accent" type="checkbox"> Свой акцентный цвет</label> <input id="pref-accent" type="color" aria-label="Акцентный цвет" value="#b5a2ff"></p>
+<small>Отключите свой акцент, чтобы вернуть цвет выбранной темы.</small></article>
+<article><h3>Содержимое новой вкладки</h3>
+<p><label>Компоновка <select id="pref-home_layout"><option value="0">Две колонки</option><option value="1">По центру</option><option value="2">Минимальная</option></select></label></p>
+<p><label><input id="pref-show_shortcuts" type="checkbox"> Карточки сайтов</label></p>
+<p><label><input id="pref-show_services" type="checkbox"> Почта и вход в Google</label></p>
+<p><label><input id="pref-clock_24" type="checkbox"> 24-часовой формат</label></p>
+<p><label>Максимум карточек <select id="pref-shortcut_count"><option>4</option><option>6</option><option>10</option><option>16</option><option>20</option></select></label></p>
+<p><label><input id="pref-wallpaper_contain" type="checkbox"> Показать фон целиком</label></p>
+<p><label>Размытие фона <input id="pref-wallpaper_blur" type="range" min="0" max="20"></label></p></article>
+<article><h3>Запуск и вкладки</h3>
+<p><label>При запуске <select id="browser-startup"><option value="restore">Восстановить вкладки</option><option value="new_tab">Новая вкладка</option><option value="home">Домашняя страница</option></select></label></p>
+<p><label>Домашняя страница <input id="browser-home_url" type="url" placeholder="https://example.org" style="width:100%"></label></p><small>Пустое поле — главный экран LiteRust. Кнопка «Домой» использует этот адрес.</small>
+<p><small>Новая вкладка всегда открывает стартовый экран LiteRust. Домашний адрес используется кнопкой «Домой».</small></p>
+<p><label><input id="browser-background_links" type="checkbox"> Открывать новые ссылки в фоне</label></p>
+<p><label>Масштаб страниц <select id="browser-zoom_percent"><option>50</option><option>75</option><option>90</option><option>100</option><option>110</option><option>125</option><option>150</option><option>175</option><option>200</option></select> %</label></p>
+<p><label><input id="browser-history_enabled" type="checkbox"> Записывать историю посещений</label></p><small>Выключение не удаляет старую историю и не включает приватный режим: вкладки и данные сайтов сохраняются.</small>
+<p><button id="save-browser-settings">Сохранить настройки браузера</button><button id="reset-browser-settings">Сбросить настройки браузера</button></p><small id="browser-settings-status" role="status"></small></article><article><h3>Цвет и градиент фона</h3><select id="bg-mode"><option value="0">Тема или обои</option><option value="1">Один цвет</option><option value="2">Линейный градиент</option><option value="3">Радиальный градиент</option></select><p><input id="bg-a" type="color" aria-label="Первый цвет"><input id="bg-b" type="color" aria-label="Второй цвет"></p><label>Угол <input id="bg-angle" type="range" min="0" max="360"></label><button id="bg-save">Применить фон</button></article>
+
+<article><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article>
+<article><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article><h3>Движение и интерфейс</h3><label><input id="pref-animations" type="checkbox"> Анимации</label><p><label><input id="pref-compact_tabs" type="checkbox"> Компактные вкладки</label></p><p><label><input id="pref-show_clock" type="checkbox"> Часы и дата</label></p><p><label><input id="pref-show_greeting" type="checkbox"> Приветствие</label></p><label for="pref-wallpaper_dim">Затемнение фона <output id="dim-value">55%</output></label><input id="pref-wallpaper_dim" type="range" min="0" max="90" value="55" style="width:100%"><button id="reset-customization">Сбросить эти настройки</button></article><article><h3>Аккаунт Google</h3><p>Вход открывается внутри LiteRust. Cookies обычного профиля сохраняются между запусками. Срок действия сессии определяет Google.</p><button id="settings-google">Открыть Google</button><button id="google-external">Внешний браузер ↗</button><small>Если Google запрещает вход во встроенном движке, используйте внешний браузер. Его сессия не переносится в LiteRust и не использует VPN LiteRust.</small></article>
+<article><h3>Фон новой вкладки</h3><label>С компьютера <input id="wallpaper-file" type="file" accept="image/png,image/jpeg,image/webp"></label><p><label>Из интернета <input id="wallpaper-url" type="url" placeholder="https://…/image.jpg" style="width:100%"></label></p><button id="wallpaper-save">Применить ссылку</button><button id="wallpaper-reset">Убрать фон</button><small id="wallpaper-status" role="status">По ссылке изображение загружается с указанного сайта при открытии новой вкладки.</small></article><article><h3>Оформление</h3><p>30 стилей вкладок и 330 тем. Настройте панель и внутренние страницы.</p><button id="settings-appearance">Выбрать оформление</button></article>
+<article><h3>Память и приватность</h3><button data-menu="cycle-memory-mode">Бюджет памяти</button><button data-menu="toggle-auto-discard">Автовыгрузка вкладок</button><button data-menu="discard-background">Освободить память</button><button data-menu="new-private-window">Приватное окно</button><p>Очистка cookies вручную завершает вход на сайтах, включая Google.</p></article></div>
+</section>
+<section id="vpn" class="hub-panel vpn-workspace" hidden aria-label="VPN-хаб">
+<div class="vpn-servers">
+  <div class="vpn-title"><div><span class="eyebrow">LITERUST / VPN</span><h2>Серверы</h2></div><button id="vpn-open-import" title="Добавить ключ или подписку" aria-label="Добавить серверы">＋</button></div>
+  <div class="server-search"><input id="vpn-search" type="search" placeholder="Найти сервер…" aria-label="Поиск серверов"><span data-icon="search"></span></div>
+  <div class="server-group"><div><strong>Мои серверы</strong><small id="vpn-count">0 серверов</small></div><span class="group-badge">XRAY</span></div>
+  <div id="vpn-server-list" aria-label="Список серверов"></div>
+  <div id="vpn-empty" class="vpn-empty">Добавьте ключ или подписку,<br>чтобы выбрать сервер.</div>
+  <div class="vpn-list-footer">Ключи защищены Windows · Только трафик LiteRust</div>
+</div>
+<div class="vpn-connection">
+  <div class="vpn-mode-row"><label class="vpn-mode" for="vpn-scope">Область VPN <select id="vpn-scope"><option value="browser">Только браузер</option><option value="system">Весь компьютер · TUN</option></select><small id="vpn-scope-status"></small></label><button class="close-panel vpn-close" aria-label="Закрыть VPN-хаб"><span data-icon="close"></span></button></div>
+  <div class="power-orbit"><button id="vpn-power" aria-label="Подключить или отключить VPN"><span class="power-icon" data-icon="power"></span><strong id="vpn-status">VPN выключен</strong><span id="vpn-power-label">Подключить</span></button></div>
+  <p id="vpn-description" class="connection-note">Выберите сервер слева</p><span id="vpn-dot" hidden></span>
+  <div class="selected-server"><span class="selected-symbol" data-icon="globe"></span><h3 id="vpn-selected-name">Выберите сервер</h3><p id="vpn-selected-detail">VLESS · VMess · Trojan · Shadowsocks · SOCKS5 · HTTP</p>
+    <label for="vpn-server" class="sr-only">VPN-сервер</label><select id="vpn-server" aria-label="VPN-сервер"><option>Сначала импортируйте ключ</option></select>
+    <button id="vpn-probe">Проверить соединение</button><div id="vpn-probe-result" role="status">Тест HTTPS через выбранный VPN</div>
+    <div class="vpn-actions"><button id="vpn-connect">Подключить</button><button id="vpn-disconnect">Отключить</button></div>
+  </div>
+  <p class="connection-footnote">Подключение и отключение перезапускают LiteRust. Cookies сохраняются, несохранённые формы теряются. TUN запрашивает права администратора. При закрытии LiteRust системный VPN отключается; Windows возвращается к обычной сети. UDP зависит от сервера и протокола.</p>
+</div>
+<div id="vpn-import-dialog" hidden role="dialog" aria-modal="true" aria-label="Добавить VPN-серверы">
+  <div class="import-sheet"><div class="panel-heading"><h3>Добавить серверы</h3><button id="vpn-close-import" aria-label="Закрыть импорт"><span data-icon="close"></span></button></div>
+  <label for="vpn-input-kind">Тип импорта</label><select id="vpn-input-kind"><option value="auto">Определить автоматически</option><option value="keys">Ключи / прокси</option><option value="subscription">HTTPS-подписка</option></select>
+  <label for="vpn-key">Ключ, список ключей или HTTPS-ссылка</label><textarea id="vpn-key" placeholder="vless://… или https://…" autocomplete="off" spellcheck="false" aria-label="VPN-ключ или подписка"></textarea>
+  <button id="vpn-import">Импортировать</button><p id="vpn-import-note">Ключи защищены учётной записью Windows. После импорта поле очищается.</p>
+  <small>VLESS, VMess AEAD, Trojan, Shadowsocks, SOCKS5, HTTP(S). Поддерживаются TCP, WS, gRPC, XHTTP и Reality при поддержке ключа. Hysteria2, TUIC, WireGuard и зашифрованные Happ-ссылки пока не поддерживаются.</small>
+  </div>
+</div>
+</section>
+<div id="menu">
+  <button id="toggle-fullscreen">Полный экран · F11 / выход Esc</button><button id="show-settings">Настройки и положение панели</button>
+  <button id="show-vpn">VPN-хаб</button>
+  <button id="show-appearance">Оформление · 30 стилей вкладок / 330 тем</button>
+  <button id="google-account">Вход / аккаунт Google</button>
+  <button id="discard-background">Освободить память фоновых вкладок</button>
+  <button id="new-private-window">Новое приватное окно (Ctrl+Shift+N)</button>
+  <button id="toggle-network-blocking">Сетевой AdBlock: выкл. (эксперимент)</button>
+  <button id="toggle-site-adblock" disabled>AdBlock: исключение для этого сайта</button>
+  <button id="toggle-auto-discard">Автовыгрузка: выкл. (сохранять формы)</button>
+  <button id="cycle-memory-mode">Память: баланс (3 вкладки)</button>
+  <button id="toggle-cosmetic-filter">Косметический фильтр рекламы: выкл.</button>
+  <button id="google-passwords-menu">Google Password Manager ↗</button>
+  <button id="google-passwords-info">Как работают пароли Google?</button>
+  <button id="import-bookmarks">Импорт закладок Chrome (HTML)</button>
+  <button id="export-bookmarks">Экспорт закладок (HTML)</button>
+  <button id="clear-download-history">Очистить список загрузок</button>
+  <button id="clear-history">Очистить историю</button>
+  <button id="clear-site-data">Очистить cookies и кэш</button>
+</div>
+<input type="file" id="bookmark-file" accept=".html,.htm,text/html" hidden>
+<div id="notice" role="status" aria-live="polite"></div>
+<section id="tools" class="hub-panel" hidden><button class="close-panel">Закрыть</button><h2>Инструменты</h2><div class="settings-cards"><article><h3>Рабочие инструменты</h3><button id="tool-print">Печать / PDF текущей страницы</button><p><label>Заметки в профиле<textarea id="tool-notes" maxlength="20000" rows="6" style="width:100%"></textarea></label></p><button id="notes-save">Сохранить заметки</button><small id="notes-status" role="status"></small></article><article><h3>Вкладки</h3><input id="tabs-search" placeholder="Найти открытую вкладку" aria-label="Поиск вкладок"><div id="tools-tabs"></div><button id="tool-duplicate">Дублировать текущую вкладку</button></article><article><h3>Калькулятор</h3><input id="calc-a" type="number" value="0" aria-label="Первое число"><select id="calc-op" aria-label="Действие"><option>+</option><option>−</option><option>×</option><option>÷</option></select><input id="calc-b" type="number" value="0" aria-label="Второе число"><p><output id="calc-result">0</output></p></article><article><h3>Быстрый доступ</h3><button id="tools-memory">Освободить память…</button><p id="tools-memory-summary"></p><button data-quick="show_bookmarks">Закладки</button><button data-quick="show_history">История</button><button data-quick="show_downloads">Загрузки</button><button id="tools-settings">Настройки браузера</button></article></div></section><section id="accounts" class="hub-panel" hidden><button class="close-panel">Закрыть</button><h2>Ваши аккаунты</h2><p>Выберите сервис. Сохранённые аккаунты и добавление другого аккаунта доступны на его официальной странице.</p><p>Это меню не определяет, выполнен ли вход. Сессии обычного профиля сохраняются; сервис может запросить повторный вход. В приватном окне сессии временные.</p><p><button data-account="google">Google</button> <button data-account="yandex">Яндекс</button> <button data-account="microsoft">Microsoft / Bing</button> <button data-account="yahoo">Yahoo</button></p><p><label><input id="account-always" type="checkbox"> Показывать выбор при каждом запуске</label></p><button id="account-save">Сохранить и продолжить</button><p>По умолчанию меню показывается при первом запуске. Позже оно всегда доступно по кнопке «Аккаунты» слева сверху.</p></section>
+<script>
+'use strict';
+/* APPEARANCE_SCRIPT */
+const tabsEl=document.getElementById('tabs');
+const address=document.getElementById('address');
+const secure=document.getElementById('secure');
+const loading=document.getElementById('loading');
+const bookmark=document.getElementById('bookmark');
+const menu=document.getElementById('menu');
+let state={live_ids:[],private_mode:false,cosmetic_filter:false,network_blocking:false,site_host:null,site_adblock_exception:false,live_tab_budget:3,url_warning:null,tabs:[{title:'Новая вкладка',url:''}],active:0,url:'',loading:false,bookmarked:false,bookmarks:0,history:0,downloads:0,can_back:false,can_forward:false};
+function send(action,extra={}){window.ipc?.postMessage(JSON.stringify({action,...extra}));}
+let lastTabsKey='';
+function render(){
+  window.refreshLiteIcons();
+  const prefs={...window.customizationDefaults,...state.customization};
+  document.body.classList.toggle('motion-off',!prefs.animations);document.body.classList.toggle('compact-tabs',prefs.compact_tabs);
+  for(const key of ['animations','compact_tabs','show_clock','show_greeting','show_shortcuts','show_services','wallpaper_contain','clock_24','custom_tab_shape'])document.getElementById('pref-'+key).checked=prefs[key];
+  if(document.activeElement!==document.getElementById('pref-wallpaper_dim'))document.getElementById('pref-wallpaper_dim').value=prefs.wallpaper_dim;document.getElementById('dim-value').textContent=document.getElementById('pref-wallpaper_dim').value+'%';
+  document.getElementById("search-engine").value=state.search_engine||"google";
+  window.applyAppearance(state.appearance);
+  window.applyCustomization(prefs);
+  for(const key of ['font_size','corner_radius','shortcut_count','home_layout','wallpaper_blur']){const el=document.getElementById('pref-'+key);if(document.activeElement!==el)el.value=prefs[key];}
+  document.getElementById('pref-custom_accent').checked=prefs.accent!==null;
+  document.getElementById('pref-accent').value='#'+(prefs.accent??0xb5a2ff).toString(16).padStart(6,'0');
+  renderBrowserSettings();
+  updateAppearanceSelection();
+  updateHub();
+  const tabsKey=JSON.stringify([state.tabs,state.active,state.live_ids.slice().sort()]);
+  if(tabsKey!==lastTabsKey){
+  lastTabsKey=tabsKey;
+  const wanted=new Set(state.tabs.map(t=>String(t.id)));
+  tabsEl.querySelectorAll('[data-tab-id]').forEach(el=>{if(!wanted.has(el.dataset.tabId))el.remove();});
+  state.tabs.forEach((tab,index)=>{
+    let item=Array.from(tabsEl.children).find(el=>el.dataset.tabId===String(tab.id));
+    if(!item){item=document.createElement('button');item.dataset.tabId=String(tab.id);item.className='tab tab-enter';
+      for(const cls of ['favicon','tab-title','tab-close']){const el=document.createElement('span');el.className=cls;item.append(el);}
+      item.addEventListener('animationend',()=>item.classList.remove('tab-enter'),{once:true});}
+    item.classList.toggle('active',index===state.active);
+    item.setAttribute('aria-selected',String(index===state.active));
+    item.title=tab.title||'Новая вкладка';
+    item.onclick=()=>send('select_tab',{index});
+    item.children[0].innerHTML=window.liteIcon('globe');item.children[0].style.opacity=state.live_ids.includes(tab.id)?'1':'.4';
+    item.children[1].textContent=tab.title||'Новая вкладка';
+    item.children[2].innerHTML=window.liteIcon('close');item.children[2].title='Закрыть вкладку';
+    item.children[2].onclick=e=>{e.stopPropagation();send('close_tab',{index});};
+    const at=tabsEl.children[index];if(at!==item)tabsEl.insertBefore(item,at||null);
+  });
+  let plus=tabsEl.querySelector('.new');if(!plus){plus=document.createElement('button');plus.className='new';plus.title='Новая вкладка';plus.innerHTML=window.liteIcon('plus');plus.onclick=()=>send('new_tab');}plus.innerHTML=window.liteIcon('plus');tabsEl.append(plus);
+  }
+  if(document.activeElement!==address) address.value=state.url||'';
+  const isHttps=(state.url||'').startsWith('https://');
+  secure.innerHTML=window.liteIcon(state.url_warning?'warning':(isHttps?'lock':'info'));
+  secure.title=state.url_warning|| (isHttps?'HTTPS (зашифрованное соединение, не гарантия безопасности сайта)':'Нет сведений о HTTPS');
+  secure.style.color=state.url_warning?'#e8b16d':'';
+  loading.classList.toggle('show',Boolean(state.loading));
+  document.getElementById('back').disabled=!state.can_back;
+  document.getElementById('forward').disabled=!state.can_forward;
+  bookmark.innerHTML=window.liteIcon('bookmark');bookmark.classList.toggle('active',state.bookmarked);
+  bookmark.title=state.bookmarked?'Удалить из закладок':'Добавить в закладки';
+  bookmark.disabled=!(state.url||'').match(/^https?:\/\//);
+  document.getElementById('bookmarks').title=`Закладки (${state.bookmarks})`;
+  document.getElementById('history').title=`История (${state.history})`;
+  document.getElementById('downloads').title=`Загрузки (${state.downloads})`;
+  const mark=document.getElementById('mode-badge');
+  mark.textContent=state.private_mode?'ПРИВАТНО':'LiteRust 0.15-alpha.2';
+  mark.classList.toggle('private',Boolean(state.private_mode));
+  document.getElementById('toggle-network-blocking').textContent='Сетевой AdBlock (ограниченные правила): '+(state.network_blocking?'вкл.':'выкл.');
+  document.getElementById('toggle-auto-discard').textContent='Автовыгрузка (потеря форм): '+(state.auto_discard?'вкл.':'выкл.');
+  const memoryModes={1:'Eco',3:'Balanced',5:'Performance'};
+  document.getElementById('cycle-memory-mode').textContent=`Память: ${memoryModes[state.live_tab_budget]||'Balanced'} (${state.live_tab_budget||3} вклад.)`;
+  const siteToggle=document.getElementById('toggle-site-adblock');
+  siteToggle.disabled=!state.network_blocking||!state.site_host;
+  siteToggle.textContent=state.site_host
+    ? `AdBlock для ${state.site_host}: ${state.site_adblock_exception?'выкл. (исключение)':'вкл.'}`
+    : 'AdBlock для сайта: откройте HTTP(S)-страницу';
+  document.getElementById('toggle-cosmetic-filter').textContent='Косметический фильтр рекламы: '+(state.cosmetic_filter?'вкл.':'выкл.');
+  bookmark.disabled=state.private_mode||bookmark.disabled;
+  document.getElementById('google-passwords').title=state.private_mode?'В приватном окне Google Password Manager не открывается':'Google Password Manager (внешний браузер)';
+}
+window.browserUpdate=value=>{state=value;render();};
+let noticeTimer;
+window.browserNotice=message=>{
+  const el=document.getElementById('notice');
+  el.textContent=String(message);
+  el.title=String(message);
+  el.classList.add('show');
+  clearTimeout(noticeTimer);
+  noticeTimer=setTimeout(()=>el.classList.remove('show'),7500);
+};
+for(const [id,action] of Object.entries({back:'back',forward:'forward',reload:'reload',home:'home',bookmark:'toggle_bookmark',bookmarks:'show_bookmarks',history:'show_history',downloads:'show_downloads'})){
+  document.getElementById(id).onclick=()=>{menu.classList.remove('open');send(action);};
+}
+document.getElementById('more').onclick=()=>menu.classList.toggle('open');
+document.getElementById('new-private-window').onclick=()=>{menu.classList.remove('open');send('new_private_window');};
+document.getElementById('toggle-network-blocking').onclick=()=>{
+  menu.classList.remove('open');
+  if(confirm('Переключить блокировку запросов к ограниченному списку рекламных доменов? Активная страница обновится. Иногда фильтр может мешать работе сайтов; это НЕ полный uBlock.'))send('toggle_network_blocking');
+};
+document.getElementById('toggle-auto-discard').onclick=()=>{
+  menu.classList.remove('open');
+  if(state.auto_discard || confirm('Включить автоматическую выгрузку вкладок? Несохранённые формы, медиа и состояние сайтов будут потеряны при превышении бюджета.'))send('toggle_auto_discard');
+};
+document.getElementById('cycle-memory-mode').onclick=()=>{
+  menu.classList.remove('open');
+  if(!state.auto_discard || confirm('Изменение бюджета может немедленно выгрузить вкладки и потерять формы. Продолжить?'))send('cycle_memory_mode');
+};
+document.getElementById('toggle-site-adblock').onclick=()=>{
+  menu.classList.remove('open');
+  if(!state.site_host||!state.network_blocking)return;
+  if(confirm(`Изменить сетевую блокировку для ${state.site_host}? Страница обновится. Исключение относится только к точному домену, не ко всем поддоменам.`)){
+    send('toggle_site_adblock');
+  }
+};
+document.getElementById('toggle-cosmetic-filter').onclick=()=>{
+  menu.classList.remove('open');
+  if(confirm('Переключить визуальное скрытие некоторых рекламных элементов? Все загруженные вкладки будут выгружены и при открытии загрузятся снова. Реальные сетевые запросы не блокируются.'))send('toggle_cosmetic_filter');
+};
+function openGooglePasswords(){
+  menu.classList.remove('open');
+  send('open_google_passwords');
+}
+document.getElementById('google-passwords').onclick=openGooglePasswords;
+document.getElementById('google-passwords-menu').onclick=openGooglePasswords;
+document.getElementById('google-passwords-info').onclick=()=>{
+  menu.classList.remove('open');
+  alert('Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.15-alpha.2 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.');
+};
+document.getElementById('export-bookmarks').onclick=()=>{
+  menu.classList.remove('open');
+  if(state.private_mode){window.browserNotice('Экспорт недоступен в приватном окне.');return;}
+  send('export_bookmarks');
+};
+document.getElementById('clear-download-history').onclick=()=>{
+  menu.classList.remove('open');
+  if(confirm('Очистить только список загрузок LiteRust? Скачанные файлы останутся на диске.'))send('clear_download_history');
+};
+document.getElementById('clear-history').onclick=()=>{
+  menu.classList.remove('open');
+  if(confirm('Удалить всю историю посещений LiteRust?'))send('clear_history');
+};
+const bookmarkFile=document.getElementById('bookmark-file');
+document.getElementById('import-bookmarks').onclick=()=>{
+  menu.classList.remove('open');
+  bookmarkFile.click();
+};
+bookmarkFile.onchange=async()=>{
+  const file=bookmarkFile.files?.[0];
+  if(!file)return;
+  // A file chooser requires an explicit user gesture; this never reads Chrome's profile.
+  if(file.size>1500000){window.browserNotice('Файл превышает 1,5 МБ.');bookmarkFile.value='';return;}
+  try{
+    const html=await file.text();
+    if(new TextEncoder().encode(html).length>1500000)throw new Error('Файл слишком большой.');
+    send('import_bookmarks',{html});
+    window.browserNotice('Импортируем закладки…');
+  }catch(err){window.browserNotice('Не удалось прочитать HTML: '+err.message);}
+  bookmarkFile.value='';
+};
+document.getElementById('clear-site-data').onclick=()=>{
+  menu.classList.remove('open');
+  if(confirm('Удалить ВСЕ cookies, кеш и локальные данные сайтов в LiteRust? Вы выйдете из аккаунтов, могут исчезнуть сохранённые на сайтах данные.'))send('clear_site_data');
+};
+address.onkeydown=e=>{
+  if(e.key==='Enter'){send('navigate',{value:address.value});address.blur();}
+  if(e.key==='Escape'){address.value=state.url||'';address.blur();}
+};
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape')menu.classList.remove('open');
+  if(e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='o'){e.preventDefault();bookmarkFile.click();}
+  if(e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='p'){e.preventDefault();openGooglePasswords();}
+  if(e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='n'){e.preventDefault();send('new_private_window');}
+  if(e.ctrlKey&&e.key.toLowerCase()==='l'){e.preventDefault();address.focus();address.select();}
+  if(e.ctrlKey&&e.key.toLowerCase()==='t'){e.preventDefault();send('new_tab');}
+  if(e.ctrlKey&&e.key.toLowerCase()==='d'){e.preventDefault();send('toggle_bookmark');}
+  if(e.ctrlKey&&e.key.toLowerCase()==='w'){e.preventDefault();send('close_tab',{index:state.active});}
+});
+const appearance=document.getElementById('appearance');
+window.openPanel=name=>{
+  for(const id of ['appearance','settings','vpn','accounts','tools'])document.getElementById(id).hidden=id!==name;
+  menu.classList.remove('open');send('appearance_panel',{open:Boolean(name)});
+  if(name==='tools')renderToolsTabs();
+  if(name)document.getElementById(name).querySelector('button')?.focus();else document.getElementById('more').focus();
+};
+function setAppearanceOpen(open){window.openPanel(open?'appearance':null);}
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&['settings','vpn','accounts','tools'].some(id=>!document.getElementById(id).hidden))window.openPanel(null);});
+document.querySelectorAll('.close-panel').forEach(b=>b.onclick=()=>window.openPanel(null));
+document.getElementById('toggle-fullscreen').onclick=()=>{window.openPanel(null);send('toggle_fullscreen');};
+document.getElementById('show-settings').onclick=()=>window.openPanel('settings');
+document.getElementById('show-vpn').onclick=()=>window.openPanel('vpn');
+document.getElementById('settings-appearance').onclick=()=>window.openPanel('appearance');
+document.querySelectorAll('[data-position]').forEach(b=>b.onclick=()=>send('set_dock',{position:b.dataset.position}));
+document.querySelectorAll('[data-menu]').forEach(b=>b.onclick=()=>document.getElementById(b.dataset.menu).click());
+document.getElementById('profile-account').onclick=()=>window.openPanel('accounts');
+document.getElementById('settings-google').onclick=()=>window.openPanel('accounts');
+document.getElementById('google-external').onclick=()=>send('google_account_external');
+let vpnNodesKey='';
+function chooseVpnServer(index){document.getElementById('vpn-server').value=String(index);renderServerSelection();}
+function renderServerSelection(){
+  const index=Number(document.getElementById('vpn-server').value)||0;
+  document.querySelectorAll('.server-row').forEach(b=>{b.classList.toggle('selected',Number(b.dataset.index)===index);b.setAttribute('aria-pressed',Number(b.dataset.index)===index);});
+  document.getElementById('vpn-selected-name').textContent=(state.vpn_nodes||[])[index]||'Выберите сервер';
+  document.getElementById('vpn-selected-detail').textContent=(state.vpn_details||[])[index]||'Защищённое подключение';
+  document.getElementById('vpn-power-label').textContent=state.vpn_enabled&&index===(state.vpn_selected||0)?'Отключить':'Подключить';
+}
+function filterVpnServers(){const q=document.getElementById('vpn-search').value.toLocaleLowerCase();let count=0;document.querySelectorAll('.server-row').forEach(b=>{b.hidden=!b.textContent.toLocaleLowerCase().includes(q);if(!b.hidden)count++;});const empty=document.getElementById('vpn-empty');empty.hidden=count>0;empty.textContent=(state.vpn_nodes||[]).length?'Серверы не найдены':'Добавьте ключ или подписку, чтобы выбрать сервер.';}
+document.getElementById('vpn-search').oninput=filterVpnServers;
+document.getElementById('vpn-server').onchange=renderServerSelection;
+document.getElementById('vpn-open-import').onclick=()=>{document.getElementById('vpn-import-dialog').hidden=false;document.getElementById('vpn-key').focus();};
+document.getElementById('vpn-close-import').onclick=()=>{document.getElementById('vpn-import-dialog').hidden=true;document.getElementById('vpn-open-import').focus();};
+document.getElementById('vpn-scope').onchange=()=>{state.vpn_system_scope=document.getElementById('vpn-scope').value==='system';if(state.vpn_enabled)applyVpn(true);else send('vpn_scope',{system:state.vpn_system_scope});};
+document.getElementById('vpn-power').onclick=()=>applyVpn(!(state.vpn_enabled&&Number(document.getElementById('vpn-server').value)===(state.vpn_selected||0)));
+document.getElementById('vpn-probe').onclick=()=>send('vpn_probe');
+function updateHub(){
+  document.getElementById('tools-memory-summary').textContent='Живых вкладок: '+(state.live_ids?.length||0)+'. Выгрузка удаляет несохранённые формы фоновых страниц.';
+  if(!document.getElementById('tools').hidden)renderToolsTabs();
+  if(document.activeElement.id!=='account-always')document.getElementById('account-always').checked=!!state.account_prompt_always;
+  if(!document.getElementById('tool-notes').dataset.loaded && state.notes!==undefined){document.getElementById('tool-notes').value=state.notes;document.getElementById('tool-notes').dataset.loaded='1';}
+  if(!document.getElementById('bg-mode').dataset.loaded && state.background_style){const b=state.background_style;document.getElementById('bg-mode').value=b.mode;document.getElementById('bg-a').value='#'+b.color_a.toString(16).padStart(6,'0');document.getElementById('bg-b').value='#'+b.color_b.toString(16).padStart(6,'0');document.getElementById('bg-angle').value=b.angle;document.getElementById('bg-mode').dataset.loaded='1';}
+
+  document.getElementById('vpn-scope').value=state.vpn_system_scope?'system':'browser';
+  document.getElementById('vpn-scope').disabled=state.private_mode;
+  document.getElementById('vpn-scope-status').textContent=state.vpn_system_scope?(state.vpn_system_running?'TUN работает для Windows':'TUN не запущен. Для включения нужны права администратора.'):'Трафик других приложений не меняется';
+  const dock=state.dock_position||'left';
+  for(const side of ['left','right','top','bottom'])document.documentElement.style.setProperty('--dock-'+side,dock===side?'54px':'0px');
+  document.querySelectorAll('[data-position]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.position===(state.dock_position||'left')));
+  const enabled=Boolean(state.vpn_enabled),running=Boolean(state.vpn_running)&&(!state.vpn_system_scope||state.vpn_system_running),busy=Boolean(state.vpn_importing);
+  document.getElementById('vpn-status').textContent=enabled?(running?'Туннель запущен':'VPN остановился'):'VPN выключен';
+  document.getElementById('vpn-description').textContent=enabled?(running?'Движок работает. Доступность сервера зависит от вашего ключа.':'Сайты не переключаются на прямое соединение.'):'Обычное подключение к сети';
+  const dot=document.getElementById('vpn-dot');dot.classList.toggle('on',running);dot.classList.toggle('failed',enabled&&!running);
+  const nodes=state.vpn_nodes||[],key=JSON.stringify([nodes,state.vpn_selected]);
+  if(key!==vpnNodesKey){vpnNodesKey=key;const select=document.getElementById('vpn-server');select.replaceChildren();if(!nodes.length){const o=document.createElement('option');o.textContent='Сначала импортируйте ключ';select.append(o);}nodes.forEach((name,index)=>{const o=document.createElement('option');o.value=index;o.textContent=name;select.append(o);});select.value=String(state.vpn_selected||0);
+  const list=document.getElementById('vpn-server-list');list.replaceChildren();
+  nodes.forEach((name,index)=>{const row=document.createElement('button');row.className='server-row';row.dataset.index=index;const avatar=document.createElement('span');avatar.className='server-avatar';avatar.innerHTML=window.liteIcon('globe');const copy=document.createElement('span');copy.className='server-copy';const title=document.createElement('strong');title.textContent=name;const detail=document.createElement('small');detail.textContent=(state.vpn_details||[])[index]||'Прокси-сервер';copy.append(title,detail);const arrow=document.createElement('span');arrow.className='server-chevron';arrow.innerHTML=window.liteIcon('chevron');row.append(avatar,copy,arrow);row.onclick=()=>chooseVpnServer(index);list.append(row);});
+  document.getElementById('vpn-count').textContent=nodes.length+' серверов';filterVpnServers();
+  }
+  renderServerSelection();
+  document.getElementById('vpn-power').disabled=(!nodes.length&&!enabled)||busy||state.private_mode;
+  document.getElementById('vpn-power').classList.toggle('running',running);
+  document.getElementById('vpn-probe').disabled=!running||Boolean(state.vpn_probing);
+  document.getElementById('vpn-probe-result').textContent=state.vpn_probe||'Тест HTTPS через активный VPN';
+  document.getElementById('vpn-probe').textContent=state.vpn_probing?'Проверяем…':'Проверить соединение';
+  document.getElementById('vpn-key').disabled=enabled||busy||state.private_mode;
+  document.getElementById('vpn-import').disabled=enabled||busy||state.private_mode;
+  document.getElementById('vpn-import').textContent=busy?'Импортируем…':'Импортировать';
+  document.getElementById('vpn-import-note').textContent=enabled?'Для замены списка серверов сначала отключите VPN.':state.private_mode?'Изменяйте ключи в обычном окне.':'Ключи защищены учётной записью Windows. После импорта поле очищается.';
+  document.getElementById('vpn-connect').disabled=!nodes.length||busy||state.private_mode;
+  document.getElementById('vpn-disconnect').disabled=!enabled||busy||state.private_mode;
+  document.getElementById('profile-account').title=state.private_mode?'Постоянный аккаунт доступен в обычном окне':'Открыть меню аккаунтов';
+}
+document.getElementById('vpn-import').onclick=()=>{const field=document.getElementById('vpn-key');const value=field.value.trim();if(!value)return;if(new TextEncoder().encode(value).length>1048576){window.browserNotice('Слишком большой список');return;}send('vpn_import',{value,kind:document.getElementById('vpn-input-kind').value});field.value='';document.getElementById('vpn-import-dialog').hidden=true;};
+function applyVpn(enabled){if(confirm('Перезапустить LiteRust для изменения VPN? Несохранённые формы будут потеряны. Завершите загрузки и закройте другие окна LiteRust.'))send('vpn_apply',{enabled,system:document.getElementById('vpn-scope').value==='system',selected:Number(document.getElementById('vpn-server').value)||0});}
+document.getElementById('vpn-connect').onclick=()=>applyVpn(true);
+document.getElementById('vpn-disconnect').onclick=()=>applyVpn(false);
+document.getElementById('show-appearance').onclick=()=>setAppearanceOpen(true);
+document.getElementById('close-appearance').onclick=()=>setAppearanceOpen(false);
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&!appearance.hidden)setAppearanceOpen(false);});
+function chooseAppearance(extra){state.appearance={design:0,theme:0,...state.appearance,...extra};window.applyAppearance(state.appearance);updateAppearanceSelection();send('set_appearance',state.appearance);}
+for(const [design,theme,name] of [[0,10,'Орбита'],[1,52,'Минимализм'],[2,12,'Студия'],[3,53,'Классика'],[4,50,'Терминал']]){const b=document.createElement('button');b.className='preset';b.textContent=name;b.onclick=()=>chooseAppearance({design,theme});document.getElementById('presets').append(b);}
+const previewStyle=document.createElement('style');previewStyle.textContent=window.designPreviewCSS;document.head.append(previewStyle);
+window.appearanceDesigns.forEach((name,design)=>{
+  const button=document.createElement('button');button.className='design-choice';button.dataset.design=design;
+  button.setAttribute('aria-label',name+' — '+window.designDescriptions[design]);
+  const preview=document.createElement('span');preview.className='design-preview';preview.setAttribute('aria-hidden','true');
+  const tabs=document.createElement('span');tabs.className='preview-tabs';
+  for(const [i,title] of ['Работа','Новая вкладка','+'].entries()){const tab=document.createElement('span');tab.className='sample-tab'+(i===1?' active':'');tab.style.setProperty('--preview-radius',window.appearanceRadii[design]+'px');tab.textContent=title;tabs.append(tab);}
+  const address=document.createElement('span');address.className='preview-address';address.textContent='⌕  Поиск или адрес';preview.append(tabs,address);
+  const title=document.createElement('strong');title.textContent=name;const description=document.createElement('small');description.textContent=window.designDescriptions[design];
+  button.append(preview,title,description);button.onclick=()=>chooseAppearance({design});document.getElementById('designs').append(button);
+});
+window.appearanceThemes.forEach((t,theme)=>{
+  const button=document.createElement('button');button.className='theme-choice';button.dataset.theme=theme;button.dataset.mode=t.m;
+  const swatch=document.createElement('span');swatch.className='swatch';swatch.style.background=`linear-gradient(135deg,hsl(${t.h} ${t.s}% ${t.m===2||t.m===3?94:12}%) 50%,hsl(${t.h} 60% 65%) 50%)`;
+  button.append(swatch,document.createTextNode(t.name));button.onclick=()=>chooseAppearance({theme});document.getElementById('themes').append(button);
+});
+let lastAppearanceSelection='';
+function updateAppearanceSelection(){
+  const key=JSON.stringify(state.appearance||{});if(key===lastAppearanceSelection)return;lastAppearanceSelection=key;
+  document.querySelectorAll('.design-choice').forEach(b=>b.setAttribute('aria-pressed',Number(b.dataset.design)===(state.appearance?.design||0)));
+  document.querySelectorAll('.theme-choice').forEach(b=>b.setAttribute('aria-pressed',Number(b.dataset.theme)===(state.appearance?.theme||0)));
+}
+function filterThemes(){const filter=document.getElementById('theme-filter').value;const q=document.getElementById('theme-search').value.trim().toLocaleLowerCase();document.querySelectorAll('.theme-choice').forEach(b=>{const m=Number(b.dataset.mode);b.hidden=!(filter==='all'||filter==='dark'&&m<2||filter==='light'&&(m===2||m===3)||filter==='contrast'&&m===4)||!b.textContent.toLocaleLowerCase().includes(q);});}
+document.getElementById('theme-filter').onchange=filterThemes;
+document.getElementById('theme-search').oninput=filterThemes;
+document.getElementById('google-account').onclick=()=>{menu.classList.remove('open');send('open_google_account');};
+document.getElementById('discard-background').onclick=()=>{
+  menu.classList.remove('open');
+  if(confirm('Выгрузить фоновые вкладки? Несохранённые формы и воспроизведение на них будут потеряны. При открытии вкладки загрузятся заново.'))send('discard_background');
+};
+document.getElementById('search-engine').onchange=e=>send('set_search_engine',{engine:e.target.value});
+document.getElementById('wallpaper-save').onclick=()=>{const value=document.getElementById('wallpaper-url').value.trim();if(!value.startsWith('https://')){document.getElementById('wallpaper-status').textContent='Нужна HTTPS-ссылка на изображение.';return;}send('set_background',{value});};
+document.getElementById('wallpaper-reset').onclick=()=>send('set_background',{value:''});
+document.getElementById('wallpaper-file').onchange=async e=>{const file=e.target.files[0];if(!file)return;const status=document.getElementById('wallpaper-status');if(file.size>20*1024*1024){status.textContent='Выберите изображение до 20 МБ.';return;}try{const bitmap=await createImageBitmap(file);const scale=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();let value=canvas.toDataURL('image/jpeg',.78);if(value.length>900000)value=canvas.toDataURL('image/jpeg',.45);if(value.length>900000)throw Error();send('set_background',{value});status.textContent='Картинка подготовлена и отправлена на сохранение.';}catch{status.textContent='Не удалось обработать изображение. Попробуйте другой файл.';}e.target.value='';};
+
+const customBools=['animations','compact_tabs','show_clock','show_greeting','show_shortcuts','show_services','wallpaper_contain','clock_24','custom_tab_shape'];
+const customNumbers=['wallpaper_dim','font_size','corner_radius','shortcut_count','home_layout','wallpaper_blur'];
+function saveCustomization(){const value={};for(const key of customBools)value[key]=document.getElementById('pref-'+key).checked;for(const key of customNumbers)value[key]=Number(document.getElementById('pref-'+key).value);value.accent=document.getElementById('pref-custom_accent').checked?parseInt(document.getElementById('pref-accent').value.slice(1),16):null;state.customization=value;render();send('set_customization',{value});}
+for(const key of [...customBools,...customNumbers,'custom_accent','accent'])document.getElementById('pref-'+key).onchange=saveCustomization;
+document.getElementById('pref-wallpaper_dim').oninput=e=>document.getElementById('dim-value').textContent=e.target.value+'%';
+document.getElementById('reset-customization').onclick=()=>{document.activeElement?.blur();state.customization={...window.customizationDefaults};render();send('set_customization',{value:state.customization});};
+const browserDefaults={home_url:'',startup:'restore',background_links:false,history_enabled:true,zoom_percent:100};
+let browserSettingsDirty=false;
+function renderBrowserSettings(){if(browserSettingsDirty)return;const p={...browserDefaults,...state.browser_settings};for(const key of Object.keys(browserDefaults)){const el=document.getElementById('browser-'+key);if(el.type==='checkbox')el.checked=p[key];else el.value=p[key];}}
+for(const key of Object.keys(browserDefaults))document.getElementById('browser-'+key).oninput=()=>{browserSettingsDirty=true;};
+function saveBrowserSettings(value){state.browser_settings=value;browserSettingsDirty=false;send('set_browser_settings',{value});renderBrowserSettings();document.getElementById('browser-settings-status').textContent='Настройки отправлены на сохранение';}
+document.getElementById('save-browser-settings').onclick=()=>{const value={};for(const key of Object.keys(browserDefaults)){const el=document.getElementById('browser-'+key);value[key]=el.type==='checkbox'?el.checked:el.value.trim();}value.zoom_percent=Number(value.zoom_percent);if(value.home_url){try{const url=new URL(value.home_url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error();}catch{document.getElementById('browser-settings-status').textContent='Нужен HTTP(S)-адрес без логина и пароля';return;}}saveBrowserSettings(value);};
+document.getElementById('reset-browser-settings').onclick=()=>saveBrowserSettings({...browserDefaults});
+let settingsCategory='all';
+const settingCards=[...document.querySelectorAll('#settings .settings-cards>article')];
+for(const card of settingCards){const title=card.querySelector('h3')?.textContent||'';card.dataset.category=/TLS|VPN/.test(title)?'network':/икон|Текст|фон|Движение|Новая вкладка|Оформление/i.test(title)?'appearance':/Память|истори|Защит|Данные/i.test(title)?'privacy':'browser';}
+function filterSettings(){const q=document.getElementById('settings-search').value.trim().toLocaleLowerCase();let visible=0;for(const card of settingCards){card.hidden=!(settingsCategory==='all'||card.dataset.category===settingsCategory)||!card.textContent.toLocaleLowerCase().includes(q);if(!card.hidden)visible++;}document.getElementById('settings-empty').hidden=visible>0;}
+document.getElementById('settings-search').oninput=filterSettings;
+document.querySelectorAll('[data-settings-category]').forEach(b=>b.onclick=()=>{settingsCategory=b.dataset.settingsCategory;document.querySelectorAll('[data-settings-category]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));filterSettings();});
+const iconLabels={fullscreen:'Полный экран',copy:'Дублировать',print:'Печать',private:'Приватное окно',back:'Назад',forward:'Вперёд',reload:'Обновить',home:'Домой',bookmark:'Добавить закладку',bookmarks:'Закладки',history:'История',downloads:'Загрузки',key:'Пароли',more:'Меню',settings:'Настройки',appearance:'Оформление',shield:'VPN',globe:'Сайт',lock:'HTTPS',info:'Информация',warning:'Предупреждение',close:'Закрыть',plus:'Новая вкладка',power:'Подключение VPN',chevron:'Стрелка',user:'Аккаунт',search:'Поиск'};
+for(const [value,label]of Object.entries(iconLabels)){const o=document.createElement('option');o.value=value;o.textContent=label;document.getElementById('icon-target').append(o);}
+function iconTarget(){const t=document.getElementById('icon-target').value;if(t!=='site')return t;const u=new URL(document.getElementById('icon-site').value);if(!['http:','https:'].includes(u.protocol))throw Error();return 'site:'+u.href;}
+document.getElementById('icon-file').onchange=async e=>{const file=e.target.files[0],status=document.getElementById('icon-status');if(!file)return;try{if(file.size>5*1024*1024)throw Error();const target=iconTarget(),bitmap=await createImageBitmap(file),canvas=document.createElement('canvas');canvas.width=canvas.height=64;const ctx=canvas.getContext('2d');const scale=Math.min(64/bitmap.width,64/bitmap.height),w=bitmap.width*scale,h=bitmap.height*scale;ctx.drawImage(bitmap,(64-w)/2,(64-h)/2,w,h);bitmap.close();const value=canvas.toDataURL('image/png');const rgba=btoa(String.fromCharCode(...ctx.getImageData(0,0,64,64).data));if(value.length>40000)throw Error();const preview=document.getElementById('icon-preview');preview.src=value;preview.hidden=false;send('set_custom_icon',{target,value,rgba:target==='app'?rgba:''});status.textContent='Значок отправлен на сохранение.';}catch{status.textContent='Проверьте адрес сайта и выберите PNG, JPEG или WebP до 5 МБ.';}e.target.value='';};
+document.getElementById('icon-reset').onclick=()=>{try{send('set_custom_icon',{target:iconTarget(),value:'',rgba:''});document.getElementById('icon-preview').hidden=true;}catch{document.getElementById('icon-status').textContent='Укажите адрес сайта.';}};
+render();send('ready');
+document.querySelectorAll('[data-account]').forEach(b=>b.onclick=()=>{send('set_account_prompt',{always:document.getElementById('account-always').checked});window.openPanel(null);send('open_account',{provider:b.dataset.account});});
+document.getElementById('account-save').onclick=()=>{send('set_account_prompt',{always:document.getElementById('account-always').checked});window.openPanel(null);};
+document.getElementById('bg-save').onclick=()=>send('set_background_style',{value:{mode:Number(document.getElementById('bg-mode').value),color_a:parseInt(document.getElementById('bg-a').value.slice(1),16),color_b:parseInt(document.getElementById('bg-b').value.slice(1),16),angle:Number(document.getElementById('bg-angle').value)}});
+document.getElementById('notes-save').onclick=()=>{send('set_notes',{value:document.getElementById('tool-notes').value});document.getElementById('notes-status').textContent='Заметки отправлены на сохранение';};
+document.getElementById('tool-print').onclick=()=>{window.openPanel(null);send('print_page');};
+for(const [id,url] of [['tls-help','https://www.gosuslugi.ru/tls'],['medical-site','https://lkmr.egisz.rosminzdrav.ru/']])document.getElementById(id).onclick=()=>{window.openPanel(null);send('navigate',{value:url});};
+function renderToolsTabs(){const root=document.getElementById('tools-tabs');root.replaceChildren();const q=document.getElementById('tabs-search').value.toLocaleLowerCase();(state.tabs||[]).forEach((t,index)=>{if(!t.title.toLocaleLowerCase().includes(q))return;const b=document.createElement('button');b.textContent=t.title||'Вкладка';b.onclick=()=>{window.openPanel(null);send('select_tab',{index});};root.append(b);});}
+document.getElementById('tabs-search').oninput=renderToolsTabs;
+document.getElementById('tool-duplicate').onclick=()=>{window.openPanel(null);send('duplicate_tab');};
+document.getElementById('tools-memory').onclick=()=>document.getElementById('discard-background').click();
+document.getElementById('tools-settings').onclick=()=>window.openPanel('settings');
+document.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>{window.openPanel(null);send(b.dataset.quick);});
+function calculate(){const a=Number(document.getElementById('calc-a').value),b=Number(document.getElementById('calc-b').value),op=document.getElementById('calc-op').value;const result=op==='+'?a+b:op==='−'?a-b:op==='×'?a*b:a/b;document.getElementById('calc-result').textContent=Number.isFinite(result)?String(result):'Нет конечного результата';}
+for(const id of ['calc-a','calc-b','calc-op'])document.getElementById(id).oninput=calculate;
+</script></body></html>

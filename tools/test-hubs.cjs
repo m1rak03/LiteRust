@@ -1,0 +1,25 @@
+const {chromium}=require('playwright');const fs=require('node:fs');const assert=require('node:assert/strict');
+const html=name=>fs.readFileSync(`ui/${name}.html`,'utf8').replace('/* APPEARANCE_SCRIPT */',fs.readFileSync('ui/appearance.js','utf8'));
+(async()=>{const browser=await chromium.launch({headless:true});try{
+const page=await browser.newPage({viewport:{width:1120,height:620}});const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.setContent(html('toolbar'));
+await page.evaluate(()=>{window.sent=[];window.ipc={postMessage:v=>sent.push(JSON.parse(v))};});
+const state={tabs:[{id:1,title:'Новая вкладка'}],active:0,live_ids:[1],url:'',appearance:{design:0,theme:0},dock_position:'left',vpn_nodes:[],vpn_enabled:false,vpn_running:false,vpn_selected:0};
+await page.evaluate(s=>window.browserUpdate(s),state);
+const profile=await page.locator('#profile-account').boundingBox();assert.equal(profile.x,0);assert.equal(profile.y,0);
+await page.locator('#profile-account').click();assert(await page.locator('#accounts').isVisible());await page.locator('[data-account=yandex]').click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'open_account',provider:'yandex'});
+await page.evaluate(()=>window.openPanel('settings'));
+for(const position of ['left','right','top','bottom']){await page.locator(`[data-position=${position}]`).click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'set_dock',position});await page.evaluate(s=>window.browserUpdate(s),{...state,dock_position:position});assert.equal(await page.locator(`[data-position=${position}]`).getAttribute('aria-pressed'),'true');}
+await page.screenshot({path:'audit-logs/screenshots/v011-settings.png'});
+await page.evaluate(()=>window.openPanel('vpn'));await page.locator('#vpn-open-import').click();await page.locator('#vpn-key').fill('trojan://test@example.com:443');await page.locator('#vpn-import').click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'vpn_import',value:'trojan://test@example.com:443',kind:'auto'});assert.equal(await page.locator('#vpn-key').inputValue(),'');
+await page.evaluate(s=>window.browserUpdate(s),{...state,vpn_nodes:['Test server','<img src=x onerror=alert(1)>']});assert.equal(await page.locator('#vpn-server img').count(),0);
+await page.locator('#vpn-search').fill('onerror');assert.equal(await page.locator('.server-row:visible').count(),1);await page.locator('#vpn-search').fill('');await page.locator('.server-row[data-index="1"]').click();await page.evaluate(()=>{sent=[];});page.once('dialog',d=>d.dismiss());await page.locator('#vpn-power').click();assert.equal(await page.evaluate(()=>sent.length),0);
+page.once('dialog',d=>d.accept());await page.locator('#vpn-power').click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'vpn_apply',enabled:true,selected:1,system:false});
+await page.evaluate(s=>window.browserUpdate(s),{...state,vpn_nodes:['Test server'],vpn_enabled:true,vpn_running:false});assert.equal(await page.locator('#vpn-status').textContent(),'VPN остановился');assert(await page.locator('#vpn-import').isDisabled());
+await page.evaluate(s=>window.browserUpdate(s),{...state,vpn_nodes:['Тестовый сервер · VLESS','Тестовый сервер · Trojan','Тестовый сервер · Shadowsocks'],vpn_details:['VLESS / TCP / REALITY','TROJAN / TCP / TLS','SHADOWSOCKS / TCP'],vpn_enabled:false,vpn_running:false});await page.screenshot({path:'audit-logs/screenshots/v011-vpn.png'});
+await page.evaluate(s=>window.browserUpdate(s),{...state,vpn_nodes:['Test'],vpn_enabled:true,vpn_running:true});await page.locator('#vpn-probe').click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'vpn_probe'});
+await page.setViewportSize({width:690,height:400});assert.equal(await page.locator('#vpn-power').count(),1);await page.locator('#vpn-power').scrollIntoViewIfNeeded();assert(await page.locator('#vpn-power').isVisible());
+await page.evaluate(s=>window.browserUpdate(s),{...state,private_mode:true,vpn_nodes:['Test']});assert(await page.locator('#vpn-import').isDisabled());assert(await page.locator('#vpn-power').isDisabled());
+await page.setContent(html('dock'));await page.evaluate(()=>{window.sent=[];window.ipc={postMessage:v=>sent.push(JSON.parse(v))};});
+for(const position of ['left','right','top','bottom']){await page.setViewportSize(['top','bottom'].includes(position)?{width:1120,height:54}:{width:54,height:620});await page.evaluate(position=>window.dockUpdate({position,appearance:{design:0,theme:0}}),position);const buttons=await page.locator('button').evaluateAll(bs=>bs.map(b=>{const r=b.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};}));assert(buttons.every(b=>b.x>=0&&b.y>=0));await page.locator('[data-action=show_settings]').click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'show_settings'});}
+assert.deepEqual(errors,[]);console.log('PASS: top-left account, 4 dock positions, hub selection, cleared key input, escaped names, connect confirmation/cancellation, failed state, private restrictions and narrow layout.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

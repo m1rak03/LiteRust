@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+/node_modules
+
+/audit-logs
+**/__pycache__/
+*.pyc
+*.log

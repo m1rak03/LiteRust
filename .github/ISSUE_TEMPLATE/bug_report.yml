@@ -9,7 +9,7 @@ body:
     id: version
     attributes:
       label: Версия LiteRust
-      placeholder: 0.11.0-alpha.2
+      placeholder: 0.15.0-alpha.1
     validations:
       required: true
   - type: input
