@@ -1,4 +1,4 @@
-//! LiteRust Browser 0.15-alpha.4: per-site network-filter exceptions, permission prompts,
+//! LiteRust Browser 0.16-alpha.1: per-site network-filter exceptions, permission prompts,
 //! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -85,6 +85,8 @@ enum UiCommand {
     },
     DockExpanded {
         open: bool,
+        #[serde(default)]
+        animate: bool,
     },
     ProfileCreate {
         name: String,
@@ -326,7 +328,15 @@ struct LivePage {
     loading: bool,
 }
 
+struct DrawerAnimation {
+    from: f64,
+    to: f64,
+    started: std::time::Instant,
+}
+
 struct Browser {
+    dock_animation: Option<DrawerAnimation>,
+    dock_width: std::cell::Cell<f64>,
     dock_expanded: bool,
     local_profiles: literust_browser::local_profiles::Catalog,
     shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
@@ -381,6 +391,8 @@ impl Browser {
             .saturating_add(1)
             .max(1);
         Self {
+            dock_animation: None,
+            dock_width: std::cell::Cell::new(54.0),
             dock_expanded: false,
             local_profiles: literust_browser::local_profiles::Catalog::load(&app_root())
                 .unwrap_or_default(),
@@ -1150,15 +1162,45 @@ impl Browser {
                 }
             }
             UiCommand::SetSidebar { value } => {
+                self.dock_animation = None;
                 self.data.sidebar = value.validated();
                 self.dock_expanded = false;
                 self.persist();
                 self.resize();
                 self.sync_toolbar();
             }
-            UiCommand::DockExpanded { open } => {
+            UiCommand::DockExpanded { open, animate } => {
                 self.dock_expanded = open;
-                self.resize();
+                let (bounds, _) = self.layout_bounds();
+                let target = bounds
+                    .size
+                    .to_logical::<f64>(self.window.scale_factor())
+                    .width;
+                if animate
+                    && self.data.customization.animations
+                    && matches!(
+                        self.data.dock_position,
+                        layout::DockPosition::Left | layout::DockPosition::Right
+                    )
+                {
+                    self.dock_animation = Some(DrawerAnimation {
+                        from: self.dock_width.get(),
+                        to: target,
+                        started: std::time::Instant::now(),
+                    });
+                } else {
+                    self.dock_animation = None;
+                    self.dock_width.set(target);
+                    let _ = self.dock.set_bounds(bounds);
+                }
+                #[cfg(windows)]
+                {
+                    let _ = windows_platform::raise(if self.appearance_open {
+                        &self.toolbar
+                    } else {
+                        &self.dock
+                    });
+                }
                 self.sync_toolbar();
             }
             UiCommand::ProfileCreate { name } => {
@@ -1966,6 +2008,31 @@ impl Browser {
         }
     }
 
+    fn animate_drawer(&mut self) {
+        let Some(animation) = self.dock_animation.as_ref() else {
+            return;
+        };
+        let progress = (animation.started.elapsed().as_secs_f64() / 0.2).min(1.0);
+        let width =
+            animation.from + (animation.to - animation.from) * (1.0 - (1.0 - progress).powi(3));
+        let (bounds, _) = self.layout_bounds();
+        let scale = self.window.scale_factor();
+        let mut position = bounds.position.to_logical::<f64>(scale);
+        let size = bounds.size.to_logical::<f64>(scale);
+        if matches!(self.data.dock_position, layout::DockPosition::Right) {
+            position.x += size.width - width;
+        }
+        if (width - self.dock_width.get()).abs() >= 0.5 || progress >= 1.0 {
+            let _ = self
+                .dock
+                .set_bounds(rect(position.x, position.y, width, size.height));
+            self.dock_width.set(width);
+        }
+        if progress >= 1.0 {
+            self.dock_animation = None;
+        }
+    }
+
     fn resize(&self) {
         let _ = self.toolbar.evaluate_script(&format!(
             "window.updateWindowState?.({});",
@@ -1982,6 +2049,12 @@ impl Browser {
             self.toolbar_height(),
         ));
         let (dock_bounds, bounds) = self.layout_bounds();
+        self.dock_width.set(
+            dock_bounds
+                .size
+                .to_logical::<f64>(self.window.scale_factor())
+                .width,
+        );
         let _ = self.dock.set_bounds(dock_bounds);
         for page in self.pages.values() {
             let _ = page.view.set_bounds(bounds);
@@ -2188,7 +2261,7 @@ fn main() {
     if fs::create_dir_all(&diagnostics).is_ok() {
         let _ = fs::write(
             diagnostics.join("startup.log"),
-            b"LiteRust 0.15.0-alpha.4 startup\n",
+            b"LiteRust 0.16.0-alpha.1 startup\n",
         );
     }
     if let Err(error) = run() {
@@ -2225,6 +2298,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err(std::io::Error::other("Локальный профиль не найден").into());
     }
     let _ = CURRENT_PROFILE.set(selected);
+    if !std::env::args().any(|a| a == "--private") {
+        literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
+            if !c.profiles.iter().any(|p| p.id == current_profile_id()) {
+                return Err(std::io::Error::other("Профиль больше не существует"));
+            }
+            let path = profile_root();
+            let archived = app_root().join("ProfileTrash").join(current_profile_id());
+            if !path.exists() && archived.exists() {
+                fs::rename(archived, path)?;
+            }
+            Ok(())
+        })?;
+    }
     fs::create_dir_all(profile_root().join("diagnostics"))?;
 
     let private_mode = std::env::args().any(|arg| arg == "--private");
@@ -2259,9 +2345,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok(),
         )
         .with_title(if private_mode {
-            "LiteRust 0.15-alpha.4 — приватное окно"
+            "LiteRust 0.16-alpha.1 — приватное окно"
         } else {
-            "LiteRust Browser 0.15-alpha.4"
+            "LiteRust Browser 0.16-alpha.1"
         })
         .with_inner_size(LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(LogicalSize::new(690.0, 400.0))
@@ -2594,6 +2680,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ => {}
         }
+        browser.animate_drawer();
+        if browser.dock_animation.is_some(){*control_flow=ControlFlow::WaitUntil(std::time::Instant::now()+std::time::Duration::from_millis(16));}
         if browser.close_requested {
             browser.persist();
             #[cfg(windows)] { browser.system_vpn.take();browser.vpn_tunnel.take(); }

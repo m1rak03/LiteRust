@@ -8,7 +8,7 @@ await p.keyboard.press('Control+Shift+y');assert.deepEqual(await p.evaluate(()=>
 await row('print').getByRole('button',{name:'Убрать:',exact:false}).click();assert.equal(await row('print').locator('kbd').textContent(),'Отключено');await p.evaluate(()=>sent=[]);await p.keyboard.press('Control+p');assert.equal(await p.evaluate(()=>sent.length),0);
 await row('new_tab').getByRole('button',{name:'Изменить:',exact:false}).click();await p.keyboard.press('Escape');assert(await p.locator('#settings').isVisible());assert.equal(await row('new_tab').locator('kbd').textContent(),'Ctrl+Shift+Y');
 await row('new_tab').getByRole('button',{name:'Сброс:',exact:false}).click();assert.equal(await row('new_tab').locator('kbd').textContent(),'Ctrl+T');
-await p.locator('#shortcut-search').fill('печать');assert.equal(await p.locator('.shortcut-row').count(),1);await p.locator('#shortcut-search').fill('');
+await p.locator('#shortcut-search').fill('печать');assert.equal(await p.locator('#shortcut-list .shortcut-row').count(),1);await p.locator('#shortcut-search').fill('');
 await p.screenshot({path:'docs/assets/shortcuts.png'});
 await p.setViewportSize({width:690,height:800});assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
 p.on('dialog',d=>d.accept());await p.locator('#shortcut-reset-all').click();assert.equal(await row('print').locator('kbd').textContent(),'Ctrl+P');

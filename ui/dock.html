@@ -17,7 +17,7 @@ body.motion-off *{animation:none!important;transition:none!important}.ui-icon{wi
 <button data-action="show_settings" title="Настройки" aria-label="Настройки"><span data-icon="settings"></span></button>
 </nav><script>
 /* APPEARANCE_SCRIPT */
-function send(action,data={}){window.ipc?.postMessage(JSON.stringify({action,...data}));}
+function send(action,data={}){if(action==='dock_expanded')data.animate=!document.body.classList.contains('motion-off')&&!matchMedia('(prefers-reduced-motion:reduce)').matches;window.ipc?.postMessage(JSON.stringify({action,...data}));}
 document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>send(b.dataset.action));
 let sidebarState={mode:'click',width:264,order:[],hidden:[]},expanded=false,hoverTimer;
 const nav=document.querySelector('nav');
