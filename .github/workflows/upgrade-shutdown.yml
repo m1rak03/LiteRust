@@ -41,7 +41,7 @@ jobs:
           $graphics.CopyFromScreen($screen.Location,[Drawing.Point]::Empty,$screen.Size)
           $bitmap.Save("$pwd/diagnostics/before-close.png")
           $graphics.Dispose();$bitmap.Dispose()
-          rustc --edition=2021 -O -C strip=symbols tools/installer-close.rs -o packaging/close-browser.exe
+          rustc --edition=2021 -O -C target-feature=+crt-static -C strip=symbols tools/installer-close.rs -o packaging/close-browser.exe
           if ($LASTEXITCODE -ne 0) { throw 'Native shutdown helper build failed' }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw 'NSIS install failed' }
