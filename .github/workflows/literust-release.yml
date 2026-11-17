@@ -76,7 +76,9 @@ jobs:
             using System; using System.Runtime.InteropServices;
             public static class FrameTest {
               [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left,Top,Right,Bottom; }
-              [DllImport("user32.dll")] public static extern int GetWindowLongW(IntPtr h,int index);
+              [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X,Y; }
+              [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref POINT p);
+              [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h,out RECT r);
               [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out RECT r);
               [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
               [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
@@ -86,13 +88,14 @@ jobs:
               [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int cmd);
             }
           '@
-            if (([FrameTest]::GetWindowLongW($app.MainWindowHandle,-16) -band 0x00C00000) -ne 0) { throw 'System caption is still present' }
             function Click-CaptionButton([int]$FromRight) {
               $rect=New-Object FrameTest+RECT
-              [void][FrameTest]::GetWindowRect($app.MainWindowHandle,[ref]$rect)
+              $origin=New-Object FrameTest+POINT
+              [void][FrameTest]::GetClientRect($app.MainWindowHandle,[ref]$rect)
+              [void][FrameTest]::ClientToScreen($app.MainWindowHandle,[ref]$origin)
               $scale=[FrameTest]::GetDpiForWindow($app.MainWindowHandle)/96.0
               $inset=if([WindowState]::IsZoomed($app.MainWindowHandle)){0}else{6}
-              [void][FrameTest]::SetCursorPos([int]($rect.Right-($FromRight+$inset)*$scale),[int]($rect.Top+(21+$inset)*$scale))
+              [void][FrameTest]::SetCursorPos([int]($origin.X+$rect.Right-($FromRight+$inset)*$scale),[int]($origin.Y+(21+$inset)*$scale))
               [FrameTest]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
               [FrameTest]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
               Start-Sleep -Seconds 1
@@ -101,6 +104,12 @@ jobs:
             if ([WindowState]::IsZoomed($app.MainWindowHandle)) { throw 'Custom restore button failed' }
             [void][FrameTest]::MoveWindow($app.MainWindowHandle,40,40,900,600,$true)
             Start-Sleep -Seconds 1
+            # Tao retains WS_CAPTION for native window behavior; WM_NCCALCSIZE removes the visible titlebar.
+            $outer=New-Object FrameTest+RECT
+            $clientOrigin=New-Object FrameTest+POINT
+            [void][FrameTest]::GetWindowRect($app.MainWindowHandle,[ref]$outer)
+            [void][FrameTest]::ClientToScreen($app.MainWindowHandle,[ref]$clientOrigin)
+            if ([math]::Abs($clientOrigin.Y-$outer.Top) -gt 2) { throw 'Unexpected non-client titlebar height' }
             Click-CaptionButton 69
             if (-not [WindowState]::IsZoomed($app.MainWindowHandle)) { throw 'Custom maximize button failed' }
             Click-CaptionButton 115
