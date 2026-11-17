@@ -33,6 +33,13 @@ jobs:
             Start-Sleep -Seconds 2
             if((Test-Path $log) -and (Get-Content $log -Raw) -match 'New tab document ready') { break }
           }
+          # A separate private copy must not be touched just because its exe has the same name.
+          $otherFolder=Join-Path $env:RUNNER_TEMP 'OtherLiteRust'
+          New-Item -ItemType Directory -Force $otherFolder | Out-Null
+          Copy-Item "$folder/literust-browser.exe","$folder/WebView2Loader.dll" $otherFolder/
+          $other=Start-Process "$otherFolder/literust-browser.exe" -ArgumentList '--private' -PassThru
+          for($i=0;$i -lt 20;$i++) { Start-Sleep -Milliseconds 500; $other.Refresh(); if($other.MainWindowHandle -ne 0) { break } }
+          if($other.HasExited -or $other.MainWindowHandle -eq 0) { throw 'Separate private copy failed to start' }
           New-Item -ItemType Directory -Force diagnostics | Out-Null
           Add-Type -AssemblyName System.Windows.Forms,System.Drawing
           $screen=[Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -53,7 +60,11 @@ jobs:
           Get-Content "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/install-close.log"
           if ($closeResult -ne 0) { throw "Shutdown helper failed: $closeResult" }
           if(-not $app.WaitForExit(5000)) { throw 'Browser did not exit' }
-          Write-Output 'PASS: previous release closes gracefully through installer helper'
+          $other.Refresh()
+          if($other.HasExited) { throw 'Installer closed a different installation' }
+          Write-Output 'PASS: previous release closes gracefully; separate installation remains running'
+          [void]$other.CloseMainWindow()
+          if(-not $other.WaitForExit(5000)) { Stop-Process -Id $other.Id -Force }
       - name: Collect diagnostics
         if: always()
         shell: pwsh
