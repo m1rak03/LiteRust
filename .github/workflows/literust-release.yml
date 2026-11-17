@@ -138,6 +138,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Session storage test failed' }
           Copy-Item "$env:LOCALAPPDATA/LiteRustSessionTest/results.log" target/release/session-self-test.log
           Copy-Item $loader.FullName packaging/WebView2Loader.dll
+          rustc --edition=2021 -O -C strip=symbols tools/installer-close.rs -o packaging/close-browser.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Native shutdown helper build failed' }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
           & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/setup.nsi

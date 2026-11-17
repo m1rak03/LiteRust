@@ -2,7 +2,7 @@ name: Verify graceful shutdown of previous release
 on:
   push:
     paths:
-      - packaging/close-browser.ps1
+      - tools/installer-close.rs
       - packaging/test-shutdown.nsi
       - .github/workflows/upgrade-shutdown.yml
   workflow_dispatch:
@@ -16,6 +16,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install and close previous browser with production helper
         shell: pwsh
         run: |
@@ -40,6 +41,8 @@ jobs:
           $graphics.CopyFromScreen($screen.Location,[Drawing.Point]::Empty,$screen.Size)
           $bitmap.Save("$pwd/diagnostics/before-close.png")
           $graphics.Dispose();$bitmap.Dispose()
+          rustc --edition=2021 -O -C strip=symbols tools/installer-close.rs -o packaging/close-browser.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Native shutdown helper build failed' }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw 'NSIS install failed' }
           & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/test-shutdown.nsi

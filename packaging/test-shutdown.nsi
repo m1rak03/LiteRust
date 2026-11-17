@@ -1,4 +1,4 @@
-Unicode true
+﻿Unicode true
 Name "LiteRust shutdown regression"
 OutFile "test-shutdown.exe"
 RequestExecutionLevel user
@@ -6,8 +6,8 @@ InstallDir "$LOCALAPPDATA\Programs\LiteRust"
 Section
 InitPluginsDir
 SetOutPath "$PLUGINSDIR"
-File "close-browser.ps1"
-nsExec::ExecToStack '"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\close-browser.ps1" -InstallDir "$INSTDIR"'
+File "close-browser.exe"
+nsExec::ExecToStack '"$PLUGINSDIR\close-browser.exe" "$INSTDIR" "$LOCALAPPDATA\LiteRustBrowser\diagnostics\install-close.log"'
 Pop $0
 Pop $1
 CreateDirectory "$LOCALAPPDATA\LiteRustBrowser\diagnostics"
