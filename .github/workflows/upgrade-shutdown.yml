@@ -1,5 +1,9 @@
 name: Verify graceful shutdown of previous release
 on:
+  push:
+    paths:
+      - packaging/close-browser.ps1
+      - .github/workflows/upgrade-shutdown.yml
   workflow_dispatch:
 permissions:
   contents: read
