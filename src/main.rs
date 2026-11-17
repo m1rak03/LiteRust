@@ -1,4 +1,4 @@
-//! LiteRust Browser 0.15-alpha.2: per-site network-filter exceptions, permission prompts,
+//! LiteRust Browser 0.15-alpha.3: per-site network-filter exceptions, permission prompts,
 //! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -1843,7 +1843,7 @@ fn main() {
     if fs::create_dir_all(&diagnostics).is_ok() {
         let _ = fs::write(
             diagnostics.join("startup.log"),
-            b"LiteRust 0.15.0-alpha.2 startup\n",
+            b"LiteRust 0.15.0-alpha.3 startup\n",
         );
     }
     if let Err(error) = run() {
@@ -1899,9 +1899,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok(),
         )
         .with_title(if private_mode {
-            "LiteRust 0.15-alpha.2 — приватное окно"
+            "LiteRust 0.15-alpha.3 — приватное окно"
         } else {
-            "LiteRust Browser 0.15-alpha.2"
+            "LiteRust Browser 0.15-alpha.3"
         })
         .with_inner_size(LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(LogicalSize::new(690.0, 400.0))
