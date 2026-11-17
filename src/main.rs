@@ -75,6 +75,20 @@ fn lru_victim(entries: impl IntoIterator<Item = (u64, u64)>, protected_id: u64) 
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum UiCommand {
+    ProfileCreate {
+        name: String,
+    },
+    ProfileSwitch {
+        id: String,
+    },
+    ProfileUpdate {
+        id: String,
+        name: String,
+        avatar: String,
+    },
+    ProfileDelete {
+        id: String,
+    },
     Shortcut {
         name: String,
     },
@@ -235,6 +249,8 @@ enum AppEvent {
 
 #[derive(Serialize)]
 struct ToolbarState<'a> {
+    local_profiles: &'a literust_browser::local_profiles::Catalog,
+    current_profile: &'a str,
     maximized: bool,
     shortcuts: &'a literust_browser::shortcuts::Shortcuts,
     shortcut_catalog: &'static [(&'static str, &'static str, &'static str)],
@@ -294,6 +310,7 @@ struct LivePage {
 }
 
 struct Browser {
+    local_profiles: literust_browser::local_profiles::Catalog,
     shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
     closed_tabs: Vec<String>,
     #[cfg(windows)]
@@ -346,6 +363,8 @@ impl Browser {
             .saturating_add(1)
             .max(1);
         Self {
+            local_profiles: literust_browser::local_profiles::Catalog::load(&app_root())
+                .unwrap_or_default(),
             shortcuts: std::rc::Rc::new(std::cell::RefCell::new(
                 literust_browser::shortcuts::Runtime {
                     bindings: data.shortcuts.clone(),
@@ -586,6 +605,8 @@ impl Browser {
     fn sync_toolbar(&self) {
         let url = self.current_url();
         let state = ToolbarState {
+            local_profiles: &self.local_profiles,
+            current_profile: current_profile_id(),
             maximized: self.window.is_maximized(),
             background_style: self.data.background_style,
             account_prompt_always: self.data.account_prompt_always,
@@ -927,9 +948,13 @@ impl Browser {
     fn load_active(&mut self) {
         let url = self.current_url().to_owned();
         let html = match url.as_str() {
-            NEW_TAB => Some(literust_browser::newtab::render(
+            NEW_TAB => Some(literust_browser::newtab::render_with_profile(
                 &self.data,
                 self.private_mode,
+                self.local_profiles
+                    .profiles
+                    .iter()
+                    .find(|p| p.id == current_profile_id()),
             )),
             BOOKMARKS | HISTORY | DOWNLOADS => Some(render_library(&url, &self.data)),
             _ => None,
@@ -1052,6 +1077,71 @@ impl Browser {
             let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
         }
         match command {
+            UiCommand::ProfileCreate { name } => {
+                if self.private_mode {
+                    self.notice("Управляйте профилями в обычном окне.");
+                    return;
+                }
+                match literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
+                    c.create(&name)?;
+                    Ok(())
+                }) {
+                    Ok(c) => {
+                        self.local_profiles = c;
+                        self.sync_toolbar();
+                    }
+                    Err(e) => self.notice(&e.to_string()),
+                }
+            }
+            UiCommand::ProfileUpdate { id, name, avatar } => {
+                if self.private_mode {
+                    return;
+                }
+                match literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
+                    c.update(&id, &name, &avatar)
+                }) {
+                    Ok(c) => {
+                        self.local_profiles = c;
+                        self.sync_toolbar();
+                        self.refresh_newtabs();
+                    }
+                    Err(e) => self.notice(&e.to_string()),
+                }
+            }
+            UiCommand::ProfileDelete { id } => {
+                if self.private_mode {
+                    return;
+                }
+                match literust_browser::local_profiles::Catalog::delete(
+                    &app_root(),
+                    &id,
+                    current_profile_id(),
+                ) {
+                    Ok(c) => {
+                        self.local_profiles = c;
+                        self.sync_toolbar();
+                        self.notice("Профиль убран из списка. Его данные перемещены в ProfileTrash для восстановления.");
+                    }
+                    Err(e) => self.notice(&e.to_string()),
+                }
+            }
+            UiCommand::ProfileSwitch { id } => {
+                if self.private_mode || id == current_profile_id() {
+                    return;
+                }
+                match literust_browser::local_profiles::Catalog::load(&app_root()) {
+                    Ok(c) if c.profiles.iter().any(|p| p.id == id) => {
+                        self.persist();
+                        match std::env::current_exe()
+                            .and_then(|exe| Command::new(exe).arg("--profile").arg(&id).spawn())
+                        {
+                            Ok(_) => {}
+                            Err(e) => self.notice(&format!("Не удалось открыть профиль: {e}")),
+                        }
+                    }
+                    _ => self.notice("Профиль не найден"),
+                }
+            }
             UiCommand::Shortcut { name } => self.run_shortcut(&name),
             UiCommand::ShortcutRecording { active } => {
                 self.shortcuts.borrow_mut().recording = active;
@@ -1601,7 +1691,7 @@ impl Browser {
                 }
             }
             UiCommand::NewPrivateWindow => {
-                match std::env::current_exe().and_then(|exe| Command::new(exe).arg("--private").spawn()) {
+                match std::env::current_exe().and_then(|exe| Command::new(exe).arg("--profile").arg(current_profile_id()).arg("--private").spawn()) {
                     Ok(_) => self.notice("Открыто отдельное приватное окно. Файлы загрузок всё равно сохраняются на диск."),
                     Err(err) => self.notice(&format!("Не удалось открыть приватное окно: {err}")),
                 }
@@ -1927,7 +2017,7 @@ fn export_bookmarks(data: &BrowserData) -> std::io::Result<PathBuf> {
     ))
 }
 
-fn profile_root() -> PathBuf {
+fn app_root() -> PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .or_else(|| {
@@ -1936,6 +2026,15 @@ fn profile_root() -> PathBuf {
         })
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         .join("LiteRustBrowser")
+}
+
+static CURRENT_PROFILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+fn current_profile_id() -> &'static str {
+    CURRENT_PROFILE.get().map(String::as_str).unwrap_or("main")
+}
+fn profile_root() -> PathBuf {
+    literust_browser::local_profiles::root(&app_root(), current_profile_id())
+        .expect("validated local profile id")
 }
 
 fn startup_log(message: &str) {
@@ -2012,6 +2111,19 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let catalog = literust_browser::local_profiles::Catalog::load(&app_root())?;
+    let args: Vec<String> = std::env::args().collect();
+    let selected = args
+        .windows(2)
+        .find(|a| a[0] == "--profile")
+        .map(|a| a[1].clone())
+        .unwrap_or_else(|| catalog.selected.clone());
+    if !catalog.profiles.iter().any(|p| p.id == selected) {
+        return Err(std::io::Error::other("Локальный профиль не найден").into());
+    }
+    let _ = CURRENT_PROFILE.set(selected);
+    fs::create_dir_all(profile_root().join("diagnostics"))?;
+
     let private_mode = std::env::args().any(|arg| arg == "--private");
     // Fail before creating any native window: an absent runtime must not leave
     // a blank window while WebView construction is attempted.
@@ -2069,6 +2181,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             lock?
         })
     };
+    if !private_mode {
+        literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
+            c.selected = current_profile_id().into();
+            Ok(())
+        })?;
+    }
     let (data, data_file, context) = if private_mode {
         // No normal profile opened and no browser-data.json read/written.
         (BrowserData::default().clean(), None, None)
@@ -2376,7 +2494,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if browser.restart_requested {
             browser.restart_requested=false;
             browser.persist();
-            match std::env::current_exe().and_then(|exe|Command::new(exe).arg("--resume-after-restart").spawn()) {
+            match std::env::current_exe().and_then(|exe|Command::new(exe).arg("--profile").arg(current_profile_id()).arg("--resume-after-restart").spawn()) {
                 Ok(_)=>{
                     #[cfg(windows)]
                     { browser.system_vpn.take(); browser.vpn_tunnel.take(); }

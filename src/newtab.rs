@@ -102,6 +102,24 @@ pub fn render(data: &BrowserData, private_mode: bool) -> String {
         )
 }
 
+pub fn render_with_profile(
+    data: &BrowserData,
+    private_mode: bool,
+    profile: Option<&crate::local_profiles::Profile>,
+) -> String {
+    let html = render(data, private_mode);
+    let avatar = profile
+        .map(|p| {
+            if !private_mode && crate::icons::png_bytes(&p.avatar).is_some() {
+                format!("<img alt=\"\" src=\"{}\">", escape_html(&p.avatar))
+            } else {
+                escape_html(&p.name.chars().next().unwrap_or('L').to_string())
+            }
+        })
+        .unwrap_or_else(|| "L".into());
+    html.replace("<!-- LOCAL_PROFILE_AVATAR -->L", &avatar)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,7 +180,7 @@ mod tests {
         let html = render(&data, false);
         assert!(html.contains("background:linear-gradient(90deg,#123456,#abcdef)!important"));
         assert!(!html.contains("src=\"https://example.org/a.jpg"));
-        assert!(html.contains("href=\"literust://accounts\">Аккаунты"));
+        assert!(html.contains("href=\"literust://accounts\" aria-label=\"Локальный профиль\""));
         data.background_style.mode = 0;
         assert!(render(&data, false).contains("src=\"https://example.org/a.jpg"));
     }
@@ -181,7 +199,7 @@ mod tests {
     fn default_services_and_signin() {
         let html = render(&BrowserData::default(), false);
         assert_eq!(html.matches("class=\"shortcut\"").count(), 4);
-        assert!(html.contains("class=\"sign-in\" href=\"literust://accounts\""));
+        assert!(html.contains("class=\"sign-in profile-avatar\" href=\"literust://accounts\""));
         assert!(html.contains("https://www.google.com/search?q="));
     }
 }
