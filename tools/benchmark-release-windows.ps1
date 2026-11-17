@@ -27,9 +27,10 @@ foreach($version in @(@('0.15.0-alpha.4',$OldExe),@('0.16.0-alpha.1',$NewExe))){
     # Older unrelated processes must not be mistaken for its descendants.
     $all=@(Get-CimInstance Win32_Process | Where-Object { $_.CreationDate -ge $rootStarted.AddMilliseconds(-1) })
     $ids=[Collections.Generic.HashSet[int]]::new();[void]$ids.Add($app.Id)
-    do{$changed=$false;foreach($item in $all){if($ids.Contains([int]$item.ParentProcessId)-and $ids.Add([int]$item.ProcessId)){$changed=$true}}}while($changed)
+    $born=@{};$born[[int]$app.Id]=$rootStarted
+    do{$changed=$false;foreach($item in $all){if($ids.Contains([int]$item.ParentProcessId) -and $item.CreationDate -ge $born[[int]$item.ParentProcessId].AddMilliseconds(-1) -and $ids.Add([int]$item.ProcessId)){$born[[int]$item.ProcessId]=$item.CreationDate;$changed=$true}}}while($changed)
     [long]$privateBytes=0;[long]$workingBytes=0;$count=0
-    foreach($childId in $ids){$process=Get-Process -Id $childId -ErrorAction SilentlyContinue;if($process){$privateBytes+=$process.PrivateMemorySize64;$workingBytes+=$process.WorkingSet64;$count++}}
+    foreach($childId in $ids){$process=Get-Process -Id $childId -ErrorAction SilentlyContinue;if($process -and [math]::Abs(($process.StartTime-$born[[int]$childId]).TotalMilliseconds) -lt 10){$privateBytes+=$process.PrivateMemorySize64;$workingBytes+=$process.WorkingSet64;$count++}}
     $rows.Add([pscustomobject]@{Version=$version[0];Scenario='5 private internal tabs; default live budget';Repeat=$repeat;Sample=$sample;StartupReadyMs=[math]::Round($startup);FourTabCommandsMs=[math]::Round($openElapsed);PrivateMiB=[math]::Round($privateBytes/1MB,2);SumWorkingSetMiB=[math]::Round($workingBytes/1MB,2);Processes=$count})
     Start-Sleep -Seconds 2
    }

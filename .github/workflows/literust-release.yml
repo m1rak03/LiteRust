@@ -226,6 +226,14 @@ jobs:
           if (Test-Path "$folder/literust-browser.exe") { Get-ChildItem $folder; throw "Installed browser not removed, uninstall exit: $($uninstall.ExitCode)" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           "$hash  LiteRust-0.16.0-alpha.1-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+      - name: Preserve installer under test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-under-test
+          path: packaging/*Setup-x64.exe
+          retention-days: 3
+          compression-level: 0
       - name: Preserve Windows diagnostics
         if: always()
         uses: actions/upload-artifact@v4
