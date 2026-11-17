@@ -2685,10 +2685,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                browser.persist();
-                #[cfg(windows)]
-                { browser.system_vpn.take(); browser.vpn_tunnel.take(); }
-                *control_flow = ControlFlow::Exit;
+                browser.close_requested = true;
             }
             _ => {}
         }

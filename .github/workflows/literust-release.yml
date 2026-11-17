@@ -136,6 +136,7 @@ jobs:
           }
           & ./tools/test-sessions-windows.ps1 -Exe (Resolve-Path target/release/literust-browser.exe)
           if ($LASTEXITCODE -ne 0) { throw 'Session storage test failed' }
+          Copy-Item "$env:LOCALAPPDATA/LiteRustSessionTest/results.log" target/release/session-self-test.log
           Copy-Item $loader.FullName packaging/WebView2Loader.dll
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
@@ -156,13 +157,17 @@ jobs:
           $oldReady = $false
           for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Seconds 2
-            if ((Test-Path $log) -and ((Get-Content $log -Raw) -match 'Main toolbar IPC ready')) { $oldReady = $true; break }
+            if ((Test-Path $log) -and ((Get-Content $log -Raw) -match 'New tab document ready')) { $oldApp.Refresh(); if ($oldApp.MainWindowHandle -ne 0) { $oldReady = $true; break } }
           }
           if (-not $oldReady) { throw 'Old version failed startup before upgrade' }
           $install = Start-Process $exe -ArgumentList '/S' -PassThru
           if (-not $install.WaitForExit(180000)) { Stop-Process -Id $install.Id -Force; throw 'Installer timed out' }
           $install.Refresh()
-          if ($install.ExitCode -ne 0) { throw 'Installation failed' }
+          if (Test-Path "$profile/diagnostics/install-close.log") { Get-Content "$profile/diagnostics/install-close.log"; Copy-Item "$profile/diagnostics/install-close.log" target/release/ }
+          if ($install.ExitCode -ne 0) {
+            if (Test-Path $log) { Get-Content $log }
+            throw "Installation failed, exit code: $($install.ExitCode)"
+          }
           $oldApp.Refresh()
           if (-not $oldApp.HasExited) { throw 'Upgrade did not close old browser' }
           Remove-Item $log -ErrorAction SilentlyContinue
@@ -228,7 +233,6 @@ jobs:
           path: |
             target/release/*.log
             packaging/modernization-benchmark.csv
-            ~\AppData\Local\LiteRustSessionTest\results.log
             target/release/literust-browser.exe
             target/release/WebView2Loader.dll
       - name: Publish verified prerelease
