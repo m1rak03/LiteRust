@@ -19,8 +19,9 @@ pub fn configure(
     view: &wry::WebView,
     proxy: EventLoopProxy<AppEvent>,
     fullscreen: Rc<Cell<bool>>,
+    shortcuts: Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
 ) -> windows::core::Result<Rc<Cell<usize>>> {
-    install_shortcuts(view, proxy.clone(), fullscreen)?;
+    install_shortcuts(view, proxy.clone(), fullscreen, shortcuts)?;
     let active = Rc::new(Cell::new(0usize));
     let pending = active.clone();
     // Fail view creation if these settings cannot be applied. Google's vault is
@@ -101,8 +102,11 @@ pub fn install_shortcuts(
     view: &wry::WebView,
     proxy: EventLoopProxy<AppEvent>,
     fullscreen: Rc<Cell<bool>>,
+    shortcuts: Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
 ) -> windows::core::Result<()> {
     unsafe {
+        let settings: ICoreWebView2Settings3 = view.webview().Settings()?.cast()?;
+        settings.SetAreBrowserAcceleratorKeysEnabled(false)?;
         view.controller().add_AcceleratorKeyPressed(
             &webview2_com::AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
                 let Some(args) = args else {
@@ -117,12 +121,26 @@ pub fn install_shortcuts(
                 }
                 let mut key = 0;
                 args.VirtualKey(&mut key)?;
-                let control = windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x11) < 0;
-                let command = match key {
-                    0x54 if control => Some(super::UiCommand::NewTab),
-                    0x7a => Some(super::UiCommand::ToggleFullscreen), // F11
-                    0x1b if fullscreen.get() => Some(super::UiCommand::ExitFullscreen),
-                    _ => None,
+                let runtime = shortcuts.borrow();
+                if runtime.recording {
+                    return Ok(());
+                }
+                use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
+                let chord = literust_browser::shortcuts::chord_from_vk(
+                    key,
+                    GetKeyState(0x11) < 0,
+                    GetKeyState(0x12) < 0,
+                    GetKeyState(0x10) < 0,
+                );
+                let command = if key == 0x1b && fullscreen.get() {
+                    Some(super::UiCommand::ExitFullscreen)
+                } else {
+                    chord
+                        .as_deref()
+                        .and_then(|c| runtime.bindings.action(c))
+                        .map(|name| super::UiCommand::Shortcut {
+                            name: name.to_owned(),
+                        })
                 };
                 if let Some(command) = command {
                     args.SetHandled(true)?;
@@ -135,6 +153,20 @@ pub fn install_shortcuts(
                 Ok(())
             })),
             &mut 0,
+        )?;
+    }
+    Ok(())
+}
+
+pub fn find(view: &wry::WebView) -> windows::core::Result<()> {
+    unsafe {
+        let core: ICoreWebView2_28 = view.webview().cast()?;
+        let environment: ICoreWebView2Environment15 = view.environment().cast()?;
+        let options = environment.CreateFindOptions()?;
+        options.SetSuppressDefaultFindDialog(false)?;
+        core.Find()?.Start(
+            &options,
+            &webview2_com::FindStartCompletedHandler::create(Box::new(|_| Ok(()))),
         )?;
     }
     Ok(())

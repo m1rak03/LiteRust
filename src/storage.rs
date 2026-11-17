@@ -373,6 +373,7 @@ impl Appearance {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BrowserData {
+    pub shortcuts: crate::shortcuts::Shortcuts,
     pub custom_icons: std::collections::BTreeMap<String, String>,
     pub app_icon_rgba: String,
     pub customization: Customization,
@@ -404,6 +405,7 @@ pub struct BrowserData {
 impl Default for BrowserData {
     fn default() -> Self {
         Self {
+            shortcuts: crate::shortcuts::Shortcuts::default(),
             custom_icons: std::collections::BTreeMap::new(),
             app_icon_rgba: String::new(),
             customization: Customization::default(),
@@ -506,6 +508,9 @@ impl BrowserData {
         self.notes = self.notes.chars().take(20_000).collect();
         self.customization = self.customization.validated();
         self.browser_settings = self.browser_settings.validated();
+        if !self.shortcuts.validate() {
+            self.shortcuts = crate::shortcuts::Shortcuts::default();
+        }
         self.appearance = self.appearance.validated();
         if !matches!(self.live_tab_budget, 1 | 3 | 5) {
             self.live_tab_budget = DEFAULT_LIVE_TAB_BUDGET;
