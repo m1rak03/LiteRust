@@ -1,4 +1,4 @@
-//! LiteRust Browser 0.15-alpha.3: per-site network-filter exceptions, permission prompts,
+//! LiteRust Browser 0.15-alpha.4: per-site network-filter exceptions, permission prompts,
 //! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -75,6 +75,15 @@ fn lru_victim(entries: impl IntoIterator<Item = (u64, u64)>, protected_id: u64) 
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum UiCommand {
+    Shortcut {
+        name: String,
+    },
+    SetShortcuts {
+        value: literust_browser::shortcuts::Shortcuts,
+    },
+    ShortcutRecording {
+        active: bool,
+    },
     VpnScope {
         system: bool,
     },
@@ -224,6 +233,8 @@ enum AppEvent {
 
 #[derive(Serialize)]
 struct ToolbarState<'a> {
+    shortcuts: &'a literust_browser::shortcuts::Shortcuts,
+    shortcut_catalog: &'static [(&'static str, &'static str, &'static str)],
     background_style: storage::BackgroundStyle,
     account_prompt_always: bool,
     notes: &'a str,
@@ -280,6 +291,8 @@ struct LivePage {
 }
 
 struct Browser {
+    shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
+    closed_tabs: Vec<String>,
     #[cfg(windows)]
     system_vpn: Option<literust_browser::system_vpn::SystemTunnel>,
     app_icon_applied: bool,
@@ -330,6 +343,13 @@ impl Browser {
             .saturating_add(1)
             .max(1);
         Self {
+            shortcuts: std::rc::Rc::new(std::cell::RefCell::new(
+                literust_browser::shortcuts::Runtime {
+                    bindings: data.shortcuts.clone(),
+                    recording: false,
+                },
+            )),
+            closed_tabs: Vec::new(),
             app_icon_applied: false,
             #[cfg(windows)]
             system_vpn: None,
@@ -358,6 +378,104 @@ impl Browser {
             appearance_open: false,
             account_prompt_checked: false,
         }
+    }
+
+    fn run_shortcut(&mut self, name: &str) {
+        if !literust_browser::shortcuts::ACTIONS
+            .iter()
+            .any(|(id, _, _)| *id == name)
+        {
+            return;
+        }
+        startup_log(&format!("Shortcut dispatched: {name}"));
+        let command = match name {
+            "new_tab" => UiCommand::NewTab,
+            "close_tab" => UiCommand::CloseTab {
+                index: self.data.active,
+            },
+            "next_tab" => UiCommand::SelectTab {
+                index: (self.data.active + 1) % self.data.tabs.len(),
+            },
+            "previous_tab" => UiCommand::SelectTab {
+                index: (self.data.active + self.data.tabs.len() - 1) % self.data.tabs.len(),
+            },
+            "reload" => UiCommand::Reload,
+            "back" => UiCommand::Back,
+            "forward" => UiCommand::Forward,
+            "home" => UiCommand::Home,
+            "private_window" => UiCommand::NewPrivateWindow,
+            "bookmark" => UiCommand::ToggleBookmark,
+            "bookmarks" => UiCommand::ShowBookmarks,
+            "history" => UiCommand::ShowHistory,
+            "downloads" => UiCommand::ShowDownloads,
+            "print" => UiCommand::PrintPage,
+            "fullscreen" => UiCommand::ToggleFullscreen,
+            "settings" => UiCommand::ShowSettings,
+            "vpn" => UiCommand::ShowVpn,
+            "tools" => UiCommand::ShowTools,
+            "accounts" => UiCommand::ShowAccounts,
+            "duplicate" => UiCommand::DuplicateTab,
+            "address" => {
+                if self.fullscreen.get() {
+                    self.set_fullscreen(false);
+                }
+                let _ = self.toolbar.focus();
+                let _=self.toolbar.evaluate_script("window.openPanel?.(null);document.getElementById('address').focus();document.getElementById('address').select();");
+                return;
+            }
+            "reopen_tab" => {
+                if let Some(url) = self.closed_tabs.pop() {
+                    let before = self.data.tabs.len();
+                    self.new_tab(Some(&url));
+                    if self.data.tabs.len() > before {
+                        self.handle(UiCommand::SelectTab {
+                            index: self.data.tabs.len() - 1,
+                        });
+                    }
+                }
+                return;
+            }
+            "zoom_in" | "zoom_out" | "zoom_reset" => {
+                let current = self.data.browser_settings.zoom_percent;
+                let value = match name {
+                    "zoom_in" => current.saturating_add(10).min(200),
+                    "zoom_out" => current.saturating_sub(10).max(50),
+                    _ => 100,
+                };
+                self.data.browser_settings.zoom_percent = value;
+                if let Some(page) = self.pages.get(&self.active_id()) {
+                    let _ = page.view.zoom(f64::from(value) / 100.0);
+                }
+                self.persist();
+                self.sync_toolbar();
+                return;
+            }
+            "find" => {
+                #[cfg(windows)]
+                if let Some(page) = self.pages.get(&self.active_id()) {
+                    if windows_platform::find(&page.view).is_err() {
+                        self.notice("Поиск требует обновления Microsoft WebView2 Runtime.");
+                    }
+                }
+                return;
+            }
+            _ => {
+                if let Some(number) = name
+                    .strip_prefix("tab_")
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .filter(|n| (1..=9).contains(n))
+                {
+                    let index = if number == 9 {
+                        self.data.tabs.len() - 1
+                    } else {
+                        number - 1
+                    };
+                    self.handle(UiCommand::SelectTab { index });
+                }
+                return;
+            }
+        };
+        self.handle(command);
     }
 
     fn system_vpn_running(&self) -> bool {
@@ -482,6 +600,8 @@ impl Browser {
                 })
                 .collect(),
             customization: self.data.customization,
+            shortcuts: &self.data.shortcuts,
+            shortcut_catalog: literust_browser::shortcuts::ACTIONS,
             browser_settings: self.data.browser_settings.clone(),
             appearance: self.data.appearance,
             search_engine: self.data.search_engine,
@@ -713,9 +833,13 @@ impl Browser {
             }
         }
         #[cfg(windows)]
-        let downloads =
-            windows_platform::configure(&view, self.proxy.clone(), self.fullscreen.clone())
-                .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
+        let downloads = windows_platform::configure(
+            &view,
+            self.proxy.clone(),
+            self.fullscreen.clone(),
+            self.shortcuts.clone(),
+        )
+        .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(not(windows))]
         let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
         Ok(LivePage {
@@ -923,6 +1047,20 @@ impl Browser {
             let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
         }
         match command {
+            UiCommand::Shortcut { name } => self.run_shortcut(&name),
+            UiCommand::ShortcutRecording { active } => {
+                self.shortcuts.borrow_mut().recording = active;
+            }
+            UiCommand::SetShortcuts { value } => {
+                if !value.validate() {
+                    self.notice("Сочетание занято или недопустимо. Изменения не сохранены.");
+                    return;
+                }
+                self.shortcuts.borrow_mut().bindings = value.clone();
+                self.data.shortcuts = value;
+                self.persist();
+                self.sync_toolbar();
+            }
             UiCommand::ShowTools
             | UiCommand::ShowAccounts
             | UiCommand::ShowSettings
@@ -1252,6 +1390,10 @@ impl Browser {
                     return;
                 }
                 let closed_active = index == self.data.active;
+                self.closed_tabs.push(self.data.tabs[index].url.clone());
+                if self.closed_tabs.len() > 25 {
+                    self.closed_tabs.remove(0);
+                }
                 self.pages.remove(&closed_id);
                 self.data.tabs.remove(index);
                 if self.data.tabs.is_empty() {
@@ -1359,6 +1501,9 @@ impl Browser {
             }
             UiCommand::AppearancePanel { open } => {
                 self.appearance_open = open;
+                if !open {
+                    self.shortcuts.borrow_mut().recording = false;
+                }
                 if open {
                     let _ = self.toolbar.focus();
                 }
@@ -1843,7 +1988,7 @@ fn main() {
     if fs::create_dir_all(&diagnostics).is_ok() {
         let _ = fs::write(
             diagnostics.join("startup.log"),
-            b"LiteRust 0.15.0-alpha.3 startup\n",
+            b"LiteRust 0.15.0-alpha.4 startup\n",
         );
     }
     if let Err(error) = run() {
@@ -1888,6 +2033,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     startup_log("Creating event loop and window");
     let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     let window = WindowBuilder::new()
+        .with_maximized(true)
         .with_visible(false)
         .with_background_color((16, 20, 33, 255))
         .with_window_icon(
@@ -1899,9 +2045,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok(),
         )
         .with_title(if private_mode {
-            "LiteRust 0.15-alpha.3 — приватное окно"
+            "LiteRust 0.15-alpha.4 — приватное окно"
         } else {
-            "LiteRust Browser 0.15-alpha.3"
+            "LiteRust Browser 0.15-alpha.4"
         })
         .with_inner_size(LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(LogicalSize::new(690.0, 400.0))
@@ -2108,11 +2254,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             &browser.toolbar,
             browser.proxy.clone(),
             browser.fullscreen.clone(),
+            browser.shortcuts.clone(),
         )?;
         windows_platform::install_shortcuts(
             &browser.dock,
             browser.proxy.clone(),
             browser.fullscreen.clone(),
+            browser.shortcuts.clone(),
         )?;
     }
     browser.vpn_vault = vpn_vault;
@@ -2203,10 +2351,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }) => browser.on_download_state(id, &file, running, ok),
             Event::WindowEvent { event: WindowEvent::KeyboardInput { event, is_synthetic: false, .. }, .. }
                 if event.state == ElementState::Pressed && !event.repeat => {
-                match event.logical_key {
-                    tao::keyboard::Key::F11 => browser.handle(UiCommand::ToggleFullscreen),
-                    tao::keyboard::Key::Escape if browser.fullscreen.get() => browser.handle(UiCommand::ExitFullscreen),
-                    _ => {}
+                #[cfg(windows)]
+                {
+                    use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
+                    // Root-window fallback before a child WebView receives focus.
+                    let key=match event.logical_key {tao::keyboard::Key::F11=>Some(122),tao::keyboard::Key::Escape=>Some(27),_=>None};
+                    if let Some(key)=key {
+                        if !browser.shortcuts.borrow().recording {
+                            if key==27 && browser.fullscreen.get() {browser.handle(UiCommand::ExitFullscreen);}
+                            else if let Some(chord)=unsafe {literust_browser::shortcuts::chord_from_vk(key,GetKeyState(0x11)<0,GetKeyState(0x12)<0,GetKeyState(0x10)<0)} {
+                                let action=browser.shortcuts.borrow().bindings.action(&chord).map(str::to_owned);
+                                if let Some(name)=action {browser.run_shortcut(&name);}
+                            }
+                        }
+                    }
                 }
             }
             Event::WindowEvent { event: WindowEvent::Focused(true), .. } => {

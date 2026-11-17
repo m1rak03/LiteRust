@@ -1,0 +1,15 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+(async()=>{const b=await chromium.launch({headless:true});try{const p=await b.newPage({viewport:{width:1440,height:1000}}),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.setContent(fs.readFileSync('ui/toolbar.html','utf8').replace('/* APPEARANCE_SCRIPT */',fs.readFileSync('ui/appearance.js','utf8')));await p.evaluate(()=>{window.sent=[];window.ipc={postMessage:x=>sent.push(JSON.parse(x))};window.browserUpdate({tabs:[{id:1,title:'Настройки'}],active:0,url:'',live_ids:[1]});window.openPanel('settings');});await p.locator('[data-settings-category=shortcuts]').click();
+const row=id=>p.locator(`[data-shortcut=${id}]`);
+assert.equal(await row('new_tab').locator('kbd').textContent(),'Ctrl+T');
+await row('new_tab').getByRole('button',{name:'Изменить:',exact:false}).click();await p.keyboard.press('Control+w');assert((await p.locator('#shortcut-status').textContent()).includes('занято'));assert(!(await p.evaluate(()=>sent.some(x=>x.action==='shortcut'))));
+await p.keyboard.press('Control+c');assert((await p.locator('#shortcut-status').textContent()).includes('защищены'));await p.keyboard.press('Control+Shift+y');assert.equal(await row('new_tab').locator('kbd').textContent(),'Ctrl+Shift+Y');assert.equal(await p.evaluate(()=>sent.at(-1).value.new_tab[0]),'Ctrl+Shift+Y');
+await p.keyboard.press('Control+Shift+y');assert.deepEqual(await p.evaluate(()=>sent.at(-1)),{action:'shortcut',name:'new_tab'});
+await row('fullscreen').getByRole('button',{name:'Убрать:',exact:false}).click();assert.equal(await row('fullscreen').locator('kbd').textContent(),'Отключено');await p.evaluate(()=>sent=[]);await p.keyboard.press('F11');assert.equal(await p.evaluate(()=>sent.length),0);
+await row('new_tab').getByRole('button',{name:'Изменить:',exact:false}).click();await p.keyboard.press('Escape');assert(await p.locator('#settings').isVisible());assert.equal(await row('new_tab').locator('kbd').textContent(),'Ctrl+Shift+Y');
+await row('new_tab').getByRole('button',{name:'Сброс:',exact:false}).click();assert.equal(await row('new_tab').locator('kbd').textContent(),'Ctrl+T');
+await p.locator('#shortcut-search').fill('печать');assert.equal(await p.locator('.shortcut-row').count(),1);await p.locator('#shortcut-search').fill('');
+await p.screenshot({path:'docs/assets/shortcuts.png'});
+await p.setViewportSize({width:690,height:800});assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+p.on('dialog',d=>d.accept());await p.locator('#shortcut-reset-all').click();assert.equal(await row('fullscreen').locator('kbd').textContent(),'F11');
+assert.deepEqual(errors,[]);console.log('PASS: record, collision, typing protection, dispatch, disable, Escape, reset, search and narrow layout');}finally{await b.close();}})().catch(e=>{console.error(e);process.exit(1)});
