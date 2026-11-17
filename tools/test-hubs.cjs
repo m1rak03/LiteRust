@@ -7,7 +7,7 @@ const state={tabs:[{id:1,title:'Новая вкладка'}],active:0,live_ids:[
 await page.evaluate(s=>window.browserUpdate(s),state);
 const profile=await page.locator('#profile-account').boundingBox();assert.equal(profile.x,0);assert.equal(profile.y,0);
 await page.locator('#profile-account').click();assert(await page.locator('#accounts').isVisible());await page.locator('[data-account=yandex]').click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'open_account',provider:'yandex'});
-await page.evaluate(()=>window.openPanel('settings'));
+await page.evaluate(()=>window.openPanel('settings'));await page.locator('[data-settings-category=all]').click();
 for(const position of ['left','right','top','bottom']){await page.locator(`[data-position=${position}]`).click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'set_dock',position});await page.evaluate(s=>window.browserUpdate(s),{...state,dock_position:position});assert.equal(await page.locator(`[data-position=${position}]`).getAttribute('aria-pressed'),'true');}
 await page.screenshot({path:'audit-logs/screenshots/v011-settings.png'});
 await page.evaluate(()=>window.openPanel('vpn'));await page.locator('#vpn-open-import').click();await page.locator('#vpn-key').fill('trojan://test@example.com:443');await page.locator('#vpn-import').click();assert.deepEqual(await page.evaluate(()=>sent.pop()),{action:'vpn_import',value:'trojan://test@example.com:443',kind:'auto'});assert.equal(await page.locator('#vpn-key').inputValue(),'');
