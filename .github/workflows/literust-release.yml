@@ -164,6 +164,7 @@ jobs:
           if (-not $install.WaitForExit(180000)) { Stop-Process -Id $install.Id -Force; throw 'Installer timed out' }
           $install.Refresh()
           if (Test-Path "$profile/diagnostics/install-close.log") { Get-Content "$profile/diagnostics/install-close.log"; Copy-Item "$profile/diagnostics/install-close.log" target/release/ }
+          if (Test-Path "$profile/diagnostics/install-helper.log") { Get-Content "$profile/diagnostics/install-helper.log"; Copy-Item "$profile/diagnostics/install-helper.log" target/release/ }
           if ($install.ExitCode -ne 0) {
             if (Test-Path $log) { Get-Content $log }
             throw "Installation failed, exit code: $($install.ExitCode)"

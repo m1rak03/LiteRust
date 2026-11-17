@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - packaging/close-browser.ps1
+      - packaging/test-shutdown.nsi
       - .github/workflows/upgrade-shutdown.yml
   workflow_dispatch:
 permissions:
@@ -39,8 +40,13 @@ jobs:
           $graphics.CopyFromScreen($screen.Location,[Drawing.Point]::Empty,$screen.Size)
           $bitmap.Save("$pwd/diagnostics/before-close.png")
           $graphics.Dispose();$bitmap.Dispose()
-          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packaging/close-browser.ps1 -InstallDir $folder
-          $closeResult=$LASTEXITCODE
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS install failed' }
+          & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/test-shutdown.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'Shutdown wrapper build failed' }
+          $wrapper=Start-Process packaging/test-shutdown.exe -ArgumentList '/S' -Wait -PassThru
+          $closeResult=$wrapper.ExitCode
+          if (Test-Path "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/install-helper.log") { Get-Content "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/install-helper.log" }
           Get-Content "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/install-close.log"
           if ($closeResult -ne 0) { throw "Shutdown helper failed: $closeResult" }
           if(-not $app.WaitForExit(5000)) { throw 'Browser did not exit' }

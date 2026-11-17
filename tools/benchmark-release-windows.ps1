@@ -20,7 +20,12 @@ foreach($version in @(@('0.15.0-alpha.4',$OldExe),@('0.16.0-alpha.1',$NewExe))){
    $openElapsed=$tabsClock.Elapsed.TotalMilliseconds
    Start-Sleep -Seconds 3
    for($sample=1;$sample -le 3;$sample++){
-    $all=Get-CimInstance Win32_Process
+    $app.Refresh()
+    if($app.HasExited){throw 'Benchmark browser exited before sampling'}
+    $rootStarted=$app.StartTime
+    # Windows retains parent PIDs after parents exit and may reuse them for our browser.
+    # Older unrelated processes must not be mistaken for its descendants.
+    $all=@(Get-CimInstance Win32_Process | Where-Object { $_.CreationDate -ge $rootStarted.AddMilliseconds(-1) })
     $ids=[Collections.Generic.HashSet[int]]::new();[void]$ids.Add($app.Id)
     do{$changed=$false;foreach($item in $all){if($ids.Contains([int]$item.ParentProcessId)-and $ids.Add([int]$item.ProcessId)){$changed=$true}}}while($changed)
     [long]$privateBytes=0;[long]$workingBytes=0;$count=0

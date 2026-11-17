@@ -5,6 +5,7 @@ $logDir = Join-Path $env:LOCALAPPDATA 'LiteRustBrowser\diagnostics'
 New-Item -ItemType Directory -Force $logDir | Out-Null
 $log = Join-Path $logDir 'install-close.log'
 'Starting graceful upgrade shutdown' | Set-Content $log
+trap { $_.Exception.Message | Add-Content $log; exit 1 }
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
