@@ -6,6 +6,8 @@ use literust_browser::{
     google_passwords, import, layout, network_block, profile, security, storage, vpn,
 };
 #[cfg(windows)]
+mod session_self_test;
+#[cfg(windows)]
 mod windows_platform;
 
 #[cfg(test)]
@@ -75,6 +77,9 @@ fn lru_victim(entries: impl IntoIterator<Item = (u64, u64)>, protected_id: u64) 
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum UiCommand {
+    SaveHome {
+        value: literust_browser::home::Dashboard,
+    },
     SetSidebar {
         value: layout::Sidebar,
     },
@@ -216,6 +221,11 @@ impl std::fmt::Debug for UiCommand {
 }
 #[derive(Debug)]
 enum AppEvent {
+    InternalCommand {
+        tab_id: u64,
+        generation: u64,
+        command: UiCommand,
+    },
     Ui(UiCommand),
     VpnImported(Result<Vec<vpn::Node>, &'static str>),
     VpnProbed(Result<u128, &'static str>),
@@ -813,6 +823,30 @@ impl Browser {
                     return true;
                 }
                 if navigation_mode.get()
+                    && url.starts_with("literust://home/?")
+                    && url.len() <= 100_000
+                {
+                    if let Ok(parsed) = url::Url::parse(&url) {
+                        if let Some((_, payload)) =
+                            parsed.query_pairs().find(|(key, _)| key == "data")
+                        {
+                            if let Ok(command) = serde_json::from_str::<UiCommand>(&payload) {
+                                if matches!(
+                                    command,
+                                    UiCommand::SaveHome { .. } | UiCommand::Navigate { .. }
+                                ) {
+                                    let _ = internal_proxy.send_event(AppEvent::InternalCommand {
+                                        tab_id,
+                                        generation,
+                                        command,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    return false;
+                }
+                if navigation_mode.get()
                     && matches!(
                         url.as_str(),
                         "literust://appearance" | "literust://accounts"
@@ -1090,6 +1124,31 @@ impl Browser {
             let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
         }
         match command {
+            UiCommand::SaveHome { value } => {
+                if !value.valid() {
+                    self.notice("Некорректная компоновка или ссылка. Изменения не сохранены.");
+                    return;
+                }
+                let previous = self.data.home.replace(value.clone());
+                if let Some(file) = &self.data_file {
+                    if let Err(error) = self.data.save(file) {
+                        self.data.home = previous;
+                        self.notice(&format!("Не удалось сохранить главную страницу: {error}"));
+                        return;
+                    }
+                }
+                let persisted = self.data_file.is_some();
+                let json = literust_browser::home::script_json(&value);
+                for tab in &self.data.tabs {
+                    if tab.url == NEW_TAB {
+                        if let Some(page) = self.pages.get(&tab.id) {
+                            let _ = page.view.evaluate_script(&format!(
+                                "window.homeSync?.({json},{persisted});"
+                            ));
+                        }
+                    }
+                }
+            }
             UiCommand::SetSidebar { value } => {
                 self.data.sidebar = value.validated();
                 self.dock_expanded = false;
@@ -2078,6 +2137,17 @@ fn startup_log(message: &str) {
 }
 
 fn main() {
+    #[cfg(windows)]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(pair) = args.windows(2).find(|a| a[0] == "--session-self-test") {
+            if session_self_test::run(&pair[1]).is_err() {
+                std::process::exit(1);
+            }
+            return;
+        }
+    }
+
     // Do this before spawning threads or creating WebView2 environments.
     for key in [
         "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
@@ -2439,6 +2509,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         match event {
             Event::UserEvent(AppEvent::Ui(cmd)) => browser.handle(cmd),
+            Event::UserEvent(AppEvent::InternalCommand{tab_id,generation,command})=>{
+                if browser.matching_view(tab_id,generation)&&browser.active_id()==tab_id&&browser.current_url()==NEW_TAB {browser.handle(command);}
+            },
             Event::UserEvent(AppEvent::NewTabAppearance {tab_id,generation,accounts}) => {
                 if browser.matching_view(tab_id,generation) && browser.data.tabs.iter().any(|t|t.id==tab_id&&t.url==NEW_TAB) {
                     browser.handle(if accounts { UiCommand::ShowAccounts } else { UiCommand::ShowSettings });

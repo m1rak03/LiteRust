@@ -264,7 +264,7 @@ function render(){
   document.getElementById('google-passwords').title=state.private_mode?'В приватном окне Google Password Manager не открывается':'Google Password Manager (внешний браузер)';
 }
 window.updateWindowState=maximized=>{const b=document.getElementById('window-maximize');b.textContent=maximized?'❐':'□';b.setAttribute('aria-label',maximized?'Восстановить окно':'Развернуть окно');};
-window.browserUpdate=value=>{state=value;render();renderShortcuts();renderLocalProfiles();renderSidebarSettings();window.updateWindowState(state.maximized);};
+window.browserUpdate=value=>{const previous=state;state=value;render();if(JSON.stringify(previous.shortcuts)!==JSON.stringify(state.shortcuts))renderShortcuts();if(JSON.stringify([previous.local_profiles,previous.current_profile,previous.private_mode])!==JSON.stringify([state.local_profiles,state.current_profile,state.private_mode]))renderLocalProfiles();if(JSON.stringify(previous.sidebar)!==JSON.stringify(state.sidebar))renderSidebarSettings();window.updateWindowState(state.maximized);};
 let noticeTimer;
 window.browserNotice=message=>{
   const el=document.getElementById('notice');
