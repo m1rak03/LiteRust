@@ -165,3 +165,26 @@ pub fn find(view: &wry::WebView) -> windows::core::Result<()> {
     }
     Ok(())
 }
+
+pub fn raise(view: &wry::WebView) -> windows::core::Result<()> {
+    unsafe {
+        use windows::Win32::{
+            Foundation::HWND,
+            UI::WindowsAndMessaging::{
+                SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            },
+        };
+        let mut hwnd = HWND::default();
+        view.controller().ParentWindow(&mut hwnd)?;
+        SetWindowPos(
+            hwnd,
+            Some(HWND_TOP),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+        )?;
+    }
+    Ok(())
+}

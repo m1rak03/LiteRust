@@ -373,6 +373,7 @@ impl Appearance {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BrowserData {
+    pub sidebar: crate::layout::Sidebar,
     pub shortcuts: crate::shortcuts::Shortcuts,
     pub custom_icons: std::collections::BTreeMap<String, String>,
     pub app_icon_rgba: String,
@@ -405,6 +406,7 @@ pub struct BrowserData {
 impl Default for BrowserData {
     fn default() -> Self {
         Self {
+            sidebar: crate::layout::Sidebar::default(),
             shortcuts: crate::shortcuts::Shortcuts::default(),
             custom_icons: std::collections::BTreeMap::new(),
             app_icon_rgba: String::new(),
@@ -494,6 +496,7 @@ impl BrowserData {
     }
 
     pub fn clean(mut self) -> Self {
+        self.sidebar = self.sidebar.validated();
         self.custom_icons.retain(|key, value| {
             crate::icons::valid_target(key) && crate::icons::png_bytes(value).is_some()
         });

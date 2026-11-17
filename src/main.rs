@@ -75,6 +75,12 @@ fn lru_victim(entries: impl IntoIterator<Item = (u64, u64)>, protected_id: u64) 
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum UiCommand {
+    SetSidebar {
+        value: layout::Sidebar,
+    },
+    DockExpanded {
+        open: bool,
+    },
     ProfileCreate {
         name: String,
     },
@@ -249,6 +255,7 @@ enum AppEvent {
 
 #[derive(Serialize)]
 struct ToolbarState<'a> {
+    sidebar: &'a layout::Sidebar,
     local_profiles: &'a literust_browser::local_profiles::Catalog,
     current_profile: &'a str,
     maximized: bool,
@@ -310,6 +317,7 @@ struct LivePage {
 }
 
 struct Browser {
+    dock_expanded: bool,
     local_profiles: literust_browser::local_profiles::Catalog,
     shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
     closed_tabs: Vec<String>,
@@ -363,6 +371,7 @@ impl Browser {
             .saturating_add(1)
             .max(1);
         Self {
+            dock_expanded: false,
             local_profiles: literust_browser::local_profiles::Catalog::load(&app_root())
                 .unwrap_or_default(),
             shortcuts: std::rc::Rc::new(std::cell::RefCell::new(
@@ -605,6 +614,7 @@ impl Browser {
     fn sync_toolbar(&self) {
         let url = self.current_url();
         let state = ToolbarState {
+            sidebar: &self.data.sidebar,
             local_profiles: &self.local_profiles,
             current_profile: current_profile_id(),
             maximized: self.window.is_maximized(),
@@ -669,7 +679,7 @@ impl Browser {
             auto_discard: self.data.auto_discard,
         };
         if let Ok(payload) = serde_json::to_string(&state) {
-            let dock_state = serde_json::json!({"appearance":self.data.appearance,"position":self.data.dock_position,"customization":self.data.customization,"animations":self.data.customization.animations,"vpn_enabled":self.vpn_vault.enabled,"vpn_running":self.vpn_running && (!self.vpn_vault.system_scope || self.system_vpn_running())});
+            let dock_state = serde_json::json!({"sidebar":self.data.sidebar,"expanded":self.dock_expanded||self.data.sidebar.mode=="pinned","appearance":self.data.appearance,"position":self.data.dock_position,"customization":self.data.customization,"animations":self.data.customization.animations,"vpn_enabled":self.vpn_vault.enabled,"vpn_running":self.vpn_running && (!self.vpn_vault.system_scope || self.system_vpn_running())});
             let _ = self
                 .dock
                 .evaluate_script(&format!("window.dockUpdate?.({dock_state});"));
@@ -744,11 +754,13 @@ impl Browser {
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
-        let (dock, page) = layout::arrange(
+        let (dock, page) = layout::arrange_sidebar(
             size.width - 2.0 * self.frame_inset(),
             size.height - 2.0 * self.frame_inset(),
             TOOLBAR_HEIGHT,
             self.data.dock_position,
+            &self.data.sidebar,
+            self.dock_expanded,
         );
         (
             rect(
@@ -942,6 +954,7 @@ impl Browser {
             let _ = page.view.set_memory_usage_level(MemoryUsageLevel::Normal);
             let _ = page.view.focus();
         }
+        self.resize();
         self.sync_toolbar();
     }
 
@@ -1077,6 +1090,18 @@ impl Browser {
             let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
         }
         match command {
+            UiCommand::SetSidebar { value } => {
+                self.data.sidebar = value.validated();
+                self.dock_expanded = false;
+                self.persist();
+                self.resize();
+                self.sync_toolbar();
+            }
+            UiCommand::DockExpanded { open } => {
+                self.dock_expanded = open;
+                self.resize();
+                self.sync_toolbar();
+            }
             UiCommand::ProfileCreate { name } => {
                 if self.private_mode {
                     self.notice("Управляйте профилями в обычном окне.");
@@ -1902,6 +1927,14 @@ impl Browser {
         for page in self.pages.values() {
             let _ = page.view.set_bounds(bounds);
         }
+        #[cfg(windows)]
+        {
+            let _ = windows_platform::raise(if self.appearance_open {
+                &self.toolbar
+            } else {
+                &self.dock
+            });
+        }
     }
 }
 
@@ -2327,12 +2360,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .with_new_window_req_handler(|_, _| NewWindowResponse::Deny)
         .with_ipc_handler(move |request| {
-            if request.uri() == "about:blank" && request.body().len() < 1024 {
+            if request.uri() == "about:blank" && request.body().len() < 4096 {
                 if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
                     // The dock only needs fixed navigation/settings actions.
                     if matches!(
                         command,
                         UiCommand::DockReady
+                            | UiCommand::DockExpanded { .. }
+                            | UiCommand::SetSidebar { .. }
                             | UiCommand::ShowAccounts
                             | UiCommand::NewTab
                             | UiCommand::NewPrivateWindow
