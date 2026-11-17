@@ -503,7 +503,7 @@ document.getElementById('local-profile-avatar').onchange=async e=>{const file=e.
 renderLocalProfiles();
 
 
-const sidebarLabels={new_tab:'Главная',show_bookmarks:'Закладки',show_history:'История',show_downloads:'Загрузки',show_accounts:'Профили',show_vpn:'VPN',show_tools:'Инструменты',duplicate_tab:'Дублировать вкладку',print_page:'Печать / PDF',new_private_window:'Приватное окно',show_appearance:'Оформление',show_settings:'Настройки'};
+const sidebarLabels={new_tab:'Главная',show_bookmarks:'Закладки',show_history:'История',show_downloads:'Загрузки',show_accounts:'Профили',show_security:'Безопасность',show_vpn:'VPN',show_tools:'Инструменты',duplicate_tab:'Дублировать вкладку',print_page:'Печать / PDF',new_private_window:'Приватное окно',show_appearance:'Оформление',show_settings:'Настройки'};
 function sidebarDefaults(){return {mode:'click',width:264,order:Object.keys(sidebarLabels),hidden:[]};}
 function sidebarValue(){return state.sidebar||sidebarDefaults();}
 function saveSidebar(value){state.sidebar=value;send('set_sidebar',{value});renderSidebarSettings();}

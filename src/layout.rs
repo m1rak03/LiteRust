@@ -100,6 +100,7 @@ pub const SIDEBAR_ACTIONS: &[&str] = &[
     "show_history",
     "show_downloads",
     "show_accounts",
+    "show_security",
     "show_vpn",
     "show_tools",
     "duplicate_tab",

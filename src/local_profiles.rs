@@ -48,6 +48,25 @@ fn valid_avatar(value: &str) -> bool {
     value.is_empty() || (value.len() <= 100_000 && crate::icons::png_bytes(value).is_some())
 }
 impl Catalog {
+    pub fn for_ui(&self, current: &str) -> Self {
+        Self {
+            selected: self.selected.clone(),
+            profiles: self
+                .profiles
+                .iter()
+                .map(|p| Profile {
+                    id: p.id.clone(),
+                    name: p.name.clone(),
+                    avatar: if p.id == current {
+                        p.avatar.clone()
+                    } else {
+                        String::new()
+                    },
+                })
+                .collect(),
+        }
+    }
+
     pub fn load(base: &Path) -> io::Result<Self> {
         let file = base.join("profiles.json");
         if !file.exists() {

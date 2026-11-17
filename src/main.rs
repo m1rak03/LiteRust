@@ -155,6 +155,7 @@ enum UiCommand {
     },
     PrintPage,
     ShowSettings,
+    ShowSecurity,
     ShowAppearance,
     ShowVpn,
     VpnProbe,
@@ -268,7 +269,7 @@ enum AppEvent {
 #[derive(Serialize)]
 struct ToolbarState<'a> {
     sidebar: &'a layout::Sidebar,
-    local_profiles: &'a literust_browser::local_profiles::Catalog,
+    local_profiles: literust_browser::local_profiles::Catalog,
     current_profile: &'a str,
     maximized: bool,
     shortcuts: &'a literust_browser::shortcuts::Shortcuts,
@@ -637,7 +638,11 @@ impl Browser {
         let url = self.current_url();
         let state = ToolbarState {
             sidebar: &self.data.sidebar,
-            local_profiles: &self.local_profiles,
+            local_profiles: self.local_profiles.for_ui(if self.private_mode {
+                ""
+            } else {
+                current_profile_id()
+            }),
             current_profile: current_profile_id(),
             maximized: self.window.is_maximized(),
             background_style: self.data.background_style,
@@ -1136,6 +1141,12 @@ impl Browser {
             let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
         }
         match command {
+            UiCommand::ShowSecurity => {
+                self.handle(UiCommand::ShowSettings);
+                let _ = self
+                    .toolbar
+                    .evaluate_script("window.selectSettingsCategory?.('privacy');");
+            }
             UiCommand::SaveHome { value } => {
                 if !value.valid() {
                     self.notice("Некорректная компоновка или ссылка. Изменения не сохранены.");
@@ -2531,6 +2542,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             | UiCommand::PrintPage
                             | UiCommand::ShowTools
                             | UiCommand::Home
+                            | UiCommand::ShowSecurity
                             | UiCommand::ShowSettings
                             | UiCommand::ShowAppearance
                             | UiCommand::ShowVpn
