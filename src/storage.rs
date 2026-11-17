@@ -508,6 +508,7 @@ impl BrowserData {
         self.notes = self.notes.chars().take(20_000).collect();
         self.customization = self.customization.validated();
         self.browser_settings = self.browser_settings.validated();
+        self.shortcuts.0.remove("fullscreen"); // Retire legacy fullscreen without resetting other assignments.
         if !self.shortcuts.validate() {
             self.shortcuts = crate::shortcuts::Shortcuts::default();
         }

@@ -24,9 +24,9 @@ use storage::{
 };
 use tao::{
     dpi::LogicalSize,
-    event::{ElementState, Event, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
-    window::{Fullscreen, Window, WindowBuilder},
+    window::{Window, WindowBuilder},
 };
 use wry::{
     dpi::{LogicalPosition, LogicalSize as WebLogicalSize},
@@ -106,8 +106,10 @@ enum UiCommand {
         engine: literust_browser::navigation::SearchEngine,
     },
     Ready,
-    ToggleFullscreen,
-    ExitFullscreen,
+    WindowMinimize,
+    WindowMaximize,
+    WindowClose,
+    WindowDrag,
     DockReady,
     ShowTools,
     DuplicateTab,
@@ -233,6 +235,7 @@ enum AppEvent {
 
 #[derive(Serialize)]
 struct ToolbarState<'a> {
+    maximized: bool,
     shortcuts: &'a literust_browser::shortcuts::Shortcuts,
     shortcut_catalog: &'static [(&'static str, &'static str, &'static str)],
     background_style: storage::BackgroundStyle,
@@ -317,7 +320,7 @@ struct Browser {
     next_tab_id: u64,
     next_generation: u64,
     usage_clock: u64,
-    fullscreen: std::rc::Rc<std::cell::Cell<bool>>,
+    close_requested: bool,
     appearance_open: bool,
     account_prompt_checked: bool,
 }
@@ -374,7 +377,7 @@ impl Browser {
             next_tab_id,
             next_generation: 1,
             usage_clock: 0,
-            fullscreen: std::rc::Rc::new(std::cell::Cell::new(false)),
+            close_requested: false,
             appearance_open: false,
             account_prompt_checked: false,
         }
@@ -409,16 +412,12 @@ impl Browser {
             "history" => UiCommand::ShowHistory,
             "downloads" => UiCommand::ShowDownloads,
             "print" => UiCommand::PrintPage,
-            "fullscreen" => UiCommand::ToggleFullscreen,
             "settings" => UiCommand::ShowSettings,
             "vpn" => UiCommand::ShowVpn,
             "tools" => UiCommand::ShowTools,
             "accounts" => UiCommand::ShowAccounts,
             "duplicate" => UiCommand::DuplicateTab,
             "address" => {
-                if self.fullscreen.get() {
-                    self.set_fullscreen(false);
-                }
                 let _ = self.toolbar.focus();
                 let _=self.toolbar.evaluate_script("window.openPanel?.(null);document.getElementById('address').focus();document.getElementById('address').select();");
                 return;
@@ -587,6 +586,7 @@ impl Browser {
     fn sync_toolbar(&self) {
         let url = self.current_url();
         let state = ToolbarState {
+            maximized: self.window.is_maximized(),
             background_style: self.data.background_style,
             account_prompt_always: self.data.account_prompt_always,
             notes: &self.data.notes,
@@ -686,17 +686,22 @@ impl Browser {
         }
     }
 
-    fn toolbar_height(&self) -> f64 {
-        if self.fullscreen.get() {
-            return 0.0;
+    fn frame_inset(&self) -> f64 {
+        if self.window.is_maximized() {
+            0.0
+        } else {
+            6.0
         }
+    }
+
+    fn toolbar_height(&self) -> f64 {
         let height = self
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor())
             .height;
         if self.appearance_open {
-            height.max(TOOLBAR_HEIGHT)
+            (height - 2.0 * self.frame_inset()).max(TOOLBAR_HEIGHT)
         } else {
             TOOLBAR_HEIGHT
         }
@@ -718,21 +723,25 @@ impl Browser {
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
-        if self.fullscreen.get() {
-            return (
-                rect(0.0, 0.0, 1.0, 1.0),
-                rect(0.0, 0.0, size.width, size.height),
-            );
-        }
         let (dock, page) = layout::arrange(
-            size.width,
-            size.height,
+            size.width - 2.0 * self.frame_inset(),
+            size.height - 2.0 * self.frame_inset(),
             TOOLBAR_HEIGHT,
             self.data.dock_position,
         );
         (
-            rect(dock.x, dock.y, dock.width, dock.height),
-            rect(page.x, page.y, page.width, page.height),
+            rect(
+                dock.x + self.frame_inset(),
+                dock.y + self.frame_inset(),
+                dock.width,
+                dock.height,
+            ),
+            rect(
+                page.x + self.frame_inset(),
+                page.y + self.frame_inset(),
+                page.width,
+                page.height,
+            ),
         )
     }
     fn page_bounds(&self) -> Rect {
@@ -833,13 +842,9 @@ impl Browser {
             }
         }
         #[cfg(windows)]
-        let downloads = windows_platform::configure(
-            &view,
-            self.proxy.clone(),
-            self.fullscreen.clone(),
-            self.shortcuts.clone(),
-        )
-        .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
+        let downloads =
+            windows_platform::configure(&view, self.proxy.clone(), self.shortcuts.clone())
+                .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(not(windows))]
         let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
         Ok(LivePage {
@@ -1263,8 +1268,18 @@ impl Browser {
                     self.notice("Не удалось открыть системный браузер");
                 }
             }
-            UiCommand::ToggleFullscreen => self.set_fullscreen(!self.fullscreen.get()),
-            UiCommand::ExitFullscreen => self.set_fullscreen(false),
+            UiCommand::WindowMinimize => self.window.set_minimized(true),
+            UiCommand::WindowMaximize => {
+                self.window.set_maximized(!self.window.is_maximized());
+                self.sync_toolbar();
+            }
+            UiCommand::WindowClose => {
+                self.persist();
+                self.close_requested = true;
+            }
+            UiCommand::WindowDrag => {
+                let _ = self.window.drag_window();
+            }
             UiCommand::DockReady => self.sync_toolbar(),
             UiCommand::DuplicateTab => {
                 let url = self.data.tabs[self.data.active].url.clone();
@@ -1329,8 +1344,8 @@ impl Browser {
                 }
                 startup_log("Toolbar JavaScript ready");
                 self.window.set_visible(true);
-                let _ = self.toolbar.set_visible(!self.fullscreen.get());
-                let _ = self.dock.set_visible(!self.fullscreen.get());
+                let _ = self.toolbar.set_visible(true);
+                let _ = self.dock.set_visible(true);
                 self.resize();
                 if self.appearance_open {
                     let _ = self.toolbar.focus();
@@ -1777,38 +1792,21 @@ impl Browser {
         }
     }
 
-    fn set_fullscreen(&mut self, enabled: bool) {
-        if self.fullscreen.replace(enabled) == enabled {
-            return;
-        }
-        if enabled {
-            self.appearance_open = false;
-            let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
-        }
-        startup_log(if enabled {
-            "Fullscreen enabled"
-        } else {
-            "Fullscreen disabled"
-        });
-        self.window
-            .set_fullscreen(enabled.then_some(Fullscreen::Borderless(None)));
-        let _ = self.toolbar.set_visible(!enabled);
-        let _ = self.dock.set_visible(!enabled);
-        self.resize();
-        if let Some(page) = self.pages.get(&self.active_id()) {
-            let _ = page.view.set_visible(true);
-            let _ = page.view.focus();
-        }
-    }
-
     fn resize(&self) {
+        let _ = self.toolbar.evaluate_script(&format!(
+            "window.updateWindowState?.({});",
+            self.window.is_maximized()
+        ));
         let size = self
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
-        let _ = self
-            .toolbar
-            .set_bounds(rect(0.0, 0.0, size.width, self.toolbar_height()));
+        let _ = self.toolbar.set_bounds(rect(
+            self.frame_inset(),
+            self.frame_inset(),
+            size.width - 2.0 * self.frame_inset(),
+            self.toolbar_height(),
+        ));
         let (dock_bounds, bounds) = self.layout_bounds();
         let _ = self.dock.set_bounds(dock_bounds);
         for page in self.pages.values() {
@@ -2034,6 +2032,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     let window = WindowBuilder::new()
         .with_maximized(true)
+        .with_decorations(false)
         .with_visible(false)
         .with_background_color((16, 20, 33, 255))
         .with_window_icon(
@@ -2217,7 +2216,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         command,
                         UiCommand::DockReady
                             | UiCommand::ShowAccounts
-                            | UiCommand::ToggleFullscreen
                             | UiCommand::NewTab
                             | UiCommand::NewPrivateWindow
                             | UiCommand::DuplicateTab
@@ -2253,13 +2251,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         windows_platform::install_shortcuts(
             &browser.toolbar,
             browser.proxy.clone(),
-            browser.fullscreen.clone(),
             browser.shortcuts.clone(),
         )?;
         windows_platform::install_shortcuts(
             &browser.dock,
             browser.proxy.clone(),
-            browser.fullscreen.clone(),
             browser.shortcuts.clone(),
         )?;
     }
@@ -2349,24 +2345,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 running,
                 ok,
             }) => browser.on_download_state(id, &file, running, ok),
-            Event::WindowEvent { event: WindowEvent::KeyboardInput { event, is_synthetic: false, .. }, .. }
-                if event.state == ElementState::Pressed && !event.repeat => {
-                #[cfg(windows)]
-                {
-                    use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
-                    // Root-window fallback before a child WebView receives focus.
-                    let key=match event.logical_key {tao::keyboard::Key::F11=>Some(122),tao::keyboard::Key::Escape=>Some(27),_=>None};
-                    if let Some(key)=key {
-                        if !browser.shortcuts.borrow().recording {
-                            if key==27 && browser.fullscreen.get() {browser.handle(UiCommand::ExitFullscreen);}
-                            else if let Some(chord)=unsafe {literust_browser::shortcuts::chord_from_vk(key,GetKeyState(0x11)<0,GetKeyState(0x12)<0,GetKeyState(0x10)<0)} {
-                                let action=browser.shortcuts.borrow().bindings.action(&chord).map(str::to_owned);
-                                if let Some(name)=action {browser.run_shortcut(&name);}
-                            }
-                        }
-                    }
-                }
-            }
             Event::WindowEvent { event: WindowEvent::Focused(true), .. } => {
                 if browser.appearance_open { let _ = browser.toolbar.focus(); }
                 else if let Some(page) = browser.pages.get(&browser.active_id()) { let _ = page.view.focus(); }
@@ -2389,6 +2367,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}
+        }
+        if browser.close_requested {
+            browser.persist();
+            #[cfg(windows)] { browser.system_vpn.take();browser.vpn_tunnel.take(); }
+            *control_flow=ControlFlow::Exit;
         }
         if browser.restart_requested {
             browser.restart_requested=false;

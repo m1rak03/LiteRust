@@ -18,10 +18,9 @@ static NEXT_DOWNLOAD: AtomicU64 = AtomicU64::new(1);
 pub fn configure(
     view: &wry::WebView,
     proxy: EventLoopProxy<AppEvent>,
-    fullscreen: Rc<Cell<bool>>,
     shortcuts: Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
 ) -> windows::core::Result<Rc<Cell<usize>>> {
-    install_shortcuts(view, proxy.clone(), fullscreen, shortcuts)?;
+    install_shortcuts(view, proxy.clone(), shortcuts)?;
     let active = Rc::new(Cell::new(0usize));
     let pending = active.clone();
     // Fail view creation if these settings cannot be applied. Google's vault is
@@ -101,7 +100,6 @@ pub fn configure(
 pub fn install_shortcuts(
     view: &wry::WebView,
     proxy: EventLoopProxy<AppEvent>,
-    fullscreen: Rc<Cell<bool>>,
     shortcuts: Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
 ) -> windows::core::Result<()> {
     unsafe {
@@ -132,16 +130,12 @@ pub fn install_shortcuts(
                     GetKeyState(0x12) < 0,
                     GetKeyState(0x10) < 0,
                 );
-                let command = if key == 0x1b && fullscreen.get() {
-                    Some(super::UiCommand::ExitFullscreen)
-                } else {
-                    chord
-                        .as_deref()
-                        .and_then(|c| runtime.bindings.action(c))
-                        .map(|name| super::UiCommand::Shortcut {
-                            name: name.to_owned(),
-                        })
-                };
+                let command = chord
+                    .as_deref()
+                    .and_then(|c| runtime.bindings.action(c))
+                    .map(|name| super::UiCommand::Shortcut {
+                        name: name.to_owned(),
+                    });
                 if let Some(command) = command {
                     args.SetHandled(true)?;
                     let mut physical = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
