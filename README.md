@@ -71,7 +71,7 @@
 
 Откройте [страницу релизов](https://github.com/m1rak03/LiteRust/releases) и проверьте описание конкретного выпуска. Для обычной установки выбирайте опубликованный **Setup-x64.exe**, если он есть в Assets, а не архив исходников.
 
-**Выпущена версия `0.15.0-alpha.4`: [скачать установщик Windows x64 (252 МБ)](https://github.com/m1rak03/LiteRust/releases/download/v0.15.0-alpha.4/LiteRust-0.15.0-alpha.4-Setup-x64.exe).** [Проверки установки и обновления Windows прошли](https://github.com/m1rak03/LiteRust/actions/runs/44017699620).
+**Выпущена версия `0.16.0-alpha.1`: [скачать установщик Windows x64 (252 МБ)](https://github.com/m1rak03/LiteRust/releases/download/v0.16.0-alpha.1/LiteRust-0.16.0-alpha.1-Setup-x64.exe).** [Проверки установки и обновления Windows прошли](https://github.com/m1rak03/LiteRust/actions/runs/44175317509).
 
 LiteRust требует WebView2 Runtime. Полный установщик включает его установку, файлы браузера и необходимые компоненты; один EXE из `target/release` не является готовым дистрибутивом. [Подробности установки и чёрного окна](docs/INSTALLATION.md).
 
