@@ -30,7 +30,6 @@ pub const ACTIONS: &[(&str, &str, &str)] = &[
     ),
     ("zoom_out", "Уменьшить страницу", "Ctrl+Minus"),
     ("zoom_reset", "Масштаб 100%", "Ctrl+Digit0"),
-    ("fullscreen", "Полный экран", "F11"),
     ("settings", "Настройки", "Ctrl+Comma"),
     ("vpn", "VPN", ""),
     ("tools", "Инструменты", ""),
@@ -181,7 +180,7 @@ mod tests {
     fn edits_roundtrip_and_disable() {
         let mut s = Shortcuts::default();
         s.0.insert("new_tab".into(), vec!["Ctrl+Shift+Y".into()]);
-        s.0.insert("fullscreen".into(), vec![]);
+        s.0.insert("print".into(), vec![]);
         assert!(s.validate());
         let copy: Shortcuts = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(copy.action("Ctrl+T"), None);
@@ -232,7 +231,7 @@ mod persistence_tests {
         data.shortcuts
             .0
             .insert("new_tab".into(), vec!["Ctrl+Shift+Y".into()]);
-        data.shortcuts.0.insert("fullscreen".into(), vec![]);
+        data.shortcuts.0.insert("print".into(), vec![]);
         let restored: crate::storage::BrowserData =
             serde_json::from_str(&serde_json::to_string(&data).unwrap()).unwrap();
         let restored = restored.clean();

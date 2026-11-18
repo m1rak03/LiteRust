@@ -50,7 +50,27 @@ pub fn render(data: &BrowserData, private_mode: bool) -> String {
             data.background_style.css()
         ));
     }
+    let home = data
+        .home
+        .clone()
+        .unwrap_or_else(|| crate::home::Dashboard::from_legacy(data));
+    let bookmarks: Vec<_> = data
+        .bookmarks
+        .iter()
+        .take(200)
+        .map(|b| crate::home::Tile {
+            title: b.title.clone(),
+            url: b.url.clone(),
+        })
+        .collect();
     START_PAGE
+        .replace("/* HOME_SCRIPT */", include_str!("../ui/home-editor.js"))
+        .replace("__HOME_JSON__", &crate::home::script_json(&home))
+        .replace("__BOOKMARKS_JSON__", &crate::home::script_json(&bookmarks))
+        .replace(
+            "__HOME_ICONS__",
+            &crate::home::script_json(&data.custom_icons),
+        )
         .replace("__EXTRA_STYLE__", &extra)
         .replace("__HOUR12__", if c.clock_24 { "false" } else { "true" })
         .replace(
@@ -100,6 +120,24 @@ pub fn render(data: &BrowserData, private_mode: bool) -> String {
                 "LiteRust · Сессии сайтов хранятся в вашем профиле"
             },
         )
+}
+
+pub fn render_with_profile(
+    data: &BrowserData,
+    private_mode: bool,
+    profile: Option<&crate::local_profiles::Profile>,
+) -> String {
+    let html = render(data, private_mode);
+    let avatar = profile
+        .map(|p| {
+            if !private_mode && crate::icons::png_bytes(&p.avatar).is_some() {
+                format!("<img alt=\"\" src=\"{}\">", escape_html(&p.avatar))
+            } else {
+                escape_html(&p.name.chars().next().unwrap_or('L').to_string())
+            }
+        })
+        .unwrap_or_else(|| "L".into());
+    html.replace("<!-- LOCAL_PROFILE_AVATAR -->L", &avatar)
 }
 
 #[cfg(test)]
@@ -162,7 +200,7 @@ mod tests {
         let html = render(&data, false);
         assert!(html.contains("background:linear-gradient(90deg,#123456,#abcdef)!important"));
         assert!(!html.contains("src=\"https://example.org/a.jpg"));
-        assert!(html.contains("href=\"literust://accounts\">Аккаунты"));
+        assert!(html.contains("href=\"literust://accounts\" aria-label=\"Локальный профиль\""));
         data.background_style.mode = 0;
         assert!(render(&data, false).contains("src=\"https://example.org/a.jpg"));
     }
@@ -173,7 +211,8 @@ mod tests {
             ..BrowserData::default()
         };
         let html = render(&data, false);
-        assert!(html.contains("https://yandex.ru/search/?text="));
+        assert!(html.contains("Поиск · Яндекс"));
+        assert!(html.contains("homeSend({action:'navigate',value:q})"));
         assert!(html.contains("Поиск · Яндекс"));
         assert!(!html.contains("__SEARCH_"));
     }
@@ -181,7 +220,7 @@ mod tests {
     fn default_services_and_signin() {
         let html = render(&BrowserData::default(), false);
         assert_eq!(html.matches("class=\"shortcut\"").count(), 4);
-        assert!(html.contains("class=\"sign-in\" href=\"literust://accounts\""));
-        assert!(html.contains("https://www.google.com/search?q="));
+        assert!(html.contains("class=\"sign-in profile-avatar\" href=\"literust://accounts\""));
+        assert!(html.contains("Поиск · Google"));
     }
 }

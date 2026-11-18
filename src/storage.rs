@@ -373,6 +373,8 @@ impl Appearance {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BrowserData {
+    pub home: Option<crate::home::Dashboard>,
+    pub sidebar: crate::layout::Sidebar,
     pub shortcuts: crate::shortcuts::Shortcuts,
     pub custom_icons: std::collections::BTreeMap<String, String>,
     pub app_icon_rgba: String,
@@ -405,6 +407,8 @@ pub struct BrowserData {
 impl Default for BrowserData {
     fn default() -> Self {
         Self {
+            home: None,
+            sidebar: crate::layout::Sidebar::default(),
             shortcuts: crate::shortcuts::Shortcuts::default(),
             custom_icons: std::collections::BTreeMap::new(),
             app_icon_rgba: String::new(),
@@ -494,6 +498,10 @@ impl BrowserData {
     }
 
     pub fn clean(mut self) -> Self {
+        if self.home.as_ref().is_some_and(|home| !home.valid()) {
+            self.home = None;
+        }
+        self.sidebar = self.sidebar.validated();
         self.custom_icons.retain(|key, value| {
             crate::icons::valid_target(key) && crate::icons::png_bytes(value).is_some()
         });
@@ -508,6 +516,7 @@ impl BrowserData {
         self.notes = self.notes.chars().take(20_000).collect();
         self.customization = self.customization.validated();
         self.browser_settings = self.browser_settings.validated();
+        self.shortcuts.0.remove("fullscreen"); // Retire legacy fullscreen without resetting other assignments.
         if !self.shortcuts.validate() {
             self.shortcuts = crate::shortcuts::Shortcuts::default();
         }

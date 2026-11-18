@@ -2,7 +2,7 @@
 !include "MUI2.nsh"
 !include "x64.nsh"
 Name "LiteRust"
-OutFile "LiteRust-0.15.0-alpha.4-Setup-x64.exe"
+OutFile "LiteRust-0.16.0-alpha.1-Setup-x64.exe"
 InstallDir "$LOCALAPPDATA\Programs\LiteRust"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
@@ -28,10 +28,14 @@ FunctionEnd
 Section "LiteRust"
 InitPluginsDir
 SetOutPath "$PLUGINSDIR"
-File "close-browser.ps1"
-nsExec::ExecToStack '"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\close-browser.ps1" -InstallDir "$INSTDIR"'
+File "close-browser.exe"
+nsExec::ExecToStack '"$PLUGINSDIR\close-browser.exe" "$INSTDIR" "$LOCALAPPDATA\LiteRustBrowser\diagnostics\install-close.log"'
 Pop $0
 Pop $1
+CreateDirectory "$LOCALAPPDATA\LiteRustBrowser\diagnostics"
+FileOpen $4 "$LOCALAPPDATA\LiteRustBrowser\diagnostics\install-helper.log" w
+FileWrite $4 "$0$\r$\n$1"
+FileClose $4
 ${If} $0 != 0
 MessageBox MB_ICONSTOP "Закройте LiteRust и повторите установку. Открытый браузер не был завершён принудительно." /SD IDOK
 SetErrorLevel 1
@@ -71,7 +75,7 @@ CreateShortcut "$SMPROGRAMS\LiteRust\LiteRust.lnk" "$INSTDIR\literust-browser.ex
 CreateShortcut "$DESKTOP\LiteRust.lnk" "$INSTDIR\literust-browser.exe" "" "$3"
 WriteUninstaller "$INSTDIR\Uninstall.exe"
 WriteRegStr HKCU "Software\LiteRust" "InstallDir" "$INSTDIR"
-WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "DisplayVersion" "0.15.0-alpha.4"
+WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "DisplayVersion" "0.16.0-alpha.1"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "DisplayName" "LiteRust"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "UninstallString" '"$INSTDIR\Uninstall.exe"'
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "DisplayIcon" "$INSTDIR\literust-browser.exe"

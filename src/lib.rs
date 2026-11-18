@@ -22,3 +22,7 @@ pub mod protected_data;
 pub mod accounts;
 
 pub mod shortcuts;
+
+pub mod local_profiles;
+
+pub mod home;

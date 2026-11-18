@@ -1,0 +1,78 @@
+name: Verify graceful shutdown of previous release
+on:
+  push:
+    paths:
+      - tools/installer-close.rs
+      - packaging/test-shutdown.nsi
+      - .github/workflows/upgrade-shutdown.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shutdown:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install and close previous browser with production helper
+        shell: pwsh
+        run: |
+          gh release download v0.15.0-alpha.4 --repo $env:GITHUB_REPOSITORY --pattern '*Setup-x64.exe' --dir previous
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot download previous release' }
+          $setup=Get-ChildItem previous/*Setup-x64.exe | Select-Object -First 1
+          $installer=Start-Process $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($installer.ExitCode -ne 0) { throw 'Baseline installation failed' }
+          $folder=Join-Path $env:LOCALAPPDATA 'Programs/LiteRust'
+          $app=Start-Process "$folder/literust-browser.exe" -PassThru
+          Write-Output "Browser PID: $($app.Id)"
+          $log="$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/startup.log"
+          for($i=0;$i -lt 30;$i++) {
+            Start-Sleep -Seconds 2
+            if((Test-Path $log) -and (Get-Content $log -Raw) -match 'New tab document ready') { break }
+          }
+          # A separate private copy must not be touched just because its exe has the same name.
+          $otherFolder=Join-Path $env:RUNNER_TEMP 'OtherLiteRust'
+          New-Item -ItemType Directory -Force $otherFolder | Out-Null
+          Copy-Item "$folder/literust-browser.exe","$folder/WebView2Loader.dll" $otherFolder/
+          $other=Start-Process "$otherFolder/literust-browser.exe" -ArgumentList '--private' -PassThru
+          for($i=0;$i -lt 20;$i++) { Start-Sleep -Milliseconds 500; $other.Refresh(); if($other.MainWindowHandle -ne 0) { break } }
+          if($other.HasExited -or $other.MainWindowHandle -eq 0) { throw 'Separate private copy failed to start' }
+          New-Item -ItemType Directory -Force diagnostics | Out-Null
+          Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+          $screen=[Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap=New-Object Drawing.Bitmap($screen.Width,$screen.Height)
+          $graphics=[Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($screen.Location,[Drawing.Point]::Empty,$screen.Size)
+          $bitmap.Save("$pwd/diagnostics/before-close.png")
+          $graphics.Dispose();$bitmap.Dispose()
+          rustc --edition=2021 -O -C target-feature=+crt-static -C strip=symbols tools/installer-close.rs -o packaging/close-browser.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Native shutdown helper build failed' }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS install failed' }
+          & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/test-shutdown.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'Shutdown wrapper build failed' }
+          $wrapper=Start-Process packaging/test-shutdown.exe -ArgumentList '/S' -Wait -PassThru
+          $closeResult=$wrapper.ExitCode
+          if (Test-Path "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/install-helper.log") { Get-Content "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/install-helper.log" }
+          Get-Content "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/install-close.log"
+          if ($closeResult -ne 0) { throw "Shutdown helper failed: $closeResult" }
+          if(-not $app.WaitForExit(5000)) { throw 'Browser did not exit' }
+          $other.Refresh()
+          if($other.HasExited) { throw 'Installer closed a different installation' }
+          Write-Output 'PASS: previous release closes gracefully; separate installation remains running'
+          [void]$other.CloseMainWindow()
+          if(-not $other.WaitForExit(5000)) { Stop-Process -Id $other.Id -Force }
+      - name: Collect diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force diagnostics | Out-Null
+          Copy-Item "$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/*.log" diagnostics/ -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shutdown-diagnostics
+          path: diagnostics/

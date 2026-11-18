@@ -1,10 +1,12 @@
-//! LiteRust Browser 0.15-alpha.4: per-site network-filter exceptions, permission prompts,
+//! LiteRust Browser 0.16-alpha.1: per-site network-filter exceptions, permission prompts,
 //! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use literust_browser::{
     google_passwords, import, layout, network_block, profile, security, storage, vpn,
 };
+#[cfg(windows)]
+mod session_self_test;
 #[cfg(windows)]
 mod windows_platform;
 
@@ -24,9 +26,9 @@ use storage::{
 };
 use tao::{
     dpi::LogicalSize,
-    event::{ElementState, Event, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
-    window::{Fullscreen, Window, WindowBuilder},
+    window::{Window, WindowBuilder},
 };
 use wry::{
     dpi::{LogicalPosition, LogicalSize as WebLogicalSize},
@@ -75,6 +77,31 @@ fn lru_victim(entries: impl IntoIterator<Item = (u64, u64)>, protected_id: u64) 
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum UiCommand {
+    SaveHome {
+        value: literust_browser::home::Dashboard,
+    },
+    SetSidebar {
+        value: layout::Sidebar,
+    },
+    DockExpanded {
+        open: bool,
+        #[serde(default)]
+        animate: bool,
+    },
+    ProfileCreate {
+        name: String,
+    },
+    ProfileSwitch {
+        id: String,
+    },
+    ProfileUpdate {
+        id: String,
+        name: String,
+        avatar: String,
+    },
+    ProfileDelete {
+        id: String,
+    },
     Shortcut {
         name: String,
     },
@@ -106,8 +133,10 @@ enum UiCommand {
         engine: literust_browser::navigation::SearchEngine,
     },
     Ready,
-    ToggleFullscreen,
-    ExitFullscreen,
+    WindowMinimize,
+    WindowMaximize,
+    WindowClose,
+    WindowDrag,
     DockReady,
     ShowTools,
     DuplicateTab,
@@ -126,6 +155,7 @@ enum UiCommand {
     },
     PrintPage,
     ShowSettings,
+    ShowSecurity,
     ShowAppearance,
     ShowVpn,
     VpnProbe,
@@ -194,6 +224,11 @@ impl std::fmt::Debug for UiCommand {
 }
 #[derive(Debug)]
 enum AppEvent {
+    InternalCommand {
+        tab_id: u64,
+        generation: u64,
+        command: UiCommand,
+    },
     Ui(UiCommand),
     VpnImported(Result<Vec<vpn::Node>, &'static str>),
     VpnProbed(Result<u128, &'static str>),
@@ -233,6 +268,10 @@ enum AppEvent {
 
 #[derive(Serialize)]
 struct ToolbarState<'a> {
+    sidebar: &'a layout::Sidebar,
+    local_profiles: literust_browser::local_profiles::Catalog,
+    current_profile: &'a str,
+    maximized: bool,
     shortcuts: &'a literust_browser::shortcuts::Shortcuts,
     shortcut_catalog: &'static [(&'static str, &'static str, &'static str)],
     background_style: storage::BackgroundStyle,
@@ -290,7 +329,17 @@ struct LivePage {
     loading: bool,
 }
 
+struct DrawerAnimation {
+    from: f64,
+    to: f64,
+    started: std::time::Instant,
+}
+
 struct Browser {
+    dock_animation: Option<DrawerAnimation>,
+    dock_width: std::cell::Cell<f64>,
+    dock_expanded: bool,
+    local_profiles: literust_browser::local_profiles::Catalog,
     shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
     closed_tabs: Vec<String>,
     #[cfg(windows)]
@@ -317,7 +366,7 @@ struct Browser {
     next_tab_id: u64,
     next_generation: u64,
     usage_clock: u64,
-    fullscreen: std::rc::Rc<std::cell::Cell<bool>>,
+    close_requested: bool,
     appearance_open: bool,
     account_prompt_checked: bool,
 }
@@ -343,6 +392,11 @@ impl Browser {
             .saturating_add(1)
             .max(1);
         Self {
+            dock_animation: None,
+            dock_width: std::cell::Cell::new(54.0),
+            dock_expanded: false,
+            local_profiles: literust_browser::local_profiles::Catalog::load(&app_root())
+                .unwrap_or_default(),
             shortcuts: std::rc::Rc::new(std::cell::RefCell::new(
                 literust_browser::shortcuts::Runtime {
                     bindings: data.shortcuts.clone(),
@@ -374,7 +428,7 @@ impl Browser {
             next_tab_id,
             next_generation: 1,
             usage_clock: 0,
-            fullscreen: std::rc::Rc::new(std::cell::Cell::new(false)),
+            close_requested: false,
             appearance_open: false,
             account_prompt_checked: false,
         }
@@ -409,16 +463,12 @@ impl Browser {
             "history" => UiCommand::ShowHistory,
             "downloads" => UiCommand::ShowDownloads,
             "print" => UiCommand::PrintPage,
-            "fullscreen" => UiCommand::ToggleFullscreen,
             "settings" => UiCommand::ShowSettings,
             "vpn" => UiCommand::ShowVpn,
             "tools" => UiCommand::ShowTools,
             "accounts" => UiCommand::ShowAccounts,
             "duplicate" => UiCommand::DuplicateTab,
             "address" => {
-                if self.fullscreen.get() {
-                    self.set_fullscreen(false);
-                }
                 let _ = self.toolbar.focus();
                 let _=self.toolbar.evaluate_script("window.openPanel?.(null);document.getElementById('address').focus();document.getElementById('address').select();");
                 return;
@@ -587,6 +637,14 @@ impl Browser {
     fn sync_toolbar(&self) {
         let url = self.current_url();
         let state = ToolbarState {
+            sidebar: &self.data.sidebar,
+            local_profiles: self.local_profiles.for_ui(if self.private_mode {
+                ""
+            } else {
+                current_profile_id()
+            }),
+            current_profile: current_profile_id(),
+            maximized: self.window.is_maximized(),
             background_style: self.data.background_style,
             account_prompt_always: self.data.account_prompt_always,
             notes: &self.data.notes,
@@ -648,7 +706,7 @@ impl Browser {
             auto_discard: self.data.auto_discard,
         };
         if let Ok(payload) = serde_json::to_string(&state) {
-            let dock_state = serde_json::json!({"appearance":self.data.appearance,"position":self.data.dock_position,"customization":self.data.customization,"animations":self.data.customization.animations,"vpn_enabled":self.vpn_vault.enabled,"vpn_running":self.vpn_running && (!self.vpn_vault.system_scope || self.system_vpn_running())});
+            let dock_state = serde_json::json!({"sidebar":self.data.sidebar,"expanded":self.dock_expanded||self.data.sidebar.mode=="pinned","appearance":self.data.appearance,"position":self.data.dock_position,"customization":self.data.customization,"animations":self.data.customization.animations,"vpn_enabled":self.vpn_vault.enabled,"vpn_running":self.vpn_running && (!self.vpn_vault.system_scope || self.system_vpn_running())});
             let _ = self
                 .dock
                 .evaluate_script(&format!("window.dockUpdate?.({dock_state});"));
@@ -686,17 +744,22 @@ impl Browser {
         }
     }
 
-    fn toolbar_height(&self) -> f64 {
-        if self.fullscreen.get() {
-            return 0.0;
+    fn frame_inset(&self) -> f64 {
+        if self.window.is_maximized() {
+            0.0
+        } else {
+            6.0
         }
+    }
+
+    fn toolbar_height(&self) -> f64 {
         let height = self
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor())
             .height;
         if self.appearance_open {
-            height.max(TOOLBAR_HEIGHT)
+            (height - 2.0 * self.frame_inset()).max(TOOLBAR_HEIGHT)
         } else {
             TOOLBAR_HEIGHT
         }
@@ -718,21 +781,27 @@ impl Browser {
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
-        if self.fullscreen.get() {
-            return (
-                rect(0.0, 0.0, 1.0, 1.0),
-                rect(0.0, 0.0, size.width, size.height),
-            );
-        }
-        let (dock, page) = layout::arrange(
-            size.width,
-            size.height,
+        let (dock, page) = layout::arrange_sidebar(
+            size.width - 2.0 * self.frame_inset(),
+            size.height - 2.0 * self.frame_inset(),
             TOOLBAR_HEIGHT,
             self.data.dock_position,
+            &self.data.sidebar,
+            self.dock_expanded,
         );
         (
-            rect(dock.x, dock.y, dock.width, dock.height),
-            rect(page.x, page.y, page.width, page.height),
+            rect(
+                dock.x + self.frame_inset(),
+                dock.y + self.frame_inset(),
+                dock.width,
+                dock.height,
+            ),
+            rect(
+                page.x + self.frame_inset(),
+                page.y + self.frame_inset(),
+                page.width,
+                page.height,
+            ),
         )
     }
     fn page_bounds(&self) -> Rect {
@@ -769,6 +838,30 @@ impl Browser {
                     && (url.is_empty() || url == "about:blank" || url.starts_with("data:text/html"))
                 {
                     return true;
+                }
+                if navigation_mode.get()
+                    && url.starts_with("literust://home/?")
+                    && url.len() <= 100_000
+                {
+                    if let Ok(parsed) = url::Url::parse(&url) {
+                        if let Some((_, payload)) =
+                            parsed.query_pairs().find(|(key, _)| key == "data")
+                        {
+                            if let Ok(command) = serde_json::from_str::<UiCommand>(&payload) {
+                                if matches!(
+                                    command,
+                                    UiCommand::SaveHome { .. } | UiCommand::Navigate { .. }
+                                ) {
+                                    let _ = internal_proxy.send_event(AppEvent::InternalCommand {
+                                        tab_id,
+                                        generation,
+                                        command,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    return false;
                 }
                 if navigation_mode.get()
                     && matches!(
@@ -833,13 +926,9 @@ impl Browser {
             }
         }
         #[cfg(windows)]
-        let downloads = windows_platform::configure(
-            &view,
-            self.proxy.clone(),
-            self.fullscreen.clone(),
-            self.shortcuts.clone(),
-        )
-        .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
+        let downloads =
+            windows_platform::configure(&view, self.proxy.clone(), self.shortcuts.clone())
+                .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(not(windows))]
         let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
         Ok(LivePage {
@@ -916,15 +1005,20 @@ impl Browser {
             let _ = page.view.set_memory_usage_level(MemoryUsageLevel::Normal);
             let _ = page.view.focus();
         }
+        self.resize();
         self.sync_toolbar();
     }
 
     fn load_active(&mut self) {
         let url = self.current_url().to_owned();
         let html = match url.as_str() {
-            NEW_TAB => Some(literust_browser::newtab::render(
+            NEW_TAB => Some(literust_browser::newtab::render_with_profile(
                 &self.data,
                 self.private_mode,
+                self.local_profiles
+                    .profiles
+                    .iter()
+                    .find(|p| p.id == current_profile_id()),
             )),
             BOOKMARKS | HISTORY | DOWNLOADS => Some(render_library(&url, &self.data)),
             _ => None,
@@ -1047,6 +1141,144 @@ impl Browser {
             let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
         }
         match command {
+            UiCommand::ShowSecurity => {
+                self.handle(UiCommand::ShowSettings);
+                let _ = self
+                    .toolbar
+                    .evaluate_script("window.selectSettingsCategory?.('privacy');");
+            }
+            UiCommand::SaveHome { value } => {
+                if !value.valid() {
+                    self.notice("Некорректная компоновка или ссылка. Изменения не сохранены.");
+                    return;
+                }
+                let previous = self.data.home.replace(value.clone());
+                if let Some(file) = &self.data_file {
+                    if let Err(error) = self.data.save(file) {
+                        self.data.home = previous;
+                        self.notice(&format!("Не удалось сохранить главную страницу: {error}"));
+                        return;
+                    }
+                }
+                let persisted = self.data_file.is_some();
+                let json = literust_browser::home::script_json(&value);
+                for tab in &self.data.tabs {
+                    if tab.url == NEW_TAB {
+                        if let Some(page) = self.pages.get(&tab.id) {
+                            let _ = page.view.evaluate_script(&format!(
+                                "window.homeSync?.({json},{persisted});"
+                            ));
+                        }
+                    }
+                }
+            }
+            UiCommand::SetSidebar { value } => {
+                self.dock_animation = None;
+                self.data.sidebar = value.validated();
+                self.dock_expanded = false;
+                self.persist();
+                self.resize();
+                self.sync_toolbar();
+            }
+            UiCommand::DockExpanded { open, animate } => {
+                self.dock_expanded = open;
+                let (bounds, _) = self.layout_bounds();
+                let target = bounds
+                    .size
+                    .to_logical::<f64>(self.window.scale_factor())
+                    .width;
+                if animate
+                    && self.data.customization.animations
+                    && matches!(
+                        self.data.dock_position,
+                        layout::DockPosition::Left | layout::DockPosition::Right
+                    )
+                {
+                    self.dock_animation = Some(DrawerAnimation {
+                        from: self.dock_width.get(),
+                        to: target,
+                        started: std::time::Instant::now(),
+                    });
+                } else {
+                    self.dock_animation = None;
+                    self.dock_width.set(target);
+                    let _ = self.dock.set_bounds(bounds);
+                }
+                #[cfg(windows)]
+                {
+                    let _ = windows_platform::raise(if self.appearance_open {
+                        &self.toolbar
+                    } else {
+                        &self.dock
+                    });
+                }
+                self.sync_toolbar();
+            }
+            UiCommand::ProfileCreate { name } => {
+                if self.private_mode {
+                    self.notice("Управляйте профилями в обычном окне.");
+                    return;
+                }
+                match literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
+                    c.create(&name)?;
+                    Ok(())
+                }) {
+                    Ok(c) => {
+                        self.local_profiles = c;
+                        self.sync_toolbar();
+                    }
+                    Err(e) => self.notice(&e.to_string()),
+                }
+            }
+            UiCommand::ProfileUpdate { id, name, avatar } => {
+                if self.private_mode {
+                    return;
+                }
+                match literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
+                    c.update(&id, &name, &avatar)
+                }) {
+                    Ok(c) => {
+                        self.local_profiles = c;
+                        self.sync_toolbar();
+                        self.refresh_newtabs();
+                    }
+                    Err(e) => self.notice(&e.to_string()),
+                }
+            }
+            UiCommand::ProfileDelete { id } => {
+                if self.private_mode {
+                    return;
+                }
+                match literust_browser::local_profiles::Catalog::delete(
+                    &app_root(),
+                    &id,
+                    current_profile_id(),
+                ) {
+                    Ok(c) => {
+                        self.local_profiles = c;
+                        self.sync_toolbar();
+                        self.notice("Профиль убран из списка. Его данные перемещены в ProfileTrash для восстановления.");
+                    }
+                    Err(e) => self.notice(&e.to_string()),
+                }
+            }
+            UiCommand::ProfileSwitch { id } => {
+                if self.private_mode || id == current_profile_id() {
+                    return;
+                }
+                match literust_browser::local_profiles::Catalog::load(&app_root()) {
+                    Ok(c) if c.profiles.iter().any(|p| p.id == id) => {
+                        self.persist();
+                        match std::env::current_exe()
+                            .and_then(|exe| Command::new(exe).arg("--profile").arg(&id).spawn())
+                        {
+                            Ok(_) => {}
+                            Err(e) => self.notice(&format!("Не удалось открыть профиль: {e}")),
+                        }
+                    }
+                    _ => self.notice("Профиль не найден"),
+                }
+            }
             UiCommand::Shortcut { name } => self.run_shortcut(&name),
             UiCommand::ShortcutRecording { active } => {
                 self.shortcuts.borrow_mut().recording = active;
@@ -1263,8 +1495,18 @@ impl Browser {
                     self.notice("Не удалось открыть системный браузер");
                 }
             }
-            UiCommand::ToggleFullscreen => self.set_fullscreen(!self.fullscreen.get()),
-            UiCommand::ExitFullscreen => self.set_fullscreen(false),
+            UiCommand::WindowMinimize => self.window.set_minimized(true),
+            UiCommand::WindowMaximize => {
+                self.window.set_maximized(!self.window.is_maximized());
+                self.sync_toolbar();
+            }
+            UiCommand::WindowClose => {
+                self.persist();
+                self.close_requested = true;
+            }
+            UiCommand::WindowDrag => {
+                let _ = self.window.drag_window();
+            }
             UiCommand::DockReady => self.sync_toolbar(),
             UiCommand::DuplicateTab => {
                 let url = self.data.tabs[self.data.active].url.clone();
@@ -1329,8 +1571,8 @@ impl Browser {
                 }
                 startup_log("Toolbar JavaScript ready");
                 self.window.set_visible(true);
-                let _ = self.toolbar.set_visible(!self.fullscreen.get());
-                let _ = self.dock.set_visible(!self.fullscreen.get());
+                let _ = self.toolbar.set_visible(true);
+                let _ = self.dock.set_visible(true);
                 self.resize();
                 if self.appearance_open {
                     let _ = self.toolbar.focus();
@@ -1586,7 +1828,7 @@ impl Browser {
                 }
             }
             UiCommand::NewPrivateWindow => {
-                match std::env::current_exe().and_then(|exe| Command::new(exe).arg("--private").spawn()) {
+                match std::env::current_exe().and_then(|exe| Command::new(exe).arg("--profile").arg(current_profile_id()).arg("--private").spawn()) {
                     Ok(_) => self.notice("Открыто отдельное приватное окно. Файлы загрузок всё равно сохраняются на диск."),
                     Err(err) => self.notice(&format!("Не удалось открыть приватное окно: {err}")),
                 }
@@ -1777,42 +2019,64 @@ impl Browser {
         }
     }
 
-    fn set_fullscreen(&mut self, enabled: bool) {
-        if self.fullscreen.replace(enabled) == enabled {
+    fn animate_drawer(&mut self) {
+        let Some(animation) = self.dock_animation.as_ref() else {
             return;
+        };
+        let progress = (animation.started.elapsed().as_secs_f64() / 0.2).min(1.0);
+        let width =
+            animation.from + (animation.to - animation.from) * (1.0 - (1.0 - progress).powi(3));
+        let (bounds, _) = self.layout_bounds();
+        let scale = self.window.scale_factor();
+        let mut position = bounds.position.to_logical::<f64>(scale);
+        let size = bounds.size.to_logical::<f64>(scale);
+        if matches!(self.data.dock_position, layout::DockPosition::Right) {
+            position.x += size.width - width;
         }
-        if enabled {
-            self.appearance_open = false;
-            let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
+        if (width - self.dock_width.get()).abs() >= 0.5 || progress >= 1.0 {
+            let _ = self
+                .dock
+                .set_bounds(rect(position.x, position.y, width, size.height));
+            self.dock_width.set(width);
         }
-        startup_log(if enabled {
-            "Fullscreen enabled"
-        } else {
-            "Fullscreen disabled"
-        });
-        self.window
-            .set_fullscreen(enabled.then_some(Fullscreen::Borderless(None)));
-        let _ = self.toolbar.set_visible(!enabled);
-        let _ = self.dock.set_visible(!enabled);
-        self.resize();
-        if let Some(page) = self.pages.get(&self.active_id()) {
-            let _ = page.view.set_visible(true);
-            let _ = page.view.focus();
+        if progress >= 1.0 {
+            self.dock_animation = None;
         }
     }
 
     fn resize(&self) {
+        let _ = self.toolbar.evaluate_script(&format!(
+            "window.updateWindowState?.({});",
+            self.window.is_maximized()
+        ));
         let size = self
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
-        let _ = self
-            .toolbar
-            .set_bounds(rect(0.0, 0.0, size.width, self.toolbar_height()));
+        let _ = self.toolbar.set_bounds(rect(
+            self.frame_inset(),
+            self.frame_inset(),
+            size.width - 2.0 * self.frame_inset(),
+            self.toolbar_height(),
+        ));
         let (dock_bounds, bounds) = self.layout_bounds();
+        self.dock_width.set(
+            dock_bounds
+                .size
+                .to_logical::<f64>(self.window.scale_factor())
+                .width,
+        );
         let _ = self.dock.set_bounds(dock_bounds);
         for page in self.pages.values() {
             let _ = page.view.set_bounds(bounds);
+        }
+        #[cfg(windows)]
+        {
+            let _ = windows_platform::raise(if self.appearance_open {
+                &self.toolbar
+            } else {
+                &self.dock
+            });
         }
     }
 }
@@ -1929,7 +2193,7 @@ fn export_bookmarks(data: &BrowserData) -> std::io::Result<PathBuf> {
     ))
 }
 
-fn profile_root() -> PathBuf {
+fn app_root() -> PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .or_else(|| {
@@ -1940,6 +2204,15 @@ fn profile_root() -> PathBuf {
         .join("LiteRustBrowser")
 }
 
+static CURRENT_PROFILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+fn current_profile_id() -> &'static str {
+    CURRENT_PROFILE.get().map(String::as_str).unwrap_or("main")
+}
+fn profile_root() -> PathBuf {
+    literust_browser::local_profiles::root(&app_root(), current_profile_id())
+        .expect("validated local profile id")
+}
+
 fn startup_log(message: &str) {
     let file = profile_root().join("diagnostics").join("startup.log");
     if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(file) {
@@ -1948,6 +2221,17 @@ fn startup_log(message: &str) {
 }
 
 fn main() {
+    #[cfg(windows)]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(pair) = args.windows(2).find(|a| a[0] == "--session-self-test") {
+            if session_self_test::run(&pair[1]).is_err() {
+                std::process::exit(1);
+            }
+            return;
+        }
+    }
+
     // Do this before spawning threads or creating WebView2 environments.
     for key in [
         "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
@@ -1988,7 +2272,7 @@ fn main() {
     if fs::create_dir_all(&diagnostics).is_ok() {
         let _ = fs::write(
             diagnostics.join("startup.log"),
-            b"LiteRust 0.15.0-alpha.4 startup\n",
+            b"LiteRust 0.16.0-alpha.1 startup\n",
         );
     }
     if let Err(error) = run() {
@@ -2014,6 +2298,32 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let catalog = literust_browser::local_profiles::Catalog::load(&app_root())?;
+    let args: Vec<String> = std::env::args().collect();
+    let selected = args
+        .windows(2)
+        .find(|a| a[0] == "--profile")
+        .map(|a| a[1].clone())
+        .unwrap_or_else(|| catalog.selected.clone());
+    if !catalog.profiles.iter().any(|p| p.id == selected) {
+        return Err(std::io::Error::other("Локальный профиль не найден").into());
+    }
+    let _ = CURRENT_PROFILE.set(selected);
+    if !std::env::args().any(|a| a == "--private") {
+        literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
+            if !c.profiles.iter().any(|p| p.id == current_profile_id()) {
+                return Err(std::io::Error::other("Профиль больше не существует"));
+            }
+            let path = profile_root();
+            let archived = app_root().join("ProfileTrash").join(current_profile_id());
+            if !path.exists() && archived.exists() {
+                fs::rename(archived, path)?;
+            }
+            Ok(())
+        })?;
+    }
+    fs::create_dir_all(profile_root().join("diagnostics"))?;
+
     let private_mode = std::env::args().any(|arg| arg == "--private");
     // Fail before creating any native window: an absent runtime must not leave
     // a blank window while WebView construction is attempted.
@@ -2034,6 +2344,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     let window = WindowBuilder::new()
         .with_maximized(true)
+        .with_decorations(false)
         .with_visible(false)
         .with_background_color((16, 20, 33, 255))
         .with_window_icon(
@@ -2045,9 +2356,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok(),
         )
         .with_title(if private_mode {
-            "LiteRust 0.15-alpha.4 — приватное окно"
+            "LiteRust 0.16-alpha.1 — приватное окно"
         } else {
-            "LiteRust Browser 0.15-alpha.4"
+            "LiteRust Browser 0.16-alpha.1"
         })
         .with_inner_size(LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(LogicalSize::new(690.0, 400.0))
@@ -2070,6 +2381,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             lock?
         })
     };
+    if !private_mode {
+        literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
+            c.selected = current_profile_id().into();
+            Ok(())
+        })?;
+    }
     let (data, data_file, context) = if private_mode {
         // No normal profile opened and no browser-data.json read/written.
         (BrowserData::default().clean(), None, None)
@@ -2210,20 +2527,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .with_new_window_req_handler(|_, _| NewWindowResponse::Deny)
         .with_ipc_handler(move |request| {
-            if request.uri() == "about:blank" && request.body().len() < 1024 {
+            if request.uri() == "about:blank" && request.body().len() < 4096 {
                 if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
                     // The dock only needs fixed navigation/settings actions.
                     if matches!(
                         command,
                         UiCommand::DockReady
+                            | UiCommand::DockExpanded { .. }
+                            | UiCommand::SetSidebar { .. }
                             | UiCommand::ShowAccounts
-                            | UiCommand::ToggleFullscreen
                             | UiCommand::NewTab
                             | UiCommand::NewPrivateWindow
                             | UiCommand::DuplicateTab
                             | UiCommand::PrintPage
                             | UiCommand::ShowTools
                             | UiCommand::Home
+                            | UiCommand::ShowSecurity
                             | UiCommand::ShowSettings
                             | UiCommand::ShowAppearance
                             | UiCommand::ShowVpn
@@ -2253,13 +2572,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         windows_platform::install_shortcuts(
             &browser.toolbar,
             browser.proxy.clone(),
-            browser.fullscreen.clone(),
             browser.shortcuts.clone(),
         )?;
         windows_platform::install_shortcuts(
             &browser.dock,
             browser.proxy.clone(),
-            browser.fullscreen.clone(),
             browser.shortcuts.clone(),
         )?;
     }
@@ -2290,6 +2607,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         match event {
             Event::UserEvent(AppEvent::Ui(cmd)) => browser.handle(cmd),
+            Event::UserEvent(AppEvent::InternalCommand{tab_id,generation,command})=>{
+                if browser.matching_view(tab_id,generation)&&browser.active_id()==tab_id&&browser.current_url()==NEW_TAB {browser.handle(command);}
+            },
             Event::UserEvent(AppEvent::NewTabAppearance {tab_id,generation,accounts}) => {
                 if browser.matching_view(tab_id,generation) && browser.data.tabs.iter().any(|t|t.id==tab_id&&t.url==NEW_TAB) {
                     browser.handle(if accounts { UiCommand::ShowAccounts } else { UiCommand::ShowSettings });
@@ -2349,24 +2669,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 running,
                 ok,
             }) => browser.on_download_state(id, &file, running, ok),
-            Event::WindowEvent { event: WindowEvent::KeyboardInput { event, is_synthetic: false, .. }, .. }
-                if event.state == ElementState::Pressed && !event.repeat => {
-                #[cfg(windows)]
-                {
-                    use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
-                    // Root-window fallback before a child WebView receives focus.
-                    let key=match event.logical_key {tao::keyboard::Key::F11=>Some(122),tao::keyboard::Key::Escape=>Some(27),_=>None};
-                    if let Some(key)=key {
-                        if !browser.shortcuts.borrow().recording {
-                            if key==27 && browser.fullscreen.get() {browser.handle(UiCommand::ExitFullscreen);}
-                            else if let Some(chord)=unsafe {literust_browser::shortcuts::chord_from_vk(key,GetKeyState(0x11)<0,GetKeyState(0x12)<0,GetKeyState(0x10)<0)} {
-                                let action=browser.shortcuts.borrow().bindings.action(&chord).map(str::to_owned);
-                                if let Some(name)=action {browser.run_shortcut(&name);}
-                            }
-                        }
-                    }
-                }
-            }
             Event::WindowEvent { event: WindowEvent::Focused(true), .. } => {
                 if browser.appearance_open { let _ = browser.toolbar.focus(); }
                 else if let Some(page) = browser.pages.get(&browser.active_id()) { let _ = page.view.focus(); }
@@ -2383,17 +2685,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                browser.persist();
-                #[cfg(windows)]
-                { browser.system_vpn.take(); browser.vpn_tunnel.take(); }
-                *control_flow = ControlFlow::Exit;
+                browser.close_requested = true;
             }
             _ => {}
+        }
+        browser.animate_drawer();
+        if browser.dock_animation.is_some(){*control_flow=ControlFlow::WaitUntil(std::time::Instant::now()+std::time::Duration::from_millis(16));}
+        if browser.close_requested {
+            browser.persist();
+            #[cfg(windows)] { browser.system_vpn.take();browser.vpn_tunnel.take(); }
+            *control_flow=ControlFlow::Exit;
         }
         if browser.restart_requested {
             browser.restart_requested=false;
             browser.persist();
-            match std::env::current_exe().and_then(|exe|Command::new(exe).arg("--resume-after-restart").spawn()) {
+            match std::env::current_exe().and_then(|exe|Command::new(exe).arg("--profile").arg(current_profile_id()).arg("--resume-after-restart").spawn()) {
                 Ok(_)=>{
                     #[cfg(windows)]
                     { browser.system_vpn.take(); browser.vpn_tunnel.take(); }
