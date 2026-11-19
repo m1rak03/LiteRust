@@ -1,0 +1,689 @@
+Аккаунты Google, Яндекс и другие	Google, Yandex and other accounts
+Аккаунты	Accounts
+Яндекс	Yandex
+Вкладки	Tabs
+Свернуть окно	Minimize window
+Развернуть окно	Maximize window
+Закрыть окно	Close window
+Назад	Back
+Вперёд	Forward
+Обновить	Reload
+Новая вкладка	New tab
+Домой	Home
+Адрес сайта или поисковый запрос	Website address or search query
+Адресная строка	Address bar
+Загрузка...	Loading...
+Добавить в закладки	Add bookmark
+Закладки	Bookmarks
+История	History
+Загрузки	Downloads
+открыть официальный сайт	open the official website
+Ещё	More
+Оформление	Appearance
+ВАШ	YOUR
+Пространство по вкусу	Make it yours
+Закрыть оформление	Close appearance settings
+Готово	Done
+Сначала выберите характер интерфейса, затем — палитру. Все стили сочетаются с тёмными и светлыми темами.	Choose a tab style and a color palette. Every style works with light and dark themes.
+Форма вкладок	Tab shape
+вариантов	options
+стилей вкладок	tab styles
+тем	themes
+Название темы	Theme name
+Поиск темы	Search themes
+Показать	Show
+Все темы	All themes
+Тёмные	Dark
+Светлые	Light
+Контрастные	High contrast
+Цветовые темы	Color themes
+Выбор сохраняется автоматически · Оформление панели и внутренних страниц	Changes save automatically and apply to the toolbar and internal pages
+Настройки	Settings
+Поиск по всем настройкам	Search all settings
+Поиск настроек	Search settings
+Закрыть настройки	Close settings
+Разделы настроек	Settings categories
+Профиль и аккаунты	Profile and accounts
+Внешний вид	Appearance
+Запуск и вкладки	Startup and tabs
+Поисковая система	Search engine
+Данные и безопасность	Privacy and security
+Производительность	Performance
+Сеть и сертификаты	Network and certificates
+Свои иконки	Custom icons
+Горячие клавиши	Keyboard shortcuts
+О браузере	About LiteRust
+Все настройки	All settings
+Ваш браузер. Ваши правила.	Your browser, your way.
+НАСТРОЙКИ	SETTINGS
+Аккаунты сервисов, пароли и перенос закладок.	Service accounts, passwords and bookmark transfer.
+Ничего не найдено. Попробуйте другое слово.	No matches. Try another word.
+Аккаунты и вход	Accounts and sign-in
+Яндекс, Microsoft, Yahoo, Opera и Firefox открываются на официальных страницах. Сессии обычного профиля сохраняются; сервис может запросить повторный вход.	Yandex, Microsoft, Yahoo, Opera and Firefox open on their official sites. Regular profiles keep site sessions, and services may ask you to sign in again.
+Выбрать сервис	Choose a service
+Внешний браузер	External browser
+Если Google запрещает вход во встроенном движке, используйте внешний браузер. Его сессия не переносится в LiteRust и не использует VPN LiteRust.	If Google blocks sign-in in WebView2, open the page in your external browser. That browser keeps its own session and connection.
+Пароли и закладки	Passwords and bookmarks
+Официальный сайт во внешнем браузере	Official site in your external browser
+Импорт закладок	Import bookmarks
+Из HTML-файла другого браузера	From an HTML file exported by another browser
+Экспорт закладок	Export bookmarks
+Сохранить ссылки в HTML-файл	Save links to an HTML file
+стилей вкладок и 330 тем. Настройте панель и внутренние страницы.	tab styles and 330 themes for the toolbar and internal pages.
+Выбрать оформление	Choose appearance
+Положение панели	Sidebar position
+Все функции остаются под рукой с любой стороны окна.	Place the sidebar on any edge of the window.
+Слева	Left
+Справа	Right
+Сверху	Top
+Снизу	Bottom
+Текст и форма	Text and shape
+Размер текста	Text size
+Мелкий	Small
+Обычный	Normal
+Средний	Medium
+Крупный	Large
+Свой радиус вкладок вместо формы стиля	Use a custom tab radius
+Скругление	Corner radius
+Свой акцентный цвет	Use a custom accent color
+Акцентный цвет	Accent color
+Отключите свой акцент, чтобы вернуть цвет выбранной темы.	Turn off the custom accent to restore the theme color.
+Движение и интерфейс	Motion and interface
+Анимации	Animations
+Компактные вкладки	Compact tabs
+Часы и дата	Clock and date
+Приветствие	Greeting
+Затемнение фона	Wallpaper dimming
+Сбросить эти настройки	Reset these settings
+Содержимое новой вкладки	New tab content
+Компоновка	Layout
+Две колонки	Two columns
+По центру	Centered
+Минимальная	Minimal
+Карточки сайтов	Site tiles
+Почта и меню аккаунтов	Mail and accounts menu
+часовой формат	hour clock
+Максимум карточек	Maximum tiles
+Показать фон целиком	Fit wallpaper to window
+Размытие фона	Wallpaper blur
+Цвет и градиент фона	Background color and gradient
+Тема или обои	Theme or wallpaper
+Один цвет	Solid color
+Линейный градиент	Linear gradient
+Радиальный градиент	Radial gradient
+Первый цвет	First color
+Второй цвет	Second color
+Угол	Angle
+Применить фон	Apply background
+Фон новой вкладки	New tab wallpaper
+С компьютера	From this computer
+Из интернета	From a URL
+Применить ссылку	Apply URL
+Убрать фон	Remove wallpaper
+По ссылке изображение загружается с указанного сайта при открытии новой вкладки.	LiteRust loads the image from that site when you open a new tab.
+Язык интерфейса	Interface language
+При запуске	On startup
+Восстановить вкладки	Restore tabs
+Домашняя страница	Home page
+Пустое поле — главный экран LiteRust. Кнопка «Домой» использует этот адрес.	Leave blank to use the LiteRust start page. The Home button uses this address.
+Новая вкладка всегда открывает стартовый экран LiteRust. Домашний адрес используется кнопкой «Домой».	New tabs always open the LiteRust start page. The Home button uses the home address.
+Открывать новые ссылки в фоне	Open new links in the background
+Масштаб страниц	Page zoom
+Записывать историю посещений	Record browsing history
+Выключение не удаляет старую историю и не включает приватный режим: вкладки и данные сайтов сохраняются.	Turning off history recording keeps your existing history, tabs and site data.
+Сохранить настройки браузера	Save browser settings
+Сбросить настройки браузера	Reset browser settings
+Поиск из адресной строки	Address bar search
+Выберите сервис для запросов из адресной строки и новой вкладки.	Choose a provider for the address bar and new tab search.
+Поисковик не меняет движок WebView2 и доверие TLS-сертификатам.	WebView2 handles page rendering and TLS for every provider.
+История и данные сайтов	History and site data
+Очистить историю	Clear history
+Удаление записей после подтверждения	Confirm before clearing entries
+Очистить cookies и кэш	Clear cookies and cache
+Вы выйдете из аккаунтов сайтов	This signs you out of sites
+Открыть приватное окно	Open a private window
+Отдельная временная сессия	Separate temporary session
+Для отключения записи истории откройте раздел «Запуск и вкладки».	To turn off history recording, open Startup and tabs.
+Фильтрация рекламы	Ad filtering
+Сетевой фильтр	Network filter
+Косметический фильтр	Cosmetic filter
+Экспериментальные функции. Могут влиять на работу некоторых сайтов.	These experimental features can affect how sites work.
+Управление памятью	Memory management
+Бюджет памяти	Memory budget
+Автовыгрузка вкладок	Automatic tab discard
+Освободить память	Free memory
+Автовыгрузка отключена по умолчанию. Выгруженные страницы могут потерять несохранённые формы и воспроизведение.	Automatic discard is off by default. Discarded tabs can lose unsaved forms and playback.
+Подключение через	Connect through
+Управляйте серверами и областью подключения в VPN-хабе.	Manage servers and connection scope in the VPN hub.
+Открыть VPN-хаб	Open VPN hub
+Российские TLS-сертификаты	Russian TLS certificates
+Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.	LiteRust uses WebView2 and Windows certificate trust. The medical accreditation site may require certificates from the Russian National CA.
+Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.	Adding a root certificate expands system-wide trust. Use the official source and verify the issuer.
+Инструкции Госуслуг	Gosuslugi instructions
+Национальный удостоверяющий центр	National Certification Authority
+Открыть сертификаты Windows	Open Windows certificates
+Открыть сайт аттестации напрямую	Open the accreditation site
+не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.	keeps TLS validation enabled. If an error persists, check the Windows date and contact the site operator.
+Боковая панель	Sidebar
+Как открывать	Expansion mode
+По нажатию (с подсказками слева)	Click (with labels on left hover)
+При наведении	On hover
+Закрепить	Pinned
+Ширина раскрытой панели	Expanded width
+Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.	The unpinned sidebar overlays the page. Pin it to reserve space. Expansion works on the left and right.
+Сбросить панель	Reset sidebar
+Что изменить	Icon to change
+Сайт на новой вкладке	Site on the new tab page
+Точный адрес закладки https://…	Exact bookmark URL, https://…
+Предпросмотр значка	Icon preview
+Стандартный значок	Default icon
+или WebP · до 5 МБ · до 32 значков	or WebP · up to 5 MB each · up to 32 icons
+Ваши сочетания клавиш	Your keyboard shortcuts
+Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.	Choose Edit, then press your keys. Use Ctrl, Alt, Shift or F1–F12. Esc cancels recording. Windows shortcuts and copy/paste commands are reserved.
+Найти команду	Find a command
+Например: вкладка или	For example: tab or
+Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.	Changes apply to all tabs in this window and persist after restart.
+Восстановить стандартные сочетания	Restore default shortcuts
+Экспериментальный браузер для Windows на Rust и Microsoft WebView2.	An experimental Windows browser built with Rust and Microsoft WebView2.
+Открыть выпуски на	View releases on
+Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.	Each release lists its installer version. Run the new installer to update.
+Есть несохранённые настройки запуска.	You have unsaved startup settings.
+Вернуться к ним	Return to settings
+VPN-хаб	VPN hub
+Серверы	Servers
+Добавить ключ или подписку	Add a key or subscription
+Добавить серверы	Add servers
+Найти сервер…	Find a server…
+Поиск серверов	Search servers
+Мои серверы	My servers
+серверов	servers
+Список серверов	Server list
+Добавьте ключ или подписку, чтобы выбрать сервер.	Add a key or subscription to choose a server.
+Добавьте ключ или подписку	Add a key or subscription
+чтобы выбрать сервер.	to choose a server.
+Ключи защищены Windows · Только трафик	Keys are protected by Windows · Traffic limited to
+Область	Scope
+Только браузер	Browser only
+Весь компьютер	Entire computer
+Закрыть VPN-хаб	Close VPN hub
+Подключить или отключить	Connect or disconnect
+VPN выключен	VPN is off
+выключен	off
+Подключить	Connect
+Выберите сервер слева	Choose a server on the left
+Выберите сервер	Choose a server
+сервер	server
+Сначала импортируйте ключ	Import a key first
+Проверить соединение	Test connection
+Тест HTTPS через выбранный	Test HTTPS through the selected
+Отключить	Disconnect
+Подключение и отключение перезапускают LiteRust. Cookies сохраняются, несохранённые формы теряются. TUN запрашивает права администратора. При закрытии LiteRust системный VPN отключается; Windows возвращается к обычной сети. UDP зависит от сервера и протокола.	Connecting or disconnecting restarts LiteRust. Cookies are saved and unsaved forms are lost. TUN requires administrator permission. The system VPN stops when LiteRust closes. UDP support depends on the server and protocol.
+Добавить VPN-серверы	Add VPN servers
+Закрыть импорт	Close import
+Тип импорта	Import type
+Определить автоматически	Detect automatically
+Ключи / прокси	Keys / proxies
+подписка	subscription
+Ключ, список ключей или HTTPS-ссылка	Key, list of keys or HTTPS URL
+или https://…	or https://…
+ключ или подписка	key or subscription
+Импортировать	Import
+Ключи защищены учётной записью Windows. После импорта поле очищается.	Windows protects the keys using your account. LiteRust clears this field after import.
+Поддерживаются TCP, WS, gRPC, XHTTP и Reality при поддержке ключа. Hysteria2, TUIC, WireGuard и зашифрованные Happ-ссылки пока не поддерживаются.	Supports TCP, WS, gRPC, XHTTP and Reality with compatible keys. Hysteria2, TUIC, WireGuard and encrypted Happ links are currently unsupported.
+Настройки и положение панели	Settings and sidebar position
+Оформление · 30 стилей вкладок / 330 тем	Appearance · 30 tab styles / 330 themes
+Вход / аккаунт	Sign in / account
+Освободить память фоновых вкладок	Free memory from background tabs
+Новое приватное окно	New private window
+Сетевой AdBlock: выкл. (эксперимент)	Network AdBlock: off (experimental)
+исключение для этого сайта	exception for this site
+Автовыгрузка: выкл. (сохранять формы)	Automatic discard: off (keep forms)
+Память: баланс (3 вкладки)	Memory: balanced (3 tabs)
+Косметический фильтр рекламы: выкл.	Cosmetic ad filter: off
+Как работают пароли Google?	How do Google passwords work?
+Очистить список загрузок	Clear download list
+Закрыть	Close
+Печать и PDF	Print and PDF
+Колонтитулы в PDF	Include headers and footers in the PDF
+Заголовок страницы вверху	Header text
+Текст внизу страницы	Footer text
+Печатать фон страницы	Print page backgrounds
+Сохранить PDF	Save PDF
+Предпросмотр и печать	Preview and print
+Чтобы напечатать страницу с вашим текстом, сохраните PDF и отправьте его на принтер.	To print with your own header and footer, save the PDF and send that file to the printer.
+Инструменты	Tools
+Рабочие инструменты	Workspace tools
+Печать / PDF текущей страницы	Print current page / PDF
+Заметки в профиле	Profile notes
+Сохранить заметки	Save notes
+Найти открытую вкладку	Find an open tab
+Поиск вкладок	Search tabs
+Дублировать текущую вкладку	Duplicate this tab
+Калькулятор	Calculator
+Первое число	First number
+Действие	Operation
+Второе число	Second number
+Быстрый доступ	Quick access
+Освободить память…	Free memory…
+Настройки браузера	Browser settings
+Профили и аккаунты	Profiles and accounts
+Локальный профиль	Local profile
+Каждый профиль хранит свои закладки, настройки и сессии сайтов. Регистрация LiteRust не нужна.	Each local profile keeps its own bookmarks, settings and site sessions.
+Имя текущего профиля	Current profile name
+Сохранить имя	Save name
+Фото профиля	Profile picture
+Стандартный аватар	Default avatar
+Автоматическое получение фото Google, Яндекса и Microsoft без официальной авторизации недоступно. Сохраните разрешённое вам изображение и загрузите его здесь.	Upload an image to use as your LiteRust profile picture.
+Новый профиль	New profile
+Например: Работа	For example, Work
+Создать профиль	Create profile
+Веб-аккаунты	Web accounts
+статус неизвестен	sign-in status unknown
+Проверить вход можно на официальной странице сервиса.	Check your sign-in on the official site.
+Выберите сервис. Сохранённые аккаунты и добавление другого аккаунта доступны на его официальной странице.	Choose a service to view or add accounts on its official site.
+Это меню не определяет, выполнен ли вход. Сессии обычного профиля сохраняются; сервис может запросить повторный вход. В приватном окне сессии временные.	Regular profiles keep sessions, and services can ask you to sign in again. Private sessions are temporary.
+Показывать выбор при каждом запуске	Show account chooser at startup
+Сохранить и продолжить	Save and continue
+По умолчанию меню показывается при первом запуске. Позже оно всегда доступно по кнопке «Аккаунты» слева сверху.	The chooser opens on first launch. You can open it again from the Accounts button.
+Закрыть вкладку	Close tab
+зашифрованное соединение, не гарантия безопасности сайта	encrypted connection
+Нет сведений о HTTPS	No HTTPS information
+Удалить из закладок	Remove bookmark
+ПРИВАТНО	PRIVATE
+Сетевой AdBlock (ограниченные правила)	Network AdBlock (limited rules)
+вкл.	on
+выкл.	off
+Автовыгрузка (потеря форм)	Automatic discard (can lose forms)
+Память	Memory
+вклад.	tabs
+для сайта: откройте HTTP(S)-страницу	for this site: open an HTTP(S) page
+выкл. (исключение)	off (exception)
+Косметический фильтр рекламы	Cosmetic ad filter
+В приватном окне Google Password Manager не открывается	Google Password Manager is unavailable in private windows
+внешний браузер	external browser
+Восстановить окно	Restore window
+Переключить блокировку запросов к ограниченному списку рекламных доменов? Активная страница обновится. Иногда фильтр может мешать работе сайтов; это НЕ полный uBlock.	Toggle the limited ad-domain blocklist and reload this page? The filter may affect some sites.
+Включить автоматическую выгрузку вкладок? Несохранённые формы, медиа и состояние сайтов будут потеряны при превышении бюджета.	Enable automatic tab discard? Background tabs can lose unsaved forms, media and other page state when the budget is exceeded.
+Изменение бюджета может немедленно выгрузить вкладки и потерять формы. Продолжить?	Changing the budget can immediately discard tabs and unsaved forms. Continue?
+Изменить сетевую блокировку для	Change network blocking for
+Страница обновится. Исключение относится только к точному домену, не ко всем поддоменам.	The page will reload and the exception applies to this exact host.
+Переключить визуальное скрытие некоторых рекламных элементов? Все загруженные вкладки будут выгружены и при открытии загрузятся снова. Реальные сетевые запросы не блокируются.	Toggle cosmetic filtering? Tabs will reload the next time you open them. This filter hides elements on the page.
+Экспорт недоступен в приватном окне.	Export is unavailable in private windows.
+Очистить только список загрузок LiteRust? Скачанные файлы останутся на диске.	Clear the LiteRust download list? Your files will stay on disk.
+Удалить всю историю посещений LiteRust?	Clear all LiteRust browsing history?
+Файл превышает 1,5 МБ.	The file exceeds 1.5 MB.
+Файл слишком большой.	The file is too large.
+Импортируем закладки…	Importing bookmarks…
+Не удалось прочитать HTML	Unable to read HTML
+Удалить ВСЕ cookies, кеш и локальные данные сайтов в LiteRust? Вы выйдете из аккаунтов, могут исчезнуть сохранённые на сайтах данные.	Delete all cookies, cache and local site data? This signs you out and can remove data saved by sites.
+Защищённое подключение	Protected connection
+Серверы не найдены	No servers found
+Живых вкладок	Loaded tabs
+Автовыгрузка	Automatic discard
+включена	on
+выключена	off
+Выгрузка удаляет несохранённые формы фоновых страниц.	Discarding background tabs clears unsaved forms.
+работает для Windows	is active in Windows
+не запущен. Для включения нужны права администратора.	is off. Administrator permission is required to start it.
+Трафик других приложений не меняется	Other applications keep their own connections
+Туннель запущен	Tunnel running
+остановился	stopped
+Движок работает. Доступность сервера зависит от вашего ключа.	The VPN engine is running. Server availability depends on your key.
+Сайты не переключаются на прямое соединение.	Site traffic remains routed through the proxy.
+Обычное подключение к сети	Regular network connection
+Прокси-сервер	Proxy server
+Тест HTTPS через активный VPN	Test HTTPS through the active VPN
+Проверяем…	Testing…
+Импортируем…	Importing…
+Для замены списка серверов сначала отключите VPN.	Disconnect the VPN before replacing the server list.
+Изменяйте ключи в обычном окне.	Change keys in a regular window.
+Приватное окно	Private window
+Слишком большой список	The list is too large
+Перезапустить LiteRust для изменения VPN? Несохранённые формы будут потеряны. Завершите загрузки и закройте другие окна LiteRust.	Restart LiteRust to change the VPN? Unsaved forms will be lost. Finish downloads and close other LiteRust windows first.
+Поиск или адрес	Search or address
+Выгрузить фоновые вкладки? Несохранённые формы и воспроизведение на них будут потеряны. При открытии вкладки загрузятся заново.	Discard background tabs? They will reload when opened and lose unsaved forms and playback.
+Нужна HTTPS-ссылка на изображение.	Enter an HTTPS image URL.
+Выберите изображение до 20 МБ.	Choose an image under 20 MB.
+Картинка подготовлена и отправлена на сохранение.	Image prepared for saving.
+Не удалось обработать изображение. Попробуйте другой файл.	Unable to process the image. Try another file.
+Настройки отправлены на сохранение	Settings submitted
+Нужен HTTP(S)-адрес без логина и пароля	Enter an HTTP(S) address without a username or password
+Основной профиль	Main profile
+Профиль	Profile
+открыт	open
+Удалить	Delete
+Удалить профиль	Delete profile
+Убрать профиль	Remove profile
+Его cookies, настройки, история и закладки будут перемещены в локальный архив ProfileTrash для восстановления. Открытый профиль удалить нельзя.	Its cookies, settings, history and bookmarks will move to the local ProfileTrash folder for recovery. Switch away from a profile before removing it.
+Введите имя профиля	Enter a profile name
+или WebP до 5 МБ	or WebP under 5 MB
+Не удалось прочитать изображение	Unable to read image
+Главная	Home
+Профили	Profiles
+Безопасность	Security
+Дублировать вкладку	Duplicate tab
+Печать / PDF	Print / PDF
+Печать	Print
+Выше	Move up
+Ниже	Move down
+Вернуть закрытую вкладку	Reopen closed tab
+Следующая вкладка	Next tab
+Предыдущая вкладка	Previous tab
+Обновить страницу	Reload page
+Добавить / убрать закладку	Toggle bookmark
+Найти на странице	Find on page
+Увеличить страницу	Zoom in
+Уменьшить страницу	Zoom out
+Масштаб	Zoom
+Вкладка	Tab
+Последняя вкладка	Last tab
+Сочетания отправлены на сохранение.	Shortcuts submitted.
+Нажмите сочетание…	Press a shortcut…
+Отключено	Disabled
+Отмена	Cancel
+Изменить	Edit
+Нажмите новое сочетание для	Press a new shortcut for
+отмена.	to cancel.
+Убрать	Remove
+Сброс	Reset
+Стандартное сочетание уже использует	Default shortcut already used by
+Сначала измените его.	Change that shortcut first.
+Команды не найдены	No commands found
+Назначение отменено.	Recording canceled.
+Выберите Ctrl/Alt с клавишей или F1–F12. Системные команды и ввод текста защищены.	Use Ctrl or Alt with a key, or F1–F12. System and text-entry shortcuts are reserved.
+Сочетание занято	Shortcut already used
+Выберите другое или сначала уберите старое назначение.	Choose another shortcut or remove the existing assignment first.
+Восстановить все стандартные сочетания? Ваши назначения будут заменены.	Restore all default shortcuts? This replaces your current assignments.
+Привычные сочетания и ваши команды. Изменения сохраняются сразу.	Customize command shortcuts. Changes save immediately.
+Стиль, цвета, текст и положение панели.	Style, colors, text and sidebar position.
+Фон, часы и ссылки — только то, что вам нужно.	Wallpaper, clock and links.
+Настройте начало работы. Изменения сохраняются кнопкой ниже.	Set what happens on startup. Use the button below to save.
+Ваш привычный поиск в адресной строке и новой вкладке.	Your search provider for the address bar and new tab page.
+Управление локальными данными и приватными окнами.	Manage local data and private windows.
+Освобождайте память осознанно, сохраняя важные страницы.	Manage memory used by background pages.
+и безопасная диагностика подключения.	and connection diagnostics.
+Замените значки интерфейса и сайтов.	Replace interface and site icons.
+Версия, исходники и установщики LiteRust.	LiteRust version, source and installers.
+Полный список доступных параметров.	Browse every setting.
+Результаты поиска	Search results
+По всем разделам · найдено	All categories · matches
+Полный экран	Maximize
+Дублировать	Duplicate
+Добавить закладку	Add bookmark
+Пароли	Passwords
+Меню	Menu
+Сайт	Website
+Информация	Information
+Предупреждение	Warning
+Подключение	Connection
+Стрелка	Arrow
+Аккаунт	Account
+Поиск	Search
+Значок отправлен на сохранение.	Icon submitted.
+Проверьте адрес сайта и выберите PNG, JPEG или WebP до 5 МБ.	Check the address and choose a PNG, JPEG or WebP under 5 MB.
+Укажите адрес сайта.	Enter a website address.
+Заметки отправлены на сохранение	Notes submitted
+Нет конечного результата	Result is undefined
+Логотип	Logo
+Почта и профиль	Mail and profile
+Часы	Clock
+Дата	Date
+Заголовок	Title
+Подпись	Subtitle
+Быстрые сайты	Quick sites
+Слишком много данных для одного сохранения. Сократите длинные ссылки.	Too much data to save at once. Shorten the longest links.
+Переместить	Move
+Изменить ширину	Resize
+Ширина изменена. Нажмите «Сохранить».	Width changed. Select Save.
+Настроить страницу	Customize page
+Редактор главной страницы	Start page editor
+Ваше пространство	Customize your space
+Отменить изменение	Undo
+Стандартная сетка	Reset grid
+Сохранить	Save
+Выбранный блок	Selected widget
+Ширина	Width
+Раньше	Earlier
+Позже	Later
+Автоматическое приветствие	Automatic greeting
+Перетаскивайте блоки за заголовок ↕. Сетка не допускает перекрытий.	Drag widgets by the ↕ handle to move them.
+Быстрый сайт	Quick site
+Выбрать из закладок	Choose from bookmarks
+Ввести вручную	Enter manually
+Название	Name
+Адрес сайта	Website address
+Есть изменения. Нажмите «Сохранить».	Unsaved changes. Select Save.
+Изменения отправлены на сохранение.	Changes submitted.
+Сохранено в локальном профиле.	Saved to the local profile.
+Применено в текущем окне.	Applied in this window.
+Добавить сайт	Add site
+БЫСТРЫЙ ДОСТУП	QUICK ACCESS
+Введите название и HTTP(S)-адрес без логина и пароля.	Enter a name and an HTTP(S) address without a username or password.
+Последнее изменение отменено. Сохраните результат.	Last change undone. Save to keep this layout.
+Начните с вопроса. Продолжите открытием.	Start with a question. See where it takes you.
+Панель функций	Sidebar actions
+Развернуть панель	Expand sidebar
+Свернуть панель	Collapse sidebar
+движок работает	engine running
+соединение остановлено	connection stopped
+Почта	Mail
+Пространство для ваших идей	Your start page
+Куда отправимся?	Where to?
+Что хотите найти?	What would you like to find?
+Поисковый запрос	Search query
+Найти	Search
+Под рукой	At hand
+ВАШИ ЗАКЛАДКИ	YOUR BOOKMARKS
+Быстрые ссылки	Quick links
+Нажмите ☆ в адресной строке, чтобы добавить сюда любимый сайт.	Select ☆ in the address bar to bookmark a site.
+Ваш ритм. Ваши цвета. Ваш LiteRust.	Make LiteRust yours.
+Выберите фон и оформление под настроение.	Choose a wallpaper and theme.
+Фон и темы	Wallpaper and themes
+Время для тихих открытий.	A quiet time to explore.
+Хорошего начала дня.	Good morning.
+Место для новых идей.	Room for new ideas.
+Выдохните. Вы дома.	Welcome back.
+Библиотека	Library
+Поиск по списку...	Search this list...
+Фильтр списка	Filter list
+Здесь пока ничего нет	Nothing here yet
+Избранные сайты. Звёздочка в адресной строке добавляет или удаляет закладку.	Use the star in the address bar to add or remove bookmarks.
+Сохранённые посещения (до 1500). Историю можно очистить через меню ⋯ вверху.	Up to 1,500 visited pages. Clear history from the ⋯ menu.
+Список загрузок. Файлы сохраняет движок WebView2; здесь отображается их статус.	Track downloads handled by WebView2.
+Скачивается	Downloading
+Завершено	Complete
+Прервано	Interrupted
+Шалфей	Sage
+Океан	Ocean
+Лаванда	Lavender
+Роза	Rose
+Янтарь	Amber
+Мята	Mint
+Индиго	Indigo
+Коралл	Coral
+Лайм	Lime
+Орхидея	Orchid
+Графит	Graphite
+Рубин	Ruby
+Гранат	Garnet
+Пламя	Flame
+Мандарин	Tangerine
+Мёд	Honey
+Песок	Sand
+Золото	Gold
+Лимон	Lemon
+Олива	Olive
+Фисташка	Pistachio
+Трава	Grass
+Лес	Forest
+Изумруд	Emerald
+Нефрит	Jade
+Бирюза	Turquoise
+Лагуна	Lagoon
+Лёд	Ice
+Арктика	Arctic
+Небо	Sky
+Волна	Wave
+Лазурь	Azure
+Кобальт	Cobalt
+Сапфир	Sapphire
+Ночь у моря	Seaside night
+Черника	Blueberry
+Слива	Plum
+Фиалка	Violet
+Аметист	Amethyst
+Ирис	Iris
+Сирень	Lilac
+Фуксия	Fuchsia
+Малина	Raspberry
+Вишня	Cherry
+Пион	Peony
+Пудра	Powder
+Медь	Copper
+Бронза	Bronze
+Кофе	Coffee
+Какао	Cocoa
+Терракота	Terracotta
+Персик	Peach
+Абрикос	Apricot
+Ваниль	Vanilla
+Солома	Straw
+Эвкалипт	Eucalyptus
+Малахит	Malachite
+Аквамарин	Aquamarine
+Сталь	Steel
+Джинс	Denim
+Космос	Space
+Сумерки	Twilight
+Виноград	Grape
+Шёлк	Silk
+Брусника	Lingonberry
+Закат	Sunset
+Ночь	Night
+Тёмная	Dark
+Светлая	Light
+Бумага	Paper
+Контраст	Contrast
+Орбита	Orbit
+Минимализм	Minimal
+Студия	Studio
+Классика	Classic
+Терминал	Terminal
+Капсула	Pill
+Контур	Outline
+Подчёркивание	Underline
+Боковой акцент	Side accent
+Блоки	Blocks
+Мягкие карточки	Soft cards
+Стекло	Glass
+Лента	Ribbon
+Скошенные	Beveled
+Арка	Arch
+Скоба	Bracket
+Пунктир	Dashed
+Точки	Dotted
+Двойная рамка	Double border
+Ретро	Retro
+Неон	Neon
+Градиент	Gradient
+Лепесток	Petal
+Билет	Ticket
+Монолит	Monolith
+Парящие	Floating
+Нижняя дуга	Bottom arc
+Вырез	Cutout
+Тонкие линии	Fine lines
+Спокойные линии и мягкие поверхности	Clean lines and soft surfaces
+Чистые границы, минимум деталей	Crisp borders with minimal detail
+Воздушные карточки и глубина	Airy cards with depth
+Строгая геометрия рабочего стола	Classic desktop geometry
+Моноширинный ритм и точный акцент	Monospace type with a sharp accent
+Округлые вкладки-капсулы	Rounded pill tabs
+Тонкая рамка активной вкладки	Thin border around the active tab
+Акцент только под заголовком	Accent below the title
+Маркер у левого края	Left-edge marker
+Плотные прямоугольные вкладки	Compact rectangular tabs
+Лёгкая тень под каждой вкладкой	A subtle shadow below each tab
+Полупрозрачная поверхность	Translucent surface
+Соединённая лента вкладок	Connected row of tabs
+Диагональные торцы	Slanted edges
+Высокая округлая арка	Tall rounded arch
+Открытые границы по бокам	Open side borders
+Пунктирная рамка	Dashed border
+Мягкая точечная обводка	Soft dotted outline
+Двойной тонкий контур	Thin double outline
+Объёмные границы и засечки	Raised borders and serifs
+Сдержанное свечение акцента	Subtle accent glow
+Плавный переход цвета	Smooth color transition
+Асимметричная волна	Asymmetric wave
+Округлый левый край	Rounded left edge
+Перфорация по бокам	Perforated sides
+Плотная активная вкладка	Solid active tab
+Приподнятые карточки	Raised cards
+Скругление нижних углов	Rounded bottom corners
+Геометрические срезы	Geometric cutouts
+Тонкая линия и свободный фон	Fine line and open background
+LiteRust в Windows	LiteRust app icon
+AdBlock для	AdBlock for
+Работа	Work
+Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.16-alpha.1 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.	Google Password Manager opens in your external browser. Google manages the passwords there. LiteRust and its WebView2 profile cannot read the Chrome vault or autofill passwords from your Google account.
+Поиск требует обновления Microsoft WebView2 Runtime.	Update Microsoft WebView2 Runtime to use Find on page.
+Не удалось сохранить профиль. Проверьте свободное место и права доступа.	Unable to save the profile. Check disk space and permissions.
+Дождитесь завершения текущей операции.	Wait for the current operation to finish.
+Сократите текст колонтитулов.	Shorten the header or footer text.
+Адрес отклонён: опасная схема, встроенные учётные данные или превышение длины.	Address rejected. Check the scheme, embedded credentials and URL length.
+Опасный адрес: логин или пароль встроен прямо в URL. Переход отменён.	The URL contains a username or password. Navigation canceled.
+Достигнут лимит 24 вкладок.	The 24-tab limit has been reached.
+Новая вкладка заблокирована: подозрительные данные пользователя в URL.	The new tab was blocked because its URL contains suspicious user information.
+Некорректная компоновка или ссылка. Изменения не сохранены.	Invalid layout or link. Changes could not be saved.
+Управляйте профилями в обычном окне.	Open a regular window to manage profiles.
+Профиль убран из списка. Его данные перемещены в ProfileTrash для восстановления.	Profile removed. Its data is available for recovery in ProfileTrash.
+Профиль не найден	Profile not found
+Сочетание занято или недопустимо. Изменения не сохранены.	Shortcut unavailable or already assigned. Changes could not be saved.
+Меняйте значки в обычном окне.	Open a regular window to change icons.
+Некорректный значок	Invalid icon
+Можно сохранить до 32 своих значков.	You can save up to 32 custom icons.
+Некорректный значок приложения	Invalid app icon
+Значок сохранён	Icon saved
+Для домашней страницы нужен HTTP(S)-адрес без логина и пароля.	Enter an HTTP(S) home page address without a username or password.
+Выберите JPEG или HTTPS-ссылку на изображение.	Choose a JPEG image or an HTTPS image URL.
+Фон сохранён. Он появится на новой вкладке.	Wallpaper saved. It will appear in new tabs.
+Не удалось сохранить область VPN	Unable to save the VPN scope
+Импорт доступен в обычном окне при выключенном VPN.	Turn off VPN and use a regular window to import.
+Размер ключей превышает 1 MiB	The keys exceed 1 MiB
+Изменение VPN доступно в обычном окне после завершения импорта	Wait for the import to finish, then use a regular window to change the VPN
+Сначала импортируйте и выберите сервер	Import and choose a server first
+Дождитесь завершения скачиваний перед изменением VPN.	Finish downloads before changing the VPN.
+Не удалось сохранить защищённые настройки VPN	Unable to save protected VPN settings
+VPN-хаб поддерживается в Windows-сборке	The VPN hub is available in the Windows build
+Не удалось открыть системный браузер	Unable to open the system browser
+VPN всего компьютера не запущен. Защищены только вкладки браузера. Откройте VPN-хаб и подтвердите запрос Windows.	The system VPN is off. Only browser traffic is routed through the VPN. Open the VPN hub and confirm the Windows prompt.
+Завершите печать или загрузку перед закрытием вкладки.	Finish printing or downloading before closing this tab.
+В приватном окне закладки не записываются на диск.	Private windows do not save bookmarks to disk.
+Достигнут лимит закладок. Удалите ненужную закладку перед добавлением.	The bookmark limit has been reached. Remove a bookmark before adding another.
+Экспорт закладок недоступен в приватном окне.	Bookmark export is unavailable in private windows.
+Нет закладок для экспорта.	There are no bookmarks to export.
+Список загрузок очищен. Скачанные файлы на диске НЕ удалены.	Download list cleared. Your files are still on disk.
+История LiteRust удалена. Cookies и кэш не затронуты.	LiteRust browsing history cleared. Cookies and cache are still available.
+Импорт закладок недоступен в приватном окне.	Bookmark import is unavailable in private windows.
+Для постоянного входа откройте Google в обычном окне LiteRust.	Open Google in a regular LiteRust window to keep your session.
+Google Password Manager открывается во внешнем обычном браузере. В приватном окне LiteRust действие отключено.	Open Google Password Manager in an external browser from a regular LiteRust window.
+Открываем Google Password Manager во внешнем браузере. Автозаполнение Google внутри LiteRust пока недоступно.	Opening Google Password Manager in your external browser.
+Открыто отдельное приватное окно. Файлы загрузок всё равно сохраняются на диск.	Private window opened. Downloads are stored on disk.
+Исключение доступно только для открытого HTTP(S)-сайта.	Open an HTTP(S) site to add an exception.
+Дождитесь завершения загрузок перед пересозданием вкладок.	Wait for downloads to finish before reloading tabs.
+Косметический фильтр переключён. Вкладки перезагрузятся. Он скрывает часть баннеров, но НЕ блокирует рекламные запросы.	Cosmetic filter changed. Tabs will reload and some ads will be hidden on the page.
+WebView2 не смог сохранить PDF.	WebView2 could not save the PDF.
+VPN остановился. Прямое соединение не включается. Откройте VPN-хаб.	The VPN stopped. Browser traffic remains routed through the proxy. Open the VPN hub.
+VPN всего ПК остановлен. Windows может использовать обычную сеть. Браузер остаётся на своём прокси.	The system VPN stopped. Windows can use its regular connection. LiteRust remains on its proxy.
+Не удалось сохранить VPN-ключи	Unable to save VPN keys
+Серверы импортированы и защищены учётной записью Windows. Выберите сервер и подключитесь.	Servers imported and protected by your Windows account. Choose a server to connect.
+VPN-хаб доступен в Windows-сборке	The VPN hub is available in the Windows build
+Настройки VPN сохранены. Закройте и заново запустите LiteRust для применения.	VPN settings saved. Restart LiteRust to apply them.
+Загружается	Downloading
+Ошибка	Failed
+Домен в Punycode (xn--): проверьте адрес перед вводом пароля. Это не означает, что сайт вредоносный.	Internationalized domain shown in Punycode (xn--). Check the address before entering a password.
+Незащищённое соединение HTTP. Не вводите пароли и платёжные данные.	Unencrypted HTTP connection. Avoid entering passwords or payment details.
+Файл слишком большой (максимум 1,5 МБ).	File too large (maximum 1.5 MB).
+Файл пуст.	The file is empty.
+В выбранном HTML-файле не найдены закладки.	No bookmarks were found in the selected HTML file.

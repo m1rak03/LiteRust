@@ -42,8 +42,7 @@ pub fn configure(
                 let Some(args) = args else {
                     return Ok(());
                 };
-                // Wry's default handler sets Handled=true. Restore the native UI;
-                // WebView2 owns filename selection, conflicts, progress and cancel.
+                // Let WebView2 own filename selection, conflicts, progress and cancellation.
                 args.SetHandled(false)?;
                 let operation = args.DownloadOperation()?;
                 let mut uri = PWSTR::null();
@@ -56,7 +55,9 @@ pub fn configure(
                 let events = proxy.clone();
                 let count = pending.clone();
                 let in_progress = Cell::new(true);
-                let mut token = 0;
+                let token = Rc::new(Cell::new(0));
+                let callback_token = token.clone();
+                let mut registration = 0;
                 operation.add_StateChanged(
                     &StateChangedEventHandler::create(Box::new(move |op, _| {
                         let Some(op) = op else {
@@ -72,6 +73,12 @@ pub fn configure(
                                 count.set(count.get().saturating_sub(1));
                             }
                         }
+                        if !running {
+                            let mut can_resume = windows::core::BOOL::default();
+                            if op.CanResume(&mut can_resume).is_ok() && !can_resume.as_bool() {
+                                let _ = op.remove_StateChanged(callback_token.get());
+                            }
+                        }
                         let mut actual_path = PWSTR::null();
                         op.ResultFilePath(&mut actual_path)?;
                         let file = PathBuf::from(take_pwstr(actual_path));
@@ -83,8 +90,9 @@ pub fn configure(
                         });
                         Ok(())
                     })),
-                    &mut token,
+                    &mut registration,
                 )?;
+                token.set(registration);
                 pending.set(pending.get() + 1);
                 let _ = proxy.send_event(AppEvent::DownloadStarted { id, url, file });
                 Ok(())
@@ -186,5 +194,131 @@ pub fn raise(view: &wry::WebView) -> windows::core::Result<()> {
             SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
         )?;
     }
+    Ok(())
+}
+
+pub fn color_scheme(view: &wry::WebView, dark: bool) -> windows::core::Result<()> {
+    unsafe {
+        let core: ICoreWebView2_13 = view.webview().cast()?;
+        core.Profile()?.SetPreferredColorScheme(if dark {
+            COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK
+        } else {
+            COREWEBVIEW2_PREFERRED_COLOR_SCHEME_LIGHT
+        })
+    }
+}
+
+pub fn print_preview(view: &wry::WebView) -> windows::core::Result<()> {
+    unsafe {
+        let core: ICoreWebView2_16 = view.webview().cast()?;
+        core.ShowPrintUI(COREWEBVIEW2_PRINT_DIALOG_KIND_BROWSER)
+    }
+}
+
+pub fn choose_pdf(view: &wry::WebView) -> windows::core::Result<Option<PathBuf>> {
+    use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+    use windows::{
+        core::PCWSTR,
+        Win32::{
+            Foundation::HWND,
+            UI::{
+                Controls::Dialogs::*,
+                WindowsAndMessaging::{GetAncestor, GA_ROOT},
+            },
+        },
+    };
+    let mut owner = HWND::default();
+    unsafe {
+        view.controller().ParentWindow(&mut owner)?;
+        let root = GetAncestor(owner, GA_ROOT);
+        if !root.is_invalid() {
+            owner = root;
+        }
+    }
+    let mut filename = [0u16; 4096];
+    let default_name: Vec<u16> = "LiteRust.pdf".encode_utf16().collect();
+    filename[..default_name.len()].copy_from_slice(&default_name);
+    let filter: Vec<u16> = "PDF (*.pdf)\0*.pdf\0\0".encode_utf16().collect();
+    let options = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: owner,
+        lpstrFilter: PCWSTR(filter.as_ptr()),
+        lpstrFile: PWSTR(filename.as_mut_ptr()),
+        nMaxFile: filename.len() as u32,
+        lpstrDefExt: windows::core::w!("pdf"),
+        Flags: OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
+        ..Default::default()
+    };
+    let mut options = options;
+    if !unsafe { GetSaveFileNameW(&mut options) }.as_bool() {
+        let error = unsafe { CommDlgExtendedError() };
+        if error.0 != 0 {
+            return Err(windows::core::Error::new(
+                windows::core::HRESULT(0x80004005u32 as i32),
+                format!("Save dialog: {}", error.0),
+            ));
+        }
+        return Ok(None);
+    }
+    let len = filename
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(filename.len());
+    Ok(Some(PathBuf::from(OsString::from_wide(&filename[..len]))))
+}
+
+pub struct PdfOptions<'a> {
+    pub header: &'a str,
+    pub footer: &'a str,
+    pub captions: bool,
+    pub backgrounds: bool,
+}
+
+pub fn print_pdf(
+    view: &wry::WebView,
+    path: PathBuf,
+    options: PdfOptions<'_>,
+    busy: Rc<Cell<bool>>,
+    proxy: EventLoopProxy<AppEvent>,
+) -> windows::core::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::{HSTRING, PCWSTR};
+
+    unsafe {
+        let core: ICoreWebView2_7 = view.webview().cast()?;
+        let environment: ICoreWebView2Environment6 = view.environment().cast()?;
+        let settings = environment.CreatePrintSettings()?;
+        settings.SetScaleFactor(1.0)?;
+        settings.SetShouldPrintBackgrounds(options.backgrounds)?;
+        settings.SetShouldPrintHeaderAndFooter(options.captions)?;
+        if options.captions {
+            settings.SetHeaderTitle(&HSTRING::from(options.header))?;
+            settings.SetFooterUri(&HSTRING::from(options.footer))?;
+        }
+        let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let printing = busy.clone();
+        let callback =
+            webview2_com::PrintToPdfCompletedHandler::create(Box::new(move |result, printed| {
+                printing.set(false);
+                let _ = proxy.send_event(AppEvent::PdfFinished {
+                    path,
+                    success: result.is_ok() && printed,
+                });
+                Ok(())
+            }));
+        busy.set(true);
+        let result = core.PrintToPdf(PCWSTR(destination.as_ptr()), &settings, &callback);
+        if result.is_err() {
+            busy.set(false);
+        }
+        result
+    }
+}
+
+pub fn open_certificates() -> std::io::Result<()> {
+    use literust_browser::security::windows_system_binary;
+    std::process::Command::new(windows_system_binary("mmc.exe")?)
+        .arg(windows_system_binary("certmgr.msc")?)
+        .spawn()?;
     Ok(())
 }

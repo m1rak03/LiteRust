@@ -265,9 +265,27 @@ pub enum Startup {
     NewTab,
     Home,
 }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    #[default]
+    Ru,
+    En,
+}
+
+impl Language {
+    pub fn pick<'a>(self, russian: &'a str, english: &'a str) -> &'a str {
+        match self {
+            Self::Ru => russian,
+            Self::En => english,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BrowserSettings {
+    pub language: Language,
     pub home_url: String,
     pub startup: Startup,
     pub home_in_new_tabs: bool,
@@ -278,6 +296,7 @@ pub struct BrowserSettings {
 impl Default for BrowserSettings {
     fn default() -> Self {
         Self {
+            language: Language::default(),
             home_url: String::new(),
             startup: Startup::Restore,
             home_in_new_tabs: false,
