@@ -87,6 +87,8 @@ enum UiCommand {
         open: bool,
         #[serde(default)]
         animate: bool,
+        #[serde(default)]
+        peek: bool,
     },
     ProfileCreate {
         name: String,
@@ -154,6 +156,20 @@ enum UiCommand {
         value: String,
     },
     PrintPage,
+    PrintNative,
+    OpenCertificates,
+    PrintPdf {
+        header: String,
+        footer: String,
+        captions: bool,
+        backgrounds: bool,
+    },
+    Suggest {
+        query: String,
+    },
+    SuggestionPanel {
+        rows: u8,
+    },
     ShowSettings,
     ShowSecurity,
     ShowAppearance,
@@ -207,6 +223,8 @@ enum UiCommand {
     },
     AppearancePanel {
         open: bool,
+        #[serde(default)]
+        name: Option<String>,
     },
     DiscardBackground,
     NewPrivateWindow,
@@ -232,6 +250,11 @@ enum AppEvent {
     Ui(UiCommand),
     VpnImported(Result<Vec<vpn::Node>, &'static str>),
     VpnProbed(Result<u128, &'static str>),
+    #[cfg(windows)]
+    PdfFinished {
+        path: PathBuf,
+        success: bool,
+    },
     NewTabAppearance {
         tab_id: u64,
         generation: u64,
@@ -273,7 +296,7 @@ struct ToolbarState<'a> {
     current_profile: &'a str,
     maximized: bool,
     shortcuts: &'a literust_browser::shortcuts::Shortcuts,
-    shortcut_catalog: &'static [(&'static str, &'static str, &'static str)],
+    shortcut_catalog: &'a [(&'static str, String, &'static str)],
     background_style: storage::BackgroundStyle,
     account_prompt_always: bool,
     notes: &'a str,
@@ -309,7 +332,7 @@ struct ToolbarState<'a> {
     site_host: Option<String>,
     site_adblock_exception: bool,
     live_tab_budget: u8,
-    url_warning: Option<&'static str>,
+    url_warning: Option<String>,
     auto_discard: bool,
 }
 
@@ -323,10 +346,30 @@ struct LivePage {
     allow_internal_navigation: std::rc::Rc<std::cell::Cell<bool>>,
     pending_html_navigation: std::rc::Rc<std::cell::Cell<bool>>,
     downloads: std::rc::Rc<std::cell::Cell<usize>>,
+    #[cfg(windows)]
+    printing: std::rc::Rc<std::cell::Cell<bool>>,
     view: WebView,
     last_used: u64,
     generation: u64,
     loading: bool,
+    foreground: bool,
+}
+
+impl LivePage {
+    fn busy(&self) -> bool {
+        self.downloads.get() > 0 || self.printing()
+    }
+
+    fn printing(&self) -> bool {
+        #[cfg(windows)]
+        {
+            self.printing.get()
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
 }
 
 struct DrawerAnimation {
@@ -339,15 +382,25 @@ struct Browser {
     dock_animation: Option<DrawerAnimation>,
     dock_width: std::cell::Cell<f64>,
     dock_expanded: bool,
+    dock_peek: bool,
+    suggestion_rows: u8,
+    panel: Option<String>,
+    dock_state_cache: std::cell::RefCell<String>,
     local_profiles: literust_browser::local_profiles::Catalog,
     shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
     closed_tabs: Vec<String>,
     #[cfg(windows)]
     system_vpn: Option<literust_browser::system_vpn::SystemTunnel>,
     app_icon_applied: bool,
-    window: Window,
+    // Drop child controllers before the context and native parent window.
+    pages: HashMap<u64, LivePage>,
     toolbar: WebView,
     dock: WebView,
+    #[cfg(windows)]
+    page_environment:
+        Option<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment>,
+    context: Option<WebContext>,
+    window: Window,
     vpn_vault: vpn::Vault,
     #[cfg(windows)]
     vpn_tunnel: Option<literust_browser::vpn_platform::Tunnel>,
@@ -357,9 +410,9 @@ struct Browser {
     vpn_probe: String,
     vpn_probing: bool,
     restart_requested: bool,
-    context: Option<WebContext>,
-    pages: HashMap<u64, LivePage>,
     data: BrowserData,
+    ui_language: storage::Language,
+    shortcut_catalog: Vec<(&'static str, String, &'static str)>,
     data_file: Option<PathBuf>,
     proxy: EventLoopProxy<AppEvent>,
     private_mode: bool,
@@ -395,6 +448,10 @@ impl Browser {
             dock_animation: None,
             dock_width: std::cell::Cell::new(54.0),
             dock_expanded: false,
+            dock_peek: false,
+            suggestion_rows: 0,
+            panel: None,
+            dock_state_cache: std::cell::RefCell::new(String::new()),
             local_profiles: literust_browser::local_profiles::Catalog::load(&app_root())
                 .unwrap_or_default(),
             shortcuts: std::rc::Rc::new(std::cell::RefCell::new(
@@ -420,7 +477,20 @@ impl Browser {
             vpn_probing: false,
             restart_requested: false,
             context,
+            #[cfg(windows)]
+            page_environment: None,
             pages: HashMap::new(),
+            ui_language: data.browser_settings.language,
+            shortcut_catalog: literust_browser::shortcuts::ACTIONS
+                .iter()
+                .map(|&(id, label, keys)| {
+                    (
+                        id,
+                        literust_browser::i18n::template(label, data.browser_settings.language),
+                        keys,
+                    )
+                })
+                .collect(),
             data,
             data_file,
             proxy,
@@ -504,7 +574,9 @@ impl Browser {
                 #[cfg(windows)]
                 if let Some(page) = self.pages.get(&self.active_id()) {
                     if windows_platform::find(&page.view).is_err() {
-                        self.notice("Поиск требует обновления Microsoft WebView2 Runtime.");
+                        self.notice_localized(
+                            "Поиск требует обновления Microsoft WebView2 Runtime.",
+                        );
                     }
                 }
                 return;
@@ -620,7 +692,7 @@ impl Browser {
         if let Some(ref file) = self.data_file {
             if let Err(err) = self.data.save(file) {
                 eprintln!("Failed to persist browser state: {err}");
-                self.notice(
+                self.notice_localized(
                     "Не удалось сохранить профиль. Проверьте свободное место и права доступа.",
                 );
             }
@@ -654,12 +726,16 @@ impl Browser {
                 .iter()
                 .map(|t| TabSummary {
                     id: t.id,
-                    title: &t.title,
+                    title: if t.url == NEW_TAB {
+                        self.ui_language.pick("Новая вкладка", "New tab")
+                    } else {
+                        &t.title
+                    },
                 })
                 .collect(),
             customization: self.data.customization,
             shortcuts: &self.data.shortcuts,
-            shortcut_catalog: literust_browser::shortcuts::ACTIONS,
+            shortcut_catalog: &self.shortcut_catalog,
             browser_settings: self.data.browser_settings.clone(),
             appearance: self.data.appearance,
             search_engine: self.data.search_engine,
@@ -702,14 +778,22 @@ impl Browser {
             site_host: storage::site_host(url),
             site_adblock_exception: self.data.adblock_exception_for(url),
             live_tab_budget: self.data.live_tab_budget,
-            url_warning: security::hostname_warning(url),
+            url_warning: security::hostname_warning(url)
+                .map(|warning| literust_browser::i18n::template(warning, self.ui_language)),
             auto_discard: self.data.auto_discard,
         };
         if let Ok(payload) = serde_json::to_string(&state) {
-            let dock_state = serde_json::json!({"sidebar":self.data.sidebar,"expanded":self.dock_expanded||self.data.sidebar.mode=="pinned","appearance":self.data.appearance,"position":self.data.dock_position,"customization":self.data.customization,"animations":self.data.customization.animations,"vpn_enabled":self.vpn_vault.enabled,"vpn_running":self.vpn_running && (!self.vpn_vault.system_scope || self.system_vpn_running())});
-            let _ = self
-                .dock
-                .evaluate_script(&format!("window.dockUpdate?.({dock_state});"));
+            let dock_state = serde_json::json!({"sidebar":self.data.sidebar,"peek":self.dock_peek,"manual":self.dock_expanded,"expanded":self.dock_peek||self.dock_expanded||self.data.sidebar.mode=="pinned","appearance":self.data.appearance,"position":self.data.dock_position,"customization":self.data.customization,"animations":self.data.customization.animations,"vpn_enabled":self.vpn_vault.enabled,"vpn_running":self.vpn_running && (!self.vpn_vault.system_scope || self.system_vpn_running())});
+            let dock_state = dock_state.to_string();
+            let mut previous = self.dock_state_cache.borrow_mut();
+            if *previous != dock_state
+                && self
+                    .dock
+                    .evaluate_script(&format!("window.dockUpdate?.({dock_state});"))
+                    .is_ok()
+            {
+                *previous = dock_state;
+            }
             if let Err(err) = self
                 .toolbar
                 .evaluate_script(&format!("window.browserUpdate?.({payload});"))
@@ -717,6 +801,10 @@ impl Browser {
                 eprintln!("Cannot update toolbar: {err}");
             }
         }
+    }
+
+    fn notice_localized(&self, message: &str) {
+        self.notice(&literust_browser::i18n::template(message, self.ui_language));
     }
 
     fn notice(&self, message: &str) {
@@ -761,7 +849,10 @@ impl Browser {
         if self.appearance_open {
             (height - 2.0 * self.frame_inset()).max(TOOLBAR_HEIGHT)
         } else {
-            TOOLBAR_HEIGHT
+            (TOOLBAR_HEIGHT
+                + f64::from(self.suggestion_rows) * 34.0
+                + if self.suggestion_rows > 0 { 8.0 } else { 0.0 })
+            .min((height - 2.0 * self.frame_inset()).max(TOOLBAR_HEIGHT))
         }
     }
 
@@ -781,7 +872,7 @@ impl Browser {
             .window
             .inner_size()
             .to_logical::<f64>(self.window.scale_factor());
-        let (dock, page) = layout::arrange_sidebar(
+        let (mut dock, page) = layout::arrange_sidebar(
             size.width - 2.0 * self.frame_inset(),
             size.height - 2.0 * self.frame_inset(),
             TOOLBAR_HEIGHT,
@@ -789,6 +880,12 @@ impl Browser {
             &self.data.sidebar,
             self.dock_expanded,
         );
+        if self.dock_peek
+            && !self.dock_expanded
+            && self.data.dock_position == layout::DockPosition::Left
+        {
+            dock = layout::peek_sidebar(dock, size.width);
+        }
         (
             rect(
                 dock.x + self.frame_inset(),
@@ -824,6 +921,12 @@ impl Browser {
         };
         let builder =
             routed_builder(builder, self.vpn_port).with_background_color((16, 20, 33, 255));
+        #[cfg(windows)]
+        let builder = if let Some(environment) = &self.page_environment {
+            builder.with_environment(environment.clone())
+        } else {
+            builder
+        };
         let allow_internal_navigation = std::rc::Rc::new(std::cell::Cell::new(true));
         let navigation_mode = allow_internal_navigation.clone();
         let pending_html_navigation = std::rc::Rc::new(std::cell::Cell::new(false));
@@ -903,7 +1006,7 @@ impl Browser {
                 });
             })
             .with_document_title_changed_handler(move |title| {
-                if title == "Новая вкладка" {
+                if matches!(title.as_str(), "Новая вкладка" | "New tab") {
                     startup_log("New tab document ready");
                 }
                 let _ = title_proxy.send_event(AppEvent::Title {
@@ -916,6 +1019,11 @@ impl Browser {
             builder = builder.with_initialization_script(COSMETIC_FILTER);
         }
         let view = builder.build_as_child(&self.window)?;
+        #[cfg(windows)]
+        if self.page_environment.is_none() {
+            let _ = windows_platform::color_scheme(&view, self.dark_theme());
+            self.page_environment = Some(view.environment());
+        }
         view.zoom(f64::from(self.data.browser_settings.zoom_percent) / 100.0)?;
         #[cfg(windows)]
         if let Some(tab) = self.data.tabs.iter().find(|tab| tab.id == tab_id) {
@@ -935,23 +1043,27 @@ impl Browser {
             allow_internal_navigation,
             pending_html_navigation,
             downloads,
+            #[cfg(windows)]
+            printing: Default::default(),
             view,
             last_used: self.usage_clock,
             generation,
             loading: false,
+            foreground: false,
         })
     }
 
-    fn enforce_page_budget(&mut self) {
+    fn enforce_page_budget(&mut self) -> bool {
         if !self.data.auto_discard {
-            return;
+            return false;
         }
+        let before = self.pages.len();
         let active = self.active_id();
         while self.pages.len() > self.data.live_tab_budget as usize {
             let victim = lru_victim(
                 self.pages
                     .iter()
-                    .filter(|(_, page)| page.downloads.get() == 0)
+                    .filter(|(_, page)| !page.busy() && !page.loading)
                     .map(|(tab_id, page)| (*tab_id, page.last_used)),
                 active,
             );
@@ -961,6 +1073,7 @@ impl Browser {
                 break;
             }
         }
+        self.pages.len() != before
     }
 
     // Keep only a bounded number of live WebViews. Cached tabs retain their DOM,
@@ -968,8 +1081,9 @@ impl Browser {
     fn show_active(&mut self) {
         let id = self.active_id();
         self.usage_clock = self.usage_clock.saturating_add(1);
-        for (other_id, page) in &self.pages {
-            if *other_id != id {
+        for (other_id, page) in &mut self.pages {
+            if *other_id != id && page.foreground {
+                page.foreground = false;
                 let _ = page.view.set_visible(false);
                 #[cfg(windows)]
                 let _ = page.view.set_memory_usage_level(MemoryUsageLevel::Low);
@@ -980,7 +1094,7 @@ impl Browser {
                 let victim = lru_victim(
                     self.pages
                         .iter()
-                        .filter(|(_, page)| page.downloads.get() == 0)
+                        .filter(|(_, page)| !page.busy() && !page.loading)
                         .map(|(tab_id, page)| (*tab_id, page.last_used)),
                     id,
                 );
@@ -1000,10 +1114,13 @@ impl Browser {
         }
         if let Some(page) = self.pages.get_mut(&id) {
             page.last_used = self.usage_clock;
+            page.foreground = true;
             let _ = page.view.set_visible(!self.appearance_open);
             #[cfg(windows)]
             let _ = page.view.set_memory_usage_level(MemoryUsageLevel::Normal);
-            let _ = page.view.focus();
+            if !self.appearance_open {
+                let _ = page.view.focus();
+            }
         }
         self.resize();
         self.sync_toolbar();
@@ -1012,15 +1129,18 @@ impl Browser {
     fn load_active(&mut self) {
         let url = self.current_url().to_owned();
         let html = match url.as_str() {
-            NEW_TAB => Some(literust_browser::newtab::render_with_profile(
+            NEW_TAB => Some(literust_browser::newtab::render_with_profile_localized(
                 &self.data,
                 self.private_mode,
                 self.local_profiles
                     .profiles
                     .iter()
                     .find(|p| p.id == current_profile_id()),
+                self.ui_language,
             )),
-            BOOKMARKS | HISTORY | DOWNLOADS => Some(render_library(&url, &self.data)),
+            BOOKMARKS | HISTORY | DOWNLOADS => {
+                Some(render_library(&url, &self.data, self.ui_language))
+            }
             _ => None,
         };
         let html = html.map(|html| self.themed_html(html));
@@ -1052,15 +1172,84 @@ impl Browser {
         self.sync_toolbar();
     }
 
+    fn dark_theme(&self) -> bool {
+        !matches!(self.data.appearance.theme % 5, 2 | 3)
+    }
+
+    fn print_page(&self) {
+        if let Some(page) = self
+            .pages
+            .get(&self.active_id())
+            .filter(|page| !page.printing())
+        {
+            #[cfg(windows)]
+            if windows_platform::print_preview(&page.view).is_ok() {
+                return;
+            }
+            let _ = page.view.print();
+        }
+    }
+
+    #[cfg(windows)]
+    fn print_pdf(&self, header: &str, footer: &str, captions: bool, backgrounds: bool) {
+        let Some(page) = self.pages.get(&self.active_id()) else {
+            return;
+        };
+        if page.loading || page.printing.get() {
+            self.notice_localized("Дождитесь завершения текущей операции.");
+            return;
+        }
+        if header.contains('\0')
+            || footer.contains('\0')
+            || header.len() > 1024
+            || footer.len() > 1024
+        {
+            self.notice_localized("Сократите текст колонтитулов.");
+            return;
+        }
+        let result = windows_platform::choose_pdf(&page.view).and_then(|path| {
+            if let Some(path) = path {
+                windows_platform::print_pdf(
+                    &page.view,
+                    path,
+                    windows_platform::PdfOptions {
+                        header,
+                        footer,
+                        captions,
+                        backgrounds,
+                    },
+                    page.printing.clone(),
+                    self.proxy.clone(),
+                )?;
+            }
+            Ok(())
+        });
+        if let Err(err) = result {
+            self.notice(&format!(
+                "{}: {err}",
+                self.ui_language
+                    .pick("Не удалось сохранить PDF", "Unable to save PDF")
+            ));
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn print_pdf(&self, _header: &str, _footer: &str, _captions: bool, _backgrounds: bool) {
+        self.print_page();
+    }
+
     fn navigate(&mut self, input: &str) {
         if security::reject_address_input(input) {
-            self.notice(
+            self.notice_localized(
                 "Адрес отклонён: опасная схема, встроенные учётные данные или превышение длины.",
             );
             return;
         }
-        let url =
-            literust_browser::navigation::destination_with_engine(input, self.data.search_engine);
+        let url = literust_browser::navigation::destination_with_theme(
+            input,
+            self.data.search_engine,
+            self.dark_theme(),
+        );
         self.navigate_internal(&url);
     }
 
@@ -1069,11 +1258,13 @@ impl Browser {
             return;
         }
         if valid_web_url(url) && !security::safe_top_level_navigation(url) {
-            self.notice("Опасный адрес: логин или пароль встроен прямо в URL. Переход отменён.");
+            self.notice_localized(
+                "Опасный адрес: логин или пароль встроен прямо в URL. Переход отменён.",
+            );
             return;
         }
         if let Some(warning) = security::hostname_warning(url) {
-            self.notice(warning);
+            self.notice_localized(warning);
         }
         self.data.tabs[self.data.active].navigate(url);
         self.load_active();
@@ -1095,12 +1286,12 @@ impl Browser {
 
     fn new_tab(&mut self, url: Option<&str>) {
         if self.data.tabs.len() >= MAX_TABS {
-            self.notice("Достигнут лимит 24 вкладок.");
+            self.notice_localized("Достигнут лимит 24 вкладок.");
             return;
         }
         if let Some(url) = url {
             if valid_web_url(url) && !security::safe_top_level_navigation(url) {
-                self.notice(
+                self.notice_localized(
                     "Новая вкладка заблокирована: подозрительные данные пользователя в URL.",
                 );
                 return;
@@ -1119,12 +1310,17 @@ impl Browser {
         if !background {
             self.data.active = self.data.tabs.len() - 1;
         }
-        self.show_active();
+        if background {
+            self.sync_toolbar();
+        } else {
+            self.show_active();
+        }
         self.persist();
     }
 
     fn handle(&mut self, command: UiCommand) {
         if self.appearance_open
+            && self.panel.as_deref() != Some("settings")
             && matches!(
                 &command,
                 UiCommand::NewTab
@@ -1137,6 +1333,7 @@ impl Browser {
             )
         {
             self.appearance_open = false;
+            self.panel = None;
             self.resize();
             let _ = self.toolbar.evaluate_script("window.openPanel?.(null);");
         }
@@ -1149,7 +1346,9 @@ impl Browser {
             }
             UiCommand::SaveHome { value } => {
                 if !value.valid() {
-                    self.notice("Некорректная компоновка или ссылка. Изменения не сохранены.");
+                    self.notice_localized(
+                        "Некорректная компоновка или ссылка. Изменения не сохранены.",
+                    );
                     return;
                 }
                 let previous = self.data.home.replace(value.clone());
@@ -1176,12 +1375,28 @@ impl Browser {
                 self.dock_animation = None;
                 self.data.sidebar = value.validated();
                 self.dock_expanded = false;
+                self.dock_peek = false;
                 self.persist();
                 self.resize();
                 self.sync_toolbar();
             }
-            UiCommand::DockExpanded { open, animate } => {
-                self.dock_expanded = open;
+            UiCommand::DockExpanded {
+                open,
+                animate,
+                peek,
+            } => {
+                if peek {
+                    if self.data.dock_position != layout::DockPosition::Left
+                        || self.data.sidebar.mode != "click"
+                        || self.dock_expanded
+                    {
+                        return;
+                    }
+                    self.dock_peek = open;
+                } else {
+                    self.dock_peek = false;
+                    self.dock_expanded = open;
+                }
                 let (bounds, _) = self.layout_bounds();
                 let target = bounds
                     .size
@@ -1216,7 +1431,7 @@ impl Browser {
             }
             UiCommand::ProfileCreate { name } => {
                 if self.private_mode {
-                    self.notice("Управляйте профилями в обычном окне.");
+                    self.notice_localized("Управляйте профилями в обычном окне.");
                     return;
                 }
                 match literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
@@ -1257,7 +1472,7 @@ impl Browser {
                     Ok(c) => {
                         self.local_profiles = c;
                         self.sync_toolbar();
-                        self.notice("Профиль убран из списка. Его данные перемещены в ProfileTrash для восстановления.");
+                        self.notice_localized("Профиль убран из списка. Его данные перемещены в ProfileTrash для восстановления.");
                     }
                     Err(e) => self.notice(&e.to_string()),
                 }
@@ -1276,7 +1491,7 @@ impl Browser {
                             Err(e) => self.notice(&format!("Не удалось открыть профиль: {e}")),
                         }
                     }
-                    _ => self.notice("Профиль не найден"),
+                    _ => self.notice_localized("Профиль не найден"),
                 }
             }
             UiCommand::Shortcut { name } => self.run_shortcut(&name),
@@ -1285,7 +1500,9 @@ impl Browser {
             }
             UiCommand::SetShortcuts { value } => {
                 if !value.validate() {
-                    self.notice("Сочетание занято или недопустимо. Изменения не сохранены.");
+                    self.notice_localized(
+                        "Сочетание занято или недопустимо. Изменения не сохранены.",
+                    );
                     return;
                 }
                 self.shortcuts.borrow_mut().bindings = value.clone();
@@ -1315,20 +1532,20 @@ impl Browser {
                 rgba,
             } => {
                 if self.private_mode {
-                    self.notice("Меняйте значки в обычном окне.");
+                    self.notice_localized("Меняйте значки в обычном окне.");
                     return;
                 }
                 if !literust_browser::icons::valid_target(&target)
                     || (!value.is_empty() && literust_browser::icons::png_bytes(&value).is_none())
                 {
-                    self.notice("Некорректный значок");
+                    self.notice_localized("Некорректный значок");
                     return;
                 }
                 if !value.is_empty()
                     && !self.data.custom_icons.contains_key(&target)
                     && self.data.custom_icons.len() >= 32
                 {
-                    self.notice("Можно сохранить до 32 своих значков.");
+                    self.notice_localized("Можно сохранить до 32 своих значков.");
                     return;
                 }
                 if target == "app" {
@@ -1338,7 +1555,7 @@ impl Browser {
                             .decode(&rgba)
                             .is_ok_and(|v| v.len() == 64 * 64 * 4)
                     {
-                        self.notice("Некорректный значок приложения");
+                        self.notice_localized("Некорректный значок приложения");
                         return;
                     }
                     self.data.app_icon_rgba = rgba;
@@ -1354,14 +1571,17 @@ impl Browser {
                     self.update_app_icon();
                 }
                 self.refresh_newtabs();
-                self.notice("Значок сохранён");
+                self.notice_localized("Значок сохранён");
             }
             UiCommand::SetBrowserSettings { mut value } => {
                 value.home_url = value.home_url.trim().to_owned();
                 if !value.valid_home() {
-                    self.notice("Для домашней страницы нужен HTTP(S)-адрес без логина и пароля.");
+                    self.notice_localized(
+                        "Для домашней страницы нужен HTTP(S)-адрес без логина и пароля.",
+                    );
                     return;
                 }
+                let language_changed = self.ui_language != value.language;
                 self.data.browser_settings = value.validated();
                 for page in self.pages.values() {
                     let _ = page
@@ -1370,7 +1590,11 @@ impl Browser {
                 }
                 self.persist();
                 self.sync_toolbar();
-                self.notice("Настройки браузера сохранены. Режим запуска применяется при следующем обычном запуске.");
+                self.notice(if language_changed {
+                    "Язык интерфейса изменится после перезапуска LiteRust. / Restart LiteRust to change the interface language."
+                } else {
+                    self.ui_language.pick("Настройки браузера сохранены. Режим запуска применяется при следующем обычном запуске.", "Browser settings saved. Startup settings apply the next time LiteRust opens.")
+                });
             }
             UiCommand::SetCustomization { value } => {
                 self.data.customization = value.validated();
@@ -1380,13 +1604,13 @@ impl Browser {
             }
             UiCommand::SetBackground { value } => {
                 if !literust_browser::newtab::valid_background(&value) {
-                    self.notice("Выберите JPEG или HTTPS-ссылку на изображение.");
+                    self.notice_localized("Выберите JPEG или HTTPS-ссылку на изображение.");
                     return;
                 }
                 self.data.background = value;
                 self.persist();
                 self.refresh_newtabs();
-                self.notice("Фон сохранён. Он появится на новой вкладке.");
+                self.notice_localized("Фон сохранён. Он появится на новой вкладке.");
             }
             UiCommand::SetSearchEngine { engine } => {
                 self.data.search_engine = engine;
@@ -1396,6 +1620,8 @@ impl Browser {
             }
             UiCommand::SetDock { position } => {
                 self.data.dock_position = position;
+                self.dock_peek = false;
+                self.dock_animation = None;
                 self.resize();
                 self.persist();
                 self.sync_toolbar();
@@ -1422,17 +1648,17 @@ impl Browser {
                 self.vpn_vault.system_scope = system;
                 #[cfg(windows)]
                 if literust_browser::vpn_platform::save(&profile_root(), &self.vpn_vault).is_err() {
-                    self.notice("Не удалось сохранить область VPN");
+                    self.notice_localized("Не удалось сохранить область VPN");
                 }
                 self.sync_toolbar();
             }
             UiCommand::VpnImport { value, kind } => {
                 if self.private_mode || self.vpn_importing || self.vpn_vault.enabled {
-                    self.notice("Импорт доступен в обычном окне при выключенном VPN.");
+                    self.notice_localized("Импорт доступен в обычном окне при выключенном VPN.");
                     return;
                 }
                 if value.len() > vpn::MAX_IMPORT {
-                    self.notice("Размер ключей превышает 1 MiB");
+                    self.notice_localized("Размер ключей превышает 1 MiB");
                     return;
                 }
                 self.vpn_importing = true;
@@ -1450,15 +1676,17 @@ impl Browser {
                 system,
             } => {
                 if self.private_mode || self.vpn_importing {
-                    self.notice("Изменение VPN доступно в обычном окне после завершения импорта");
+                    self.notice_localized(
+                        "Изменение VPN доступно в обычном окне после завершения импорта",
+                    );
                     return;
                 }
                 if enabled && selected >= self.vpn_vault.nodes.len() {
-                    self.notice("Сначала импортируйте и выберите сервер");
+                    self.notice_localized("Сначала импортируйте и выберите сервер");
                     return;
                 }
-                if self.pages.values().any(|p| p.downloads.get() > 0) {
-                    self.notice("Дождитесь завершения скачиваний перед изменением VPN.");
+                if self.pages.values().any(LivePage::busy) {
+                    self.notice_localized("Дождитесь завершения скачиваний перед изменением VPN.");
                     return;
                 }
                 let previous = (
@@ -1476,13 +1704,13 @@ impl Browser {
                         self.vpn_vault.selected,
                         self.vpn_vault.system_scope,
                     ) = previous;
-                    self.notice("Не удалось сохранить защищённые настройки VPN");
+                    self.notice_localized("Не удалось сохранить защищённые настройки VPN");
                     return;
                 }
                 #[cfg(not(windows))]
                 {
                     let _ = previous;
-                    self.notice("VPN-хаб поддерживается в Windows-сборке");
+                    self.notice_localized("VPN-хаб поддерживается в Windows-сборке");
                     return;
                 }
                 #[cfg(windows)]
@@ -1492,7 +1720,7 @@ impl Browser {
             }
             UiCommand::GoogleAccountExternal => {
                 if !self.private_mode && google_passwords::open_official_account().is_err() {
-                    self.notice("Не удалось открыть системный браузер");
+                    self.notice_localized("Не удалось открыть системный браузер");
                 }
             }
             UiCommand::WindowMinimize => self.window.set_minimized(true),
@@ -1507,7 +1735,10 @@ impl Browser {
             UiCommand::WindowDrag => {
                 let _ = self.window.drag_window();
             }
-            UiCommand::DockReady => self.sync_toolbar(),
+            UiCommand::DockReady => {
+                self.dock_state_cache.get_mut().clear();
+                self.sync_toolbar();
+            }
             UiCommand::DuplicateTab => {
                 let url = self.data.tabs[self.data.active].url.clone();
                 let before = self.data.tabs.len();
@@ -1541,8 +1772,47 @@ impl Browser {
                 self.persist();
             }
             UiCommand::PrintPage => {
-                if let Some(page) = self.pages.get(&self.active_id()) {
-                    let _ = page.view.print();
+                let _ = self.toolbar.evaluate_script("window.openPanel?.('print');");
+            }
+            UiCommand::PrintNative => self.print_page(),
+            UiCommand::OpenCertificates =>
+            {
+                #[cfg(windows)]
+                if let Err(err) = windows_platform::open_certificates() {
+                    self.notice(&format!(
+                        "{}: {err}",
+                        self.ui_language.pick(
+                            "Не удалось открыть сертификаты Windows",
+                            "Unable to open Windows certificates"
+                        )
+                    ));
+                }
+            }
+            UiCommand::PrintPdf {
+                header,
+                footer,
+                captions,
+                backgrounds,
+            } => {
+                self.print_pdf(&header, &footer, captions, backgrounds);
+            }
+            UiCommand::Suggest { query } => {
+                let matches = if self.private_mode {
+                    Vec::new()
+                } else {
+                    literust_browser::navigation::suggestions(&self.data, &query)
+                };
+                let query = literust_browser::home::script_json(&query);
+                let matches = literust_browser::home::script_json(&matches);
+                let _ = self
+                    .toolbar
+                    .evaluate_script(&format!("window.showSuggestions?.({query},{matches});"));
+            }
+            UiCommand::SuggestionPanel { rows } => {
+                let rows = if self.appearance_open { 0 } else { rows.min(6) };
+                if self.suggestion_rows != rows {
+                    self.suggestion_rows = rows;
+                    self.resize();
                 }
             }
             UiCommand::Ready => {
@@ -1556,7 +1826,7 @@ impl Browser {
                     && !self.system_vpn_running()
                     && !self.private_mode
                 {
-                    self.notice("VPN всего компьютера не запущен. Защищены только вкладки браузера. Откройте VPN-хаб и подтвердите запрос Windows.");
+                    self.notice_localized("VPN всего компьютера не запущен. Защищены только вкладки браузера. Откройте VPN-хаб и подтвердите запрос Windows.");
                 }
                 if !self.account_prompt_checked {
                     self.account_prompt_checked = true;
@@ -1621,14 +1891,8 @@ impl Browser {
                     return;
                 }
                 let closed_id = self.data.tabs[index].id;
-                if self
-                    .pages
-                    .get(&closed_id)
-                    .is_some_and(|page| page.downloads.get() > 0)
-                {
-                    self.notice(
-                        "Сначала завершите или отмените загрузку в стандартном окне загрузок.",
-                    );
+                if self.pages.get(&closed_id).is_some_and(LivePage::busy) {
+                    self.notice_localized("Завершите печать или загрузку перед закрытием вкладки.");
                     return;
                 }
                 let closed_active = index == self.data.active;
@@ -1654,7 +1918,7 @@ impl Browser {
             }
             UiCommand::ToggleBookmark => {
                 if self.private_mode {
-                    self.notice("В приватном окне закладки не записываются на диск.");
+                    self.notice_localized("В приватном окне закладки не записываются на диск.");
                     return;
                 }
                 let tab = &self.data.tabs[self.data.active];
@@ -1662,7 +1926,7 @@ impl Browser {
                 if !self.data.bookmarked(&url)
                     && self.data.bookmarks.len() >= storage::MAX_BOOKMARKS
                 {
-                    self.notice(
+                    self.notice_localized(
                         "Достигнут лимит закладок. Удалите ненужную закладку перед добавлением.",
                     );
                     return;
@@ -1680,9 +1944,9 @@ impl Browser {
             UiCommand::ShowDownloads => self.open_library(DOWNLOADS),
             UiCommand::ExportBookmarks => {
                 if self.private_mode {
-                    self.notice("Экспорт закладок недоступен в приватном окне.");
+                    self.notice_localized("Экспорт закладок недоступен в приватном окне.");
                 } else if self.data.bookmarks.is_empty() {
-                    self.notice("Нет закладок для экспорта.");
+                    self.notice_localized("Нет закладок для экспорта.");
                 } else {
                     match export_bookmarks(&self.data) {
                         Ok(path) => self.notice(&format!(
@@ -1704,7 +1968,9 @@ impl Browser {
                 } else {
                     self.sync_toolbar();
                 }
-                self.notice("Список загрузок очищен. Скачанные файлы на диске НЕ удалены.");
+                self.notice_localized(
+                    "Список загрузок очищен. Скачанные файлы на диске НЕ удалены.",
+                );
             }
             UiCommand::ClearHistory => {
                 self.data.history.clear();
@@ -1718,11 +1984,11 @@ impl Browser {
                 } else {
                     self.sync_toolbar();
                 }
-                self.notice("История LiteRust удалена. Cookies и кэш не затронуты.");
+                self.notice_localized("История LiteRust удалена. Cookies и кэш не затронуты.");
             }
             UiCommand::ImportBookmarks { html } => {
                 if self.private_mode {
-                    self.notice("Импорт закладок недоступен в приватном окне.");
+                    self.notice_localized("Импорт закладок недоступен в приватном окне.");
                     return;
                 }
                 match import::import_bookmarks(&mut self.data, &html) {
@@ -1738,11 +2004,13 @@ impl Browser {
                             stats.added, stats.duplicates, stats.rejected, stats.skipped_capacity,
                         ));
                     }
-                    Err(err) => self.notice(err),
+                    Err(err) => self.notice_localized(err),
                 }
             }
-            UiCommand::AppearancePanel { open } => {
+            UiCommand::AppearancePanel { open, name } => {
                 self.appearance_open = open;
+                self.panel = if open { name } else { None };
+                self.suggestion_rows = 0;
                 if !open {
                     self.shortcuts.borrow_mut().recording = false;
                 }
@@ -1761,6 +2029,10 @@ impl Browser {
                 self.data.appearance = storage::Appearance { design, theme };
                 self.persist();
                 self.sync_toolbar();
+                #[cfg(windows)]
+                if let Some(page) = self.pages.get(&self.active_id()) {
+                    let _ = windows_platform::color_scheme(&page.view, self.dark_theme());
+                }
                 let settings = serde_json::to_string(&self.data.appearance).unwrap_or_default();
                 for (id, page) in &self.pages {
                     if self
@@ -1779,13 +2051,15 @@ impl Browser {
                 let active = self.active_id();
                 let before = self.pages.len();
                 self.pages
-                    .retain(|id, page| *id == active || page.loading || page.downloads.get() > 0);
+                    .retain(|id, page| *id == active || page.loading || page.busy());
                 self.sync_toolbar();
                 self.notice(&format!("Выгружено вкладок: {}. Активная вкладка, загружающиеся страницы и скачивания сохранены.", before - self.pages.len()));
             }
             UiCommand::OpenGoogleAccount => {
                 if self.private_mode {
-                    self.notice("Для постоянного входа откройте Google в обычном окне LiteRust.");
+                    self.notice_localized(
+                        "Для постоянного входа откройте Google в обычном окне LiteRust.",
+                    );
                     return;
                 }
                 if let Some(index) = self.data.tabs.iter().position(|t| {
@@ -1807,18 +2081,18 @@ impl Browser {
             }
             UiCommand::OpenGooglePasswords => {
                 if self.private_mode {
-                    self.notice("Google Password Manager открывается во внешнем обычном браузере. В приватном окне LiteRust действие отключено.");
+                    self.notice_localized("Google Password Manager открывается во внешнем обычном браузере. В приватном окне LiteRust действие отключено.");
                     return;
                 }
                 match google_passwords::open_official_manager() {
-                    Ok(()) => self.notice("Открываем Google Password Manager во внешнем браузере. Автозаполнение Google внутри LiteRust пока недоступно."),
+                    Ok(()) => self.notice_localized("Открываем Google Password Manager во внешнем браузере. Автозаполнение Google внутри LiteRust пока недоступно."),
                     Err(err) => self.notice(&format!("Не удалось открыть Google Password Manager: {err}")),
                 }
             }
             UiCommand::ClearSiteData => {
                 if let Some(page) = self.pages.get(&self.active_id()) {
                     match page.view.clear_all_browsing_data() {
-                        Ok(()) => self.notice(
+                        Ok(()) => self.notice_localized(
                             "Запрошена очистка всех данных сайтов WebView2, включая cookies и кэш.",
                         ),
                         Err(err) => {
@@ -1828,8 +2102,8 @@ impl Browser {
                 }
             }
             UiCommand::NewPrivateWindow => {
-                match std::env::current_exe().and_then(|exe| Command::new(exe).arg("--profile").arg(current_profile_id()).arg("--private").spawn()) {
-                    Ok(_) => self.notice("Открыто отдельное приватное окно. Файлы загрузок всё равно сохраняются на диск."),
+                match std::env::current_exe().and_then(|exe| Command::new(exe).arg("--profile").arg(current_profile_id()).arg("--private").arg(self.ui_language.pick("--ui-ru", "--ui-en")).spawn()) {
+                    Ok(_) => self.notice_localized("Открыто отдельное приватное окно. Файлы загрузок всё равно сохраняются на диск."),
                     Err(err) => self.notice(&format!("Не удалось открыть приватное окно: {err}")),
                 }
             }
@@ -1867,13 +2141,15 @@ impl Browser {
             UiCommand::ToggleSiteAdblock => {
                 let url = self.current_url().to_owned();
                 if !self.data.network_blocking {
-                    self.notice(
+                    self.notice_localized(
                         "Включите сетевой AdBlock, чтобы управлять исключениями для сайтов.",
                     );
                     return;
                 }
                 let Some(host) = storage::site_host(&url) else {
-                    self.notice("Исключение доступно только для открытого HTTP(S)-сайта.");
+                    self.notice_localized(
+                        "Исключение доступно только для открытого HTTP(S)-сайта.",
+                    );
                     return;
                 };
                 match self.data.toggle_adblock_exception(&url) {
@@ -1895,14 +2171,16 @@ impl Browser {
                             },
                         ));
                     }
-                    None => self.notice(
+                    None => self.notice_localized(
                         "Не удалось изменить исключение (возможно, достигнут лимит 256 сайтов).",
                     ),
                 }
             }
             UiCommand::ToggleCosmeticFilter => {
-                if self.pages.values().any(|page| page.downloads.get() > 0) {
-                    self.notice("Дождитесь завершения загрузок перед пересозданием вкладок.");
+                if self.pages.values().any(LivePage::busy) {
+                    self.notice_localized(
+                        "Дождитесь завершения загрузок перед пересозданием вкладок.",
+                    );
                     return;
                 }
                 self.data.cosmetic_filter = !self.data.cosmetic_filter;
@@ -1911,7 +2189,7 @@ impl Browser {
                 self.pages.clear();
                 self.show_active();
                 self.persist();
-                self.notice("Косметический фильтр переключён. Вкладки перезагрузятся. Он скрывает часть баннеров, но НЕ блокирует рекламные запросы.");
+                self.notice_localized("Косметический фильтр переключён. Вкладки перезагрузятся. Он скрывает часть баннеров, но НЕ блокирует рекламные запросы.");
             }
         }
     }
@@ -1972,10 +2250,12 @@ impl Browser {
                 }
             }
         }
+        let mut discarded = false;
         if !loading {
+            discarded = self.enforce_page_budget();
             self.persist();
         }
-        if self.active_id() == tab_id {
+        if self.active_id() == tab_id || discarded {
             self.sync_toolbar();
         }
     }
@@ -2011,6 +2291,9 @@ impl Browser {
     }
     fn on_download_state(&mut self, id: u64, file: &Path, running: bool, ok: bool) {
         self.data.record_download_state(id, file, running, ok);
+        if !running {
+            self.enforce_page_budget();
+        }
         self.persist();
         if self.current_url() == DOWNLOADS {
             self.load_active();
@@ -2060,19 +2343,21 @@ impl Browser {
             self.toolbar_height(),
         ));
         let (dock_bounds, bounds) = self.layout_bounds();
-        self.dock_width.set(
-            dock_bounds
-                .size
-                .to_logical::<f64>(self.window.scale_factor())
-                .width,
-        );
-        let _ = self.dock.set_bounds(dock_bounds);
+        if self.dock_animation.is_none() {
+            self.dock_width.set(
+                dock_bounds
+                    .size
+                    .to_logical::<f64>(self.window.scale_factor())
+                    .width,
+            );
+            let _ = self.dock.set_bounds(dock_bounds);
+        }
         for page in self.pages.values() {
             let _ = page.view.set_bounds(bounds);
         }
         #[cfg(windows)]
         {
-            let _ = windows_platform::raise(if self.appearance_open {
+            let _ = windows_platform::raise(if self.appearance_open || self.suggestion_rows > 0 {
                 &self.toolbar
             } else {
                 &self.dock
@@ -2114,7 +2399,7 @@ fn library_row(href: &str, title: &str, subtitle: &str, badge: &str) -> String {
     )
 }
 
-fn render_library(kind: &str, data: &BrowserData) -> String {
+fn render_library(kind: &str, data: &BrowserData, language: storage::Language) -> String {
     let (title, lead, entries): (&str, &str, Vec<String>) = match kind {
         BOOKMARKS => ("Закладки", "Избранные сайты. Звёздочка в адресной строке добавляет или удаляет закладку.",
             data.bookmarks.iter().rev().map(|b| library_row(&b.url, &b.title, &b.url, "★")).collect()),
@@ -2125,18 +2410,27 @@ fn render_library(kind: &str, data: &BrowserData) -> String {
                 // This page must not expose local file:// links or paths as hrefs.
                 format!("<div class=\"entry\"><span class=\"entry-text\"><strong>{}</strong><small>{}</small></span><span class=\"tag\">{}</span></div>",
                     escape_html(d.file.rsplit(['\\', '/']).next().unwrap_or(&d.file)),
-                    escape_html(&d.url), escape_html(&d.status))
+                    escape_html(&d.url), escape_html(&literust_browser::i18n::template(&d.status, language)))
             }).collect()),
         _ => ("LiteRust", "", vec![]),
     };
     let content = if entries.is_empty() {
-        "<div class=\"empty\">Здесь пока ничего нет</div>".into()
+        literust_browser::i18n::template(
+            "<div class=\"empty\">Здесь пока ничего нет</div>",
+            language,
+        )
     } else {
         entries.join("\n")
     };
-    LIBRARY
-        .replace("__TITLE__", title)
-        .replace("__LEAD__", lead)
+    literust_browser::i18n::template(LIBRARY, language)
+        .replace(
+            "__TITLE__",
+            &literust_browser::i18n::template(title, language),
+        )
+        .replace(
+            "__LEAD__",
+            &literust_browser::i18n::template(lead, language),
+        )
         .replace("<!-- ENTRIES -->", &content)
 }
 
@@ -2389,7 +2683,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let (data, data_file, context) = if private_mode {
         // No normal profile opened and no browser-data.json read/written.
-        (BrowserData::default().clean(), None, None)
+        let mut data = BrowserData::default().clean();
+        if args.iter().any(|arg| arg == "--ui-en") {
+            data.browser_settings.language = storage::Language::En;
+            window.set_title("LiteRust 0.16-alpha.1 — private window");
+        }
+        (data, None, None)
     } else {
         let root = profile_root();
         fs::create_dir_all(&root)?;
@@ -2441,6 +2740,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(windows))]
     let vpn_port: Option<u16> = None;
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+    let language = data.browser_settings.language;
     let toolbar_proxy = event_loop.create_proxy();
     startup_log("Creating toolbar WebView");
     let mut ui_context = WebContext::new(Some(profile_root().join("Interface-v2")));
@@ -2456,7 +2756,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_incognito(private_mode)
         .with_permission_handler(|_| PermissionResponse::Deny)
         .with_html(security::control_document(
-            &TOOLBAR.replace("/* APPEARANCE_SCRIPT */", APPEARANCE_SCRIPT),
+            &literust_browser::i18n::template(
+                &TOOLBAR.replace("/* APPEARANCE_SCRIPT */", APPEARANCE_SCRIPT),
+                language,
+            ),
         )?)
         .with_bounds(rect(0.0, 0.0, size.width, TOOLBAR_HEIGHT))
         .with_navigation_handler(move |_url| {
@@ -2494,6 +2797,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         WebViewBuilder::new_with_web_context(&mut ui_context)
     };
+    #[cfg(windows)]
+    let dock_builder = dock_builder.with_environment(toolbar.environment());
     let dock_initial_document = std::cell::Cell::new(true);
     let dock = routed_builder(dock_builder, vpn_port)
         .with_visible(false)
@@ -2501,7 +2806,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_incognito(private_mode)
         .with_permission_handler(|_| PermissionResponse::Deny)
         .with_html(security::control_document(
-            &DOCK.replace("/* APPEARANCE_SCRIPT */", APPEARANCE_SCRIPT),
+            &literust_browser::i18n::template(
+                &DOCK.replace("/* APPEARANCE_SCRIPT */", APPEARANCE_SCRIPT),
+                language,
+            ),
         )?)
         .with_bounds(rect(
             0.0,
@@ -2599,11 +2907,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(windows)]
         if browser.vpn_running && browser.vpn_tunnel.as_mut().is_some_and(|t|!t.alive()) {
             browser.vpn_running=false;browser.sync_toolbar();
-            browser.notice("VPN остановился. Прямое соединение не включается. Откройте VPN-хаб.");
+            browser.notice_localized("VPN остановился. Прямое соединение не включается. Откройте VPN-хаб.");
         }
         #[cfg(windows)]
         if browser.system_vpn.as_ref().is_some_and(|t|!t.alive()) {
-            browser.system_vpn.take();browser.sync_toolbar();browser.notice("VPN всего ПК остановлен. Windows может использовать обычную сеть. Браузер остаётся на своём прокси.");
+            browser.system_vpn.take();browser.sync_toolbar();browser.notice_localized("VPN всего ПК остановлен. Windows может использовать обычную сеть. Браузер остаётся на своём прокси.");
         }
         match event {
             Event::UserEvent(AppEvent::Ui(cmd)) => browser.handle(cmd),
@@ -2615,6 +2923,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     browser.handle(if accounts { UiCommand::ShowAccounts } else { UiCommand::ShowSettings });
                 }
             },
+            #[cfg(windows)]
+            Event::UserEvent(AppEvent::PdfFinished { path, success }) => {
+                browser.enforce_page_budget();
+                browser.sync_toolbar();
+                if success {
+                    browser.notice(&format!("{}: {}", browser.ui_language.pick("PDF сохранён", "PDF saved"), path.display()));
+                } else {
+                    browser.notice_localized("WebView2 не смог сохранить PDF.");
+                }
+            }
             Event::UserEvent(AppEvent::VpnProbed(result)) => {
                 browser.vpn_probing=false;
                 browser.vpn_probe=if !browser.vpn_running {"VPN остановился".into()} else {match result {Ok(ms)=>format!("HTTPS через VPN: {ms} мс"),Err(message)=>message.into()}};
@@ -2627,12 +2945,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let system_scope=browser.vpn_vault.system_scope;
                         let previous=std::mem::replace(&mut browser.vpn_vault,vpn::Vault{nodes,enabled:false,selected:0,system_scope});
                         #[cfg(windows)]
-                        if literust_browser::vpn_platform::save(&profile_root(),&browser.vpn_vault).is_err(){browser.vpn_vault=previous;browser.notice("Не удалось сохранить VPN-ключи");}
-                        else {browser.notice("Серверы импортированы и защищены учётной записью Windows. Выберите сервер и подключитесь.");}
+                        if literust_browser::vpn_platform::save(&profile_root(),&browser.vpn_vault).is_err(){browser.vpn_vault=previous;browser.notice_localized("Не удалось сохранить VPN-ключи");}
+                        else {browser.notice_localized("Серверы импортированы и защищены учётной записью Windows. Выберите сервер и подключитесь.");}
                         #[cfg(not(windows))]
-                        {browser.vpn_vault=previous;browser.notice("VPN-хаб доступен в Windows-сборке");}
+                        {browser.vpn_vault=previous;browser.notice_localized("VPN-хаб доступен в Windows-сборке");}
                     },
-                    Err(message)=>browser.notice(message),
+                    Err(message)=>browser.notice_localized(message),
                 }
                 browser.sync_toolbar();
             },
@@ -2705,7 +3023,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     { browser.system_vpn.take(); browser.vpn_tunnel.take(); }
                     *control_flow=ControlFlow::Exit;
                 },
-                Err(_)=>browser.notice("Настройки VPN сохранены. Закройте и заново запустите LiteRust для применения."),
+                Err(_)=>browser.notice_localized("Настройки VPN сохранены. Закройте и заново запустите LiteRust для применения."),
             }
         }
     });
@@ -2797,7 +3115,7 @@ mod tests {
             "https://example.com/?q=<script>",
             "<script>alert('x')</script>",
         );
-        let doc = render_library(BOOKMARKS, &data);
+        let doc = render_library(BOOKMARKS, &data, storage::Language::Ru);
         assert!(doc.contains("&lt;script&gt;"));
         assert!(!doc.contains("<script>alert('x')</script>"));
     }

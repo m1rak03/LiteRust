@@ -174,6 +174,12 @@ pub fn arrange_sidebar(
     }
     (dock, page)
 }
+/// A hover preview overlays the page without changing its viewport.
+pub fn peek_sidebar(mut dock: Bounds, width: f64) -> Bounds {
+    dock.width = dock.width.max(176.0_f64.min(width - 120.0));
+    dock
+}
+
 #[cfg(test)]
 mod sidebar_tests {
     use super::*;

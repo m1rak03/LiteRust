@@ -18,11 +18,22 @@ pub fn valid_background(value: &str) -> bool {
         && crate::security::safe_top_level_navigation(value)
 }
 pub fn render(data: &BrowserData, private_mode: bool) -> String {
+    render_localized(data, private_mode, data.browser_settings.language)
+}
+
+fn render_localized(
+    data: &BrowserData,
+    private_mode: bool,
+    language: crate::storage::Language,
+) -> String {
     let defaults = [
         ("https://www.google.com/", "Google"),
-        ("https://mail.google.com/", "Почта"),
+        ("https://mail.google.com/", language.pick("Почта", "Mail")),
         ("https://www.youtube.com/", "YouTube"),
-        ("https://ru.wikipedia.org/", "Википедия"),
+        (
+            language.pick("https://ru.wikipedia.org/", "https://en.wikipedia.org/"),
+            language.pick("Википедия", "Wikipedia"),
+        ),
     ];
     let entries: Vec<(&str, &str)> = if data.bookmarks.is_empty() {
         defaults.to_vec()
@@ -50,10 +61,18 @@ pub fn render(data: &BrowserData, private_mode: bool) -> String {
             data.background_style.css()
         ));
     }
-    let home = data
+    let mut home = data
         .home
         .clone()
         .unwrap_or_else(|| crate::home::Dashboard::from_legacy(data));
+    if data.home.is_none() {
+        home.subtitle_text = language
+            .pick(
+                "Начните с вопроса. Продолжите открытием.",
+                "Start with a question. See where it takes you.",
+            )
+            .into();
+    }
     let bookmarks: Vec<_> = data
         .bookmarks
         .iter()
@@ -63,8 +82,21 @@ pub fn render(data: &BrowserData, private_mode: bool) -> String {
             url: b.url.clone(),
         })
         .collect();
-    START_PAGE
-        .replace("/* HOME_SCRIPT */", include_str!("../ui/home-editor.js"))
+    let suggestions: Vec<_> = if private_mode {
+        Vec::new()
+    } else {
+        crate::navigation::suggestion_candidates(data)
+            .filter(|entry| entry.title.len() + entry.url.len() <= 512)
+            .take(80)
+            .collect()
+    };
+    let template = START_PAGE.replace("/* HOME_SCRIPT */", include_str!("../ui/home-editor.js"));
+    crate::i18n::template(&template, language)
+        .replace("__LOCALE__", language.pick("ru-RU", "en-US"))
+        .replace(
+            "__HOME_SUGGESTIONS__",
+            &crate::home::script_json(&suggestions),
+        )
         .replace("__HOME_JSON__", &crate::home::script_json(&home))
         .replace("__BOOKMARKS_JSON__", &crate::home::script_json(&bookmarks))
         .replace(
@@ -109,15 +141,24 @@ pub fn render(data: &BrowserData, private_mode: bool) -> String {
                 String::new()
             },
         )
-        .replace("__SEARCH_NAME__", data.search_engine.name())
+        .replace(
+            "__SEARCH_NAME__",
+            &crate::i18n::template(data.search_engine.name(), language),
+        )
         .replace("__SEARCH_URL__", data.search_engine.prefix())
         .replace("<!-- SHORTCUTS -->", &shortcuts)
         .replace(
             "__PROFILE_NOTE__",
             if private_mode {
-                "Приватное окно · Вход на сайты не сохраняется после закрытия"
+                language.pick(
+                    "Приватное окно · Вход на сайты не сохраняется после закрытия",
+                    "Private window · Site sessions end when you close the window",
+                )
             } else {
-                "LiteRust · Сессии сайтов хранятся в вашем профиле"
+                language.pick(
+                    "LiteRust · Сессии сайтов хранятся в вашем профиле",
+                    "LiteRust · Site sessions are stored in your profile",
+                )
             },
         )
 }
@@ -127,7 +168,16 @@ pub fn render_with_profile(
     private_mode: bool,
     profile: Option<&crate::local_profiles::Profile>,
 ) -> String {
-    let html = render(data, private_mode);
+    render_with_profile_localized(data, private_mode, profile, data.browser_settings.language)
+}
+
+pub fn render_with_profile_localized(
+    data: &BrowserData,
+    private_mode: bool,
+    profile: Option<&crate::local_profiles::Profile>,
+    language: crate::storage::Language,
+) -> String {
+    let html = render_localized(data, private_mode, language);
     let avatar = profile
         .map(|p| {
             if !private_mode && crate::icons::png_bytes(&p.avatar).is_some() {
@@ -143,6 +193,20 @@ pub fn render_with_profile(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn english_template_preserves_user_text_and_private_mode_omits_history() {
+        let mut data = BrowserData::default();
+        data.browser_settings.language = crate::storage::Language::En;
+        data.toggle_bookmark("https://example.org/", "Настройки");
+        data.record_visit("https://history.example/", "History entry");
+        let normal = render(&data, false);
+        assert!(normal.contains("lang=\"en\""));
+        assert!(normal.contains("<title>New tab</title>"));
+        assert!(normal.contains("Настройки"));
+        assert!(normal.contains("https://history.example/"));
+        assert!(!render(&data, true).contains("https://history.example/"));
+    }
+
     #[test]
     fn safe_shortcuts_and_profile_note() {
         let mut data = BrowserData::default();
