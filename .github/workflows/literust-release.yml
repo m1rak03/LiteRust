@@ -1,6 +1,9 @@
 name: Build and verify LiteRust installer
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['docs/releases/0.16.0-alpha.2.md']
 permissions:
   contents: write
 jobs:
@@ -144,10 +147,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
           & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/setup.nsi
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
-          $exe = 'packaging/LiteRust-0.16.0-alpha.1-Setup-x64.exe'
-          gh release download v0.15.0-alpha.4 --repo $env:GITHUB_REPOSITORY --pattern LiteRust-0.15.0-alpha.4-Setup-x64.exe --dir previous
+          $exe = 'packaging/LiteRust-0.16.0-alpha.2-Setup-x64.exe'
+          gh release download v0.16.0-alpha.1 --repo $env:GITHUB_REPOSITORY --pattern LiteRust-0.16.0-alpha.1-Setup-x64.exe --dir previous
           if ($LASTEXITCODE -ne 0) { throw 'Previous installer download failed' }
-          $oldInstall = Start-Process previous/LiteRust-0.15.0-alpha.4-Setup-x64.exe -ArgumentList '/S' -Wait -PassThru
+          $oldInstall = Start-Process previous/LiteRust-0.16.0-alpha.1-Setup-x64.exe -ArgumentList '/S' -Wait -PassThru
           if ($oldInstall.ExitCode -ne 0) { throw 'Previous version installation failed' }
           $folder = Join-Path $env:LOCALAPPDATA 'Programs\LiteRust'
           & ./tools/benchmark-release-windows.ps1 -OldExe "$folder/literust-browser.exe" -NewExe (Resolve-Path target/release/literust-browser.exe)
@@ -202,7 +205,7 @@ jobs:
           if ($saved.search_engine -ne 'yandex') { throw 'Upgrade lost user preference' }
           if ((Get-Content "$profile/upgrade-marker.txt").Trim() -ne 'preserve-profile') { throw 'Upgrade changed profile' }
           if ((Get-FileHash "$folder/literust-browser.exe").Hash -ne (Get-FileHash target/release/literust-browser.exe).Hash) { throw 'Installed executable was not updated' }
-          Write-Output 'PASS: upgrade from running 0.15.0-alpha.4, graceful close, preferences and profile preserved'
+          Write-Output 'PASS: upgrade from running 0.16.0-alpha.1, graceful close, preferences and profile preserved'
           $folder = Join-Path $env:LOCALAPPDATA 'Programs\LiteRust'
           $desktop = [Environment]::GetFolderPath('Desktop')
           $programs = [Environment]::GetFolderPath('Programs')
@@ -227,7 +230,7 @@ jobs:
           if (Test-Path "$desktop/LiteRust.lnk") { throw 'Desktop shortcut not removed' }
           if (Test-Path "$folder/literust-browser.exe") { Get-ChildItem $folder; throw "Installed browser not removed, uninstall exit: $($uninstall.ExitCode)" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  LiteRust-0.16.0-alpha.1-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+          "$hash  LiteRust-0.16.0-alpha.2-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
       - name: Preserve installer under test
         if: always()
         uses: actions/upload-artifact@v4
@@ -249,5 +252,5 @@ jobs:
       - name: Publish verified prerelease
         shell: pwsh
         run: |
-          gh release create v0.16.0-alpha.1 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LiteRust 0.16.0-alpha.1 — локальные профили и новое рабочее пространство' --prerelease --notes-file docs/releases/0.16.0-alpha.1.md packaging/LiteRust-0.16.0-alpha.1-Setup-x64.exe packaging/SHA256SUMS.txt "${{ runner.temp }}/literust-source/literust-browser-0.16.0-alpha.1-source.zip"
+          gh release create v0.16.0-alpha.2 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LiteRust 0.16.0-alpha.2 — вкладки, поиск и печать' --prerelease --notes-file docs/releases/0.16.0-alpha.2.md packaging/LiteRust-0.16.0-alpha.2-Setup-x64.exe packaging/SHA256SUMS.txt "${{ runner.temp }}/literust-source/literust-browser-0.16.0-alpha.2-source.zip"
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }
