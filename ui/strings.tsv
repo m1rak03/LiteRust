@@ -626,7 +626,7 @@ VPN выключен	VPN is off
 LiteRust в Windows	LiteRust app icon
 AdBlock для	AdBlock for
 Работа	Work
-Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.16-alpha.1 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.	Google Password Manager opens in your external browser. Google manages the passwords there. LiteRust and its WebView2 profile cannot read the Chrome vault or autofill passwords from your Google account.
+Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.16-alpha.2 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.	Google Password Manager opens in your external browser. Google manages the passwords there. LiteRust and its WebView2 profile cannot read the Chrome vault or autofill passwords from your Google account.
 Поиск требует обновления Microsoft WebView2 Runtime.	Update Microsoft WebView2 Runtime to use Find on page.
 Не удалось сохранить профиль. Проверьте свободное место и права доступа.	Unable to save the profile. Check disk space and permissions.
 Дождитесь завершения текущей операции.	Wait for the current operation to finish.

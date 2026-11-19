@@ -2,7 +2,7 @@ param([Parameter(Mandatory=$true)][string]$OldExe,[Parameter(Mandatory=$true)][s
 $ErrorActionPreference='Stop'
 $rows=[System.Collections.Generic.List[object]]::new()
 $keys=New-Object -ComObject WScript.Shell
-foreach($version in @(@('0.15.0-alpha.4',$OldExe),@('0.16.0-alpha.1',$NewExe))){
+foreach($version in @(@('0.16.0-alpha.1',$OldExe),@('0.16.0-alpha.2',$NewExe))){
  for($repeat=1;$repeat -le 3;$repeat++){
   $log="$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/startup.log"
   Remove-Item $log -ErrorAction SilentlyContinue

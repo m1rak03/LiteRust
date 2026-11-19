@@ -1,4 +1,4 @@
-//! LiteRust Browser 0.16-alpha.1: per-site network-filter exceptions, permission prompts,
+//! LiteRust Browser 0.16-alpha.2: per-site network-filter exceptions, permission prompts,
 //! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -2566,7 +2566,7 @@ fn main() {
     if fs::create_dir_all(&diagnostics).is_ok() {
         let _ = fs::write(
             diagnostics.join("startup.log"),
-            b"LiteRust 0.16.0-alpha.1 startup\n",
+            b"LiteRust 0.16.0-alpha.2 startup\n",
         );
     }
     if let Err(error) = run() {
@@ -2650,9 +2650,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok(),
         )
         .with_title(if private_mode {
-            "LiteRust 0.16-alpha.1 — приватное окно"
+            "LiteRust 0.16-alpha.2 — приватное окно"
         } else {
-            "LiteRust Browser 0.16-alpha.1"
+            "LiteRust Browser 0.16-alpha.2"
         })
         .with_inner_size(LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(LogicalSize::new(690.0, 400.0))
@@ -2686,7 +2686,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut data = BrowserData::default().clean();
         if args.iter().any(|arg| arg == "--ui-en") {
             data.browser_settings.language = storage::Language::En;
-            window.set_title("LiteRust 0.16-alpha.1 — private window");
+            window.set_title("LiteRust 0.16-alpha.2 — private window");
         }
         (data, None, None)
     } else {
