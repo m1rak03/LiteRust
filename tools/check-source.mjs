@@ -38,7 +38,7 @@ const sec = readFileSync(new URL('../src/security.rs', import.meta.url), 'utf8')
 assert.match(block, /Network\.setBlockedURLs/);
 assert.match(block, /Network\.enable/);
 assert.match(sec, /url\.username\(\)\.is_empty\(\)/);
-assert.match(main, /self.data.live_tab_budget as usize/);
+assert.match(main, /usize::from\(self\.data\.live_tab_budget\)/);
 assert.match(main, /pages: HashMap<u64, LivePage>/);
 assert.match(main, /let \(mut data, data_file\) = if private_mode/);
 assert.match(main, /if !loading && !self\.private_mode/);
@@ -47,9 +47,9 @@ assert.match(portal, /https:\/\/passwords\.google\.com\//);
 assert.doesNotMatch(portal, /chrome:.*login.*data/i);
 // Never expose the page WebView to the privileged toolbar IPC transport.
 assert.equal((main.match(/\.with_ipc_handler\(/g)||[]).length, 2);
-console.log('LiteRust static source checks: OK');
 
 // A missing Runtime must be detected before the native window is created.
 const runBody = main.slice(main.indexOf('fn run() ->'));
 assert(runBody.indexOf('wry::webview_version()') < runBody.indexOf('WindowBuilder::new()'));
 assert.match(runBody, /version\.trim\(\)\.is_empty\(\)/);
+console.log('LiteRust static source checks: OK');

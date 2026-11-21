@@ -276,3 +276,268 @@ pub fn downloads() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     Ok(())
 }
+
+pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use super::{create_browser, dispatch_browser_event, WindowMessage, WindowOptions};
+    use literust_browser::{
+        local_profiles::Catalog,
+        split_view::{Axis, Operation, Pane},
+        storage::{BrowserData, Tab},
+        tab_groups::Color,
+    };
+    use std::sync::{
+        atomic::{AtomicI32, Ordering},
+        Arc,
+    };
+
+    let root = std::path::PathBuf::from(
+        std::env::var_os("LITERUST_SESSION_TEST_ROOT").ok_or("Split test root missing")?,
+    );
+    if !root.is_absolute() || !root.is_dir() || !super::profile_root().starts_with(&root) {
+        return Err("Split test requires isolated fixture profile storage".into());
+    }
+    let port = std::env::var("LITERUST_SPLIT_TEST_PORT")?.parse::<u16>()?;
+    let urls = ["one", "two", "three"].map(|name| format!("http://127.0.0.1:{port}/{name}"));
+    let mut log = std::fs::File::create(root.join("results.log"))?;
+    let mut events = EventLoopBuilder::<WindowMessage>::with_user_event().build();
+    let mut data = BrowserData {
+        tabs: vec![Tab::web(&urls[0]), Tab::web(&urls[1])],
+        ..BrowserData::default()
+    }
+    .clean();
+    data.account_prompt_seen = true;
+    data.auto_discard = true;
+    data.live_tab_budget = 1;
+    let ids = [data.tabs[0].id, data.tabs[1].id];
+    assert!(data.tab_groups.create(
+        &mut data.tabs,
+        &mut data.active,
+        &ids,
+        "Fixture",
+        Color::Teal
+    ));
+    let options = WindowOptions {
+        private_mode,
+        downloads: Default::default(),
+        local_profiles: Catalog::load(&super::app_root())?,
+        vpn_vault: Default::default(),
+        vpn_port: None,
+        vpn_running: false,
+        system_vpn_active: false,
+    };
+    let mut browser = create_browser(&events, &events.create_proxy(), data, options, None)?;
+    let started = Instant::now();
+    let mut stage = 0;
+    let mut since = started;
+    let mut result = Err("Split test timed out");
+    let scroll = [Arc::new(AtomicI32::new(-1)), Arc::new(AtomicI32::new(-1))];
+    let loaded = |browser: &super::Browser, id: u64, url: &str| {
+        browser.pages.get(&id).is_some_and(|page| {
+            !page.loading && page.view.url().is_ok_and(|current| current == url)
+        })
+    };
+
+    events.run_return(|event, _, flow| {
+        *flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(50));
+        if started.elapsed() >= Duration::from_secs(40) {
+            *flow = ControlFlow::Exit;
+            return;
+        }
+        if let Event::UserEvent(WindowMessage::Browser { event, .. }) = event {
+            dispatch_browser_event(&mut browser, event);
+        }
+        if !browser.ready || since.elapsed() < Duration::from_millis(500) {
+            return;
+        }
+        let mut test_stage = || -> Result<bool, &'static str> {
+            match stage {
+                0 if loaded(&browser, ids[0], &urls[0]) => {
+                    log_runtime_memory(&browser.pages[&ids[0]].view, "single", &mut log);
+                    browser.run_split(Operation::Open { tab: ids[1] });
+                }
+                1 if loaded(&browser, ids[1], &urls[1]) => {
+                    log_runtime_memory(&browser.pages[&ids[0]].view, "split", &mut log);
+                    if browser.pages.len() != 2 || browser.data.split.is_none() {
+                        return Err(
+                            "The split did not retain both WebViews under the 1-page budget",
+                        );
+                    }
+                    for id in ids {
+                        let mut visible = windows::core::BOOL::default();
+                        let view = &browser.pages[&id].view;
+                        if unsafe { view.controller().IsVisible(&mut visible) }.is_err()
+                            || !visible.as_bool()
+                        {
+                            return Err("A split WebView is not visible");
+                        }
+                        if private_mode && super::windows_platform::verify_private(view).is_err() {
+                            return Err("A pane left the InPrivate profile");
+                        }
+                    }
+                    browser.run_split(Operation::Axis {
+                        axis: Axis::Vertical,
+                    });
+                    browser.run_split(Operation::Resize { percent: 33 });
+                    let first = browser.pages[&ids[0]]
+                        .view
+                        .bounds()
+                        .map_err(|_| "Read first bounds")?;
+                    let second = browser.pages[&ids[1]]
+                        .view
+                        .bounds()
+                        .map_err(|_| "Read second bounds")?;
+                    if first.position.to_physical::<i32>(1.0).y
+                        >= second.position.to_physical::<i32>(1.0).y
+                        || first.size.to_physical::<u32>(1.0).height
+                            >= second.size.to_physical::<u32>(1.0).height
+                    {
+                        return Err(
+                            "Vertical split or resize did not change the controller bounds",
+                        );
+                    }
+                    browser.pages[&ids[1]]
+                        .view
+                        .focus()
+                        .map_err(|_| "Focus second pane")?;
+                    browser.pages[&ids[1]]
+                        .view
+                        .evaluate_script("window.scrollTo(0,900)")
+                        .map_err(|_| "Scroll the second WebView")?;
+                }
+                2 if browser.active_id() == ids[1] => {
+                    for (id, value) in ids.into_iter().zip(&scroll) {
+                        let value = value.clone();
+                        browser.pages[&id]
+                            .view
+                            .evaluate_script_with_callback("window.scrollY", move |json| {
+                                value.store(json.parse::<i32>().unwrap_or(-1), Ordering::Relaxed);
+                            })
+                            .map_err(|_| "Read independent scroll state")?;
+                    }
+                    return Ok(true);
+                }
+                3 => {
+                    if scroll[0].load(Ordering::Relaxed) != 0
+                        || scroll[1].load(Ordering::Relaxed) < 600
+                    {
+                        return Err(
+                            "Scrolling the second pane affected the first or did not occur",
+                        );
+                    }
+                    browser.run_split(Operation::Navigate {
+                        pane: Pane::Second,
+                        value: urls[2].clone(),
+                    });
+                }
+                4 if loaded(&browser, ids[1], &urls[2]) => {
+                    if !loaded(&browser, ids[0], &urls[0]) {
+                        return Err("Navigating the second pane affected the first");
+                    }
+                    browser.run_split(Operation::Swap);
+                    let snapshot = browser.session();
+                    if !snapshot.split.is_some_and(|split| {
+                        split.panes == [ids[1], ids[0]] && split.focus == Pane::First
+                    }) || snapshot.tab_groups.entries().len() != 1
+                    {
+                        return Err("Swap or session snapshot lost the selected tab or group");
+                    }
+                    browser.run_split(Operation::Close { pane: Pane::First });
+                    if browser.data.split.is_some()
+                        || browser.active_id() != ids[0]
+                        || browser.pages.contains_key(&ids[1])
+                        || browser.data.tabs.len() != 2
+                    {
+                        return Err(
+                            "Closing a pane did not release the WebView and preserve its tab",
+                        );
+                    }
+                    return Ok(true);
+                }
+                _ => return Ok(false),
+            }
+            Ok(true)
+        };
+        match test_stage() {
+            Ok(true) => {
+                let _ = writeln!(log, "phase {stage}: true");
+                stage += 1;
+                since = Instant::now();
+                if stage == 5 {
+                    result = Ok(());
+                    *flow = ControlFlow::Exit;
+                }
+            }
+            Ok(false) => {}
+            Err(reason) => {
+                let _ = writeln!(log, "phase {stage}: {reason}");
+                result = Err(reason);
+                *flow = ControlFlow::Exit;
+            }
+        }
+    });
+    result?;
+    writeln!(log,"PASS: separate native WebViews, navigation, scroll, resize, layout, swap, closure and group state")?;
+    Ok(())
+}
+
+fn log_runtime_memory(view: &wry::WebView, label: &str, log: &mut std::fs::File) {
+    use std::collections::BTreeSet;
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment8;
+    use windows::{
+        core::Interface,
+        Win32::{
+            Foundation::CloseHandle,
+            System::{
+                ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX},
+                Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+            },
+        },
+    };
+    let sample = || -> windows::core::Result<_> {
+        unsafe {
+            let environment: ICoreWebView2Environment8 = view.environment().cast()?;
+            let processes = environment.GetProcessInfos()?;
+            let mut count = 0;
+            processes.Count(&mut count)?;
+            let mut pids = BTreeSet::new();
+            for index in 0..count {
+                let mut id = 0;
+                processes.GetValueAtIndex(index)?.ProcessId(&mut id)?;
+                if id > 0 {
+                    pids.insert(id as u32);
+                }
+            }
+            let mut sampled = 0;
+            let mut bytes = 0usize;
+            for &id in &pids {
+                let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, id) else {
+                    continue;
+                };
+                let mut counters = PROCESS_MEMORY_COUNTERS_EX {
+                    cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+                    ..Default::default()
+                };
+                if GetProcessMemoryInfo(
+                    handle,
+                    std::ptr::from_mut(&mut counters).cast(),
+                    counters.cb,
+                )
+                .is_ok()
+                {
+                    sampled += 1;
+                    bytes = bytes.saturating_add(counters.PrivateUsage);
+                }
+                let _ = CloseHandle(handle);
+            }
+            Ok((pids.len(), sampled, bytes))
+        }
+    };
+    if let Ok((pids, sampled, bytes)) = sample() {
+        let _ = writeln!(
+            log,
+            "memory {label}: pids={pids} read={sampled} private_bytes={bytes}"
+        );
+    } else {
+        let _ = writeln!(log, "memory {label}: unavailable");
+    }
+}

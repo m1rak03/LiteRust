@@ -4,7 +4,7 @@
 use literust_browser::{
     google_passwords, import, layout,
     local_profiles::{self, Catalog, ProfileDetails},
-    network_block, security, storage, tab_groups, vpn, window_session,
+    network_block, security, split_view, storage, tab_groups, vpn, window_session,
 };
 #[cfg(windows)]
 mod session_self_test;
@@ -45,6 +45,7 @@ const COSMETIC_FILTER: &str = include_str!("../ui/cosmetic-filter.js");
 const APPEARANCE_SCRIPT: &str = include_str!("../ui/appearance.js");
 const DOCK: &str = include_str!("../ui/dock.html");
 const TOOLBAR_HEIGHT: f64 = 108.0;
+const SPLIT_TOOLBAR_HEIGHT: f64 = 64.0;
 // All views sharing a WebView2 environment must use identical proxy options,
 // including private toolbar/dock views (whose default context is shared).
 fn routed_builder(builder: WebViewBuilder<'_>, port: Option<u16>) -> WebViewBuilder<'_> {
@@ -209,6 +210,9 @@ enum UiCommand {
     NewTab,
     NewWindow,
     NextWindow,
+    Split {
+        operation: split_view::Operation,
+    },
     TabGroup {
         operation: tab_groups::Operation,
     },
@@ -303,6 +307,11 @@ enum AppEvent {
         generation: u64,
         accounts: bool,
     },
+    #[cfg(windows)]
+    PageFocused {
+        tab_id: u64,
+        generation: u64,
+    },
     Page {
         tab_id: u64,
         generation: u64,
@@ -374,6 +383,7 @@ struct ToolbarState<'a> {
     search_engine: literust_browser::navigation::SearchEngine,
     tabs: Vec<TabSummary<'a>>,
     tab_groups: &'a [tab_groups::TabGroup],
+    split: Option<SplitSummary<'a>>,
     appearance: storage::Appearance,
     dock_position: layout::DockPosition,
     vpn_enabled: bool,
@@ -411,6 +421,13 @@ struct TabSummary<'a> {
     id: u64,
     group: Option<u32>,
     title: &'a str,
+}
+
+#[derive(Serialize)]
+struct SplitSummary<'a> {
+    #[serde(flatten)]
+    layout: split_view::SplitView,
+    urls: [&'a str; 2],
 }
 
 struct LivePage {
@@ -625,7 +642,9 @@ impl Browser {
             "duplicate" => UiCommand::DuplicateTab,
             "address" => {
                 let _ = self.toolbar.focus();
-                let _=self.toolbar.evaluate_script("window.openPanel?.(null);document.getElementById('address').focus();document.getElementById('address').select();");
+                let _ = self
+                    .toolbar
+                    .evaluate_script("window.openPanel?.(null);window.focusAddress?.();");
                 return;
             }
             "reopen_tab" => {
@@ -877,6 +896,7 @@ impl Browser {
         window_session::WindowSession {
             tabs: self.data.tabs.clone(),
             tab_groups: self.data.tab_groups.clone(),
+            split: self.data.split,
             active: self.data.active,
             placement: placement.or(self.data.placement),
         }
@@ -984,6 +1004,16 @@ impl Browser {
                 })
                 .collect(),
             tab_groups: self.data.tab_groups.entries(),
+            split: self.data.split.map(|layout| SplitSummary {
+                layout,
+                urls: layout.panes.map(|id| {
+                    self.data
+                        .tabs
+                        .iter()
+                        .find(|tab| tab.id == id && !tab.url.starts_with("literust://"))
+                        .map_or("", |tab| tab.url.as_str())
+                }),
+            }),
             customization: self.data.customization,
             shortcuts: &self.data.shortcuts,
             shortcut_catalog: &self.shortcut_catalog,
@@ -1135,6 +1165,15 @@ impl Browser {
         }
     }
 
+    fn content_top(&self) -> f64 {
+        TOOLBAR_HEIGHT
+            + if self.data.split.is_some() {
+                SPLIT_TOOLBAR_HEIGHT
+            } else {
+                0.0
+            }
+    }
+
     fn toolbar_height(&self) -> f64 {
         let height = self
             .window
@@ -1142,12 +1181,12 @@ impl Browser {
             .to_logical::<f64>(self.window.scale_factor())
             .height;
         if self.appearance_open {
-            (height - 2.0 * self.frame_inset()).max(TOOLBAR_HEIGHT)
+            (height - 2.0 * self.frame_inset()).max(self.content_top())
         } else {
-            (TOOLBAR_HEIGHT
+            (self.content_top()
                 + f64::from(self.suggestion_rows) * 34.0
                 + if self.suggestion_rows > 0 { 8.0 } else { 0.0 })
-            .min((height - 2.0 * self.frame_inset()).max(TOOLBAR_HEIGHT))
+            .min((height - 2.0 * self.frame_inset()).max(self.content_top()))
         }
     }
 
@@ -1169,7 +1208,7 @@ impl Browser {
         let (mut dock, page) = layout::arrange_sidebar(
             size.width - 2.0 * inset,
             size.height - 2.0 * inset,
-            TOOLBAR_HEIGHT,
+            self.content_top(),
             self.data.dock_position,
             &self.data.sidebar,
             self.dock_expanded,
@@ -1197,9 +1236,6 @@ impl Browser {
             ),
         )
     }
-    fn page_bounds(&self) -> Rect {
-        self.layout_bounds().1
-    }
 
     fn make_view(&mut self, tab_id: u64) -> wry::Result<LivePage> {
         let generation = self.next_generation;
@@ -1208,7 +1244,7 @@ impl Browser {
         let title_proxy = self.proxy.clone();
         let popup_proxy = self.proxy.clone();
         let internal_proxy = self.proxy.clone();
-        let bounds = self.page_bounds();
+        let bounds = self.page_bounds(self.layout_bounds().1, tab_id);
         let builder = if self.private_mode {
             // WebContext must not be supplied to an incognito view.
             WebViewBuilder::new().with_incognito(true)
@@ -1344,6 +1380,9 @@ impl Browser {
         .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(not(windows))]
         let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
+        #[cfg(windows)]
+        windows_platform::page_focus(&view, self.proxy.clone(), tab_id, generation)
+            .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         Ok(LivePage {
             allow_internal_navigation,
             pending_html_navigation,
@@ -1358,81 +1397,146 @@ impl Browser {
         })
     }
 
+    fn page_bounds(&self, base: Rect, id: u64) -> Rect {
+        let Some(split) = self.data.split else {
+            return base;
+        };
+        let Some(pane) = split.pane(id) else {
+            return base;
+        };
+        let scale = self.window.scale_factor();
+        let position = base.position.to_logical::<f64>(scale);
+        let size = base.size.to_logical::<f64>(scale);
+        let pane = split.bounds(
+            layout::Bounds {
+                x: position.x,
+                y: position.y,
+                width: size.width,
+                height: size.height,
+            },
+            pane,
+        );
+        physical_rect(pane.x, pane.y, pane.width, pane.height, scale)
+    }
+
+    fn is_visible_tab(&self, id: u64) -> bool {
+        self.data
+            .split
+            .map_or_else(|| id == self.active_id(), |split| split.pane(id).is_some())
+    }
+
+    fn window_page_budget(&self) -> usize {
+        usize::from(self.data.live_tab_budget).max(if self.data.split.is_some() { 2 } else { 1 })
+    }
+
+    fn discard_one_background_page(&mut self) -> bool {
+        let victim = lru_victim(
+            self.pages
+                .iter()
+                .filter(|(id, page)| !self.is_visible_tab(**id) && !page.busy() && !page.loading)
+                .map(|(id, page)| (*id, page.last_used)),
+            self.active_id(),
+        );
+        victim.and_then(|id| self.pages.remove(&id)).is_some()
+    }
+
     fn enforce_page_budget(&mut self) -> bool {
         if !self.data.auto_discard {
             return false;
         }
         let before = self.pages.len();
-        let active = self.active_id();
-        while self.pages.len() > self.data.live_tab_budget as usize {
-            let victim = lru_victim(
-                self.pages
-                    .iter()
-                    .filter(|(_, page)| !page.busy() && !page.loading)
-                    .map(|(tab_id, page)| (*tab_id, page.last_used)),
-                active,
-            );
-            if let Some(id) = victim {
-                self.pages.remove(&id);
-            } else {
-                break;
-            }
-        }
+        while self.pages.len() > self.window_page_budget() && self.discard_one_background_page() {}
         self.pages.len() != before
     }
 
-    // Keep only a bounded number of live WebViews. Cached tabs retain their DOM,
-    // form state and scroll position. Evicted tabs keep URL/history and reload.
+    fn ensure_page(&mut self, id: u64) -> bool {
+        if self.pages.contains_key(&id) {
+            return true;
+        }
+        while self.data.auto_discard
+            && self.pages.len() >= self.window_page_budget()
+            && self.discard_one_background_page()
+        {}
+        match self.make_view(id) {
+            Ok(page) => {
+                self.pages.insert(id, page);
+                self.load_page(id);
+                true
+            }
+            Err(err) => {
+                self.notice(&format!("Не удалось создать WebView: {err}"));
+                false
+            }
+        }
+    }
+
+    // Both panes stay active. Cached background tabs keep DOM and scroll
+    // position until evicted and reloaded through the same creation path.
     fn show_active(&mut self) {
-        let id = self.active_id();
+        let mut active = self.active_id();
+        if let Some(split) = &mut self.data.split {
+            split.select(active);
+        }
         self.usage_clock = self.usage_clock.saturating_add(1);
-        for (other_id, page) in &mut self.pages {
-            if *other_id != id && page.foreground {
-                page.foreground = false;
-                let _ = page.view.set_visible(false);
-                #[cfg(windows)]
-                let _ = page.view.set_memory_usage_level(MemoryUsageLevel::Low);
-            }
-        }
-        if !self.pages.contains_key(&id) {
-            while self.data.auto_discard && self.pages.len() >= self.data.live_tab_budget as usize {
-                let victim = lru_victim(
-                    self.pages
+        let current_ready = self.ensure_page(active);
+        if let Some(split) = self.data.split {
+            let peer = split.tab(split.focus.other());
+            let peer_ready = self.ensure_page(peer);
+            if !current_ready || !peer_ready {
+                self.data.split = None;
+                if !current_ready && peer_ready {
+                    self.data.active = self
+                        .data
+                        .tabs
                         .iter()
-                        .filter(|(_, page)| !page.busy() && !page.loading)
-                        .map(|(tab_id, page)| (*tab_id, page.last_used)),
-                    id,
-                );
-                if let Some(victim) = victim {
-                    self.pages.remove(&victim);
-                } else {
-                    break;
+                        .position(|tab| tab.id == peer)
+                        .unwrap_or(self.data.active);
+                    active = peer;
                 }
-            }
-            match self.make_view(id) {
-                Ok(page) => {
-                    self.pages.insert(id, page);
-                    self.load_active();
-                }
-                Err(err) => self.notice(&format!("Не удалось создать WebView: {err}")),
+                self.persist();
             }
         }
-        if let Some(page) = self.pages.get_mut(&id) {
-            page.last_used = self.usage_clock;
-            page.foreground = true;
-            let _ = page.view.set_visible(!self.appearance_open);
-            #[cfg(windows)]
-            let _ = page.view.set_memory_usage_level(MemoryUsageLevel::Normal);
-            if self.ready && !self.appearance_open && self.window.is_focused() {
-                let _ = page.view.focus();
+        let split = self.data.split;
+        for (id, page) in &mut self.pages {
+            let shown = *id == active || split.is_some_and(|split| split.pane(*id).is_some());
+            if shown {
+                page.last_used = self.usage_clock;
+            }
+            if shown != page.foreground {
+                page.foreground = shown;
+                let _ = page.view.set_visible(shown && !self.appearance_open);
+                #[cfg(windows)]
+                let _ = page.view.set_memory_usage_level(if shown {
+                    MemoryUsageLevel::Normal
+                } else {
+                    MemoryUsageLevel::Low
+                });
             }
         }
         self.resize();
+        if self.ready && !self.appearance_open && self.window.is_focused() {
+            if let Some(page) = self.pages.get(&active) {
+                let _ = page.view.focus();
+            }
+        }
         self.sync_toolbar();
     }
 
     fn load_active(&mut self) {
-        let url = self.current_url().to_owned();
+        self.load_page(self.active_id());
+        self.sync_toolbar();
+    }
+
+    fn load_page(&mut self, id: u64) {
+        let Some(url) = self
+            .data
+            .tabs
+            .iter()
+            .find(|tab| tab.id == id)
+            .map(|tab| tab.url.clone())
+        else {
+            return;
+        };
         let html = match url.as_str() {
             NEW_TAB => Some(literust_browser::newtab::render_with_profile_localized(
                 &self.data,
@@ -1450,7 +1554,7 @@ impl Browser {
         };
         let html = html.map(|html| self.themed_html(html));
         let block_for_url = self.filter_enabled_for(&url);
-        if let Some(page) = self.pages.get_mut(&self.active_id()) {
+        if let Some(page) = self.pages.get_mut(&id) {
             // Adjust the CDP rule list before starting a toolbar-initiated navigation.
             // CDP completion is async: this is best-effort and not a security boundary.
             #[cfg(windows)]
@@ -1474,7 +1578,6 @@ impl Browser {
                 eprintln!("Navigation failed: {err}");
             }
         }
-        self.sync_toolbar();
     }
 
     fn dark_theme(&self) -> bool {
@@ -1574,6 +1677,118 @@ impl Browser {
         self.data.tabs[self.data.active].navigate(url);
         self.load_active();
         self.persist();
+    }
+
+    fn run_split(&mut self, operation: split_view::Operation) {
+        use split_view::{Operation, SplitView};
+        match operation {
+            Operation::Open { tab } => {
+                let active = self.active_id();
+                if tab == active || !self.data.tabs.iter().any(|item| item.id == tab) {
+                    return;
+                }
+                if let Some(split) = &mut self.data.split {
+                    if split.pane(tab).is_some() {
+                        return;
+                    }
+                    split.panes[split.focus.other().index()] = tab;
+                } else {
+                    self.data.split = Some(SplitView::new(active, tab));
+                }
+                self.show_active();
+                self.persist();
+            }
+            Operation::Focus { pane } => self.focus_split_pane(pane),
+            Operation::Choose { pane, tab } => {
+                let Some(index) = self.data.tabs.iter().position(|item| item.id == tab) else {
+                    return;
+                };
+                let Some(split) = &mut self.data.split else {
+                    return;
+                };
+                if split.tab(pane.other()) == tab {
+                    return;
+                }
+                split.focus = pane;
+                split.select(tab);
+                self.data.active = index;
+                self.show_active();
+                self.persist();
+            }
+            Operation::Navigate { pane, value } => {
+                if self.data.split.is_some() {
+                    self.focus_split_pane(pane);
+                    self.navigate(&value);
+                    if let Some(page) = self.pages.get(&self.active_id()) {
+                        let _ = page.view.focus();
+                    }
+                }
+            }
+            Operation::Axis { axis } => {
+                if let Some(split) = &mut self.data.split {
+                    split.axis = axis;
+                    self.resize();
+                    self.sync_toolbar();
+                    self.persist();
+                }
+            }
+            Operation::Resize { percent } => {
+                if let Some(split) = &mut self.data.split {
+                    split.resize(percent);
+                    self.resize();
+                    self.sync_toolbar();
+                    self.persist();
+                }
+            }
+            Operation::Swap => {
+                if let Some(split) = &mut self.data.split {
+                    split.swap();
+                    self.resize();
+                    self.sync_toolbar();
+                    self.persist();
+                }
+            }
+            Operation::Close { pane } => {
+                let Some(split) = self.data.split else { return };
+                if self.pages.get(&split.tab(pane)).is_some_and(LivePage::busy) {
+                    self.notice_localized("Завершите печать или загрузку перед закрытием области.");
+                    return;
+                }
+                self.focus_split_pane(pane.other());
+                self.data.split = None;
+                self.pages.remove(&split.tab(pane));
+                self.show_active();
+                self.persist();
+            }
+            Operation::Exit => {
+                self.data.split = None;
+                self.show_active();
+                if self.enforce_page_budget() {
+                    self.sync_toolbar();
+                }
+                self.persist();
+            }
+        }
+    }
+
+    fn focus_split_pane(&mut self, pane: split_view::Pane) {
+        let Some(split) = &mut self.data.split else {
+            return;
+        };
+        if split.focus == pane {
+            return;
+        }
+        if let Some(index) = self
+            .data
+            .tabs
+            .iter()
+            .position(|tab| tab.id == split.tab(pane))
+        {
+            split.focus = pane;
+            self.data.active = index;
+            self.persist();
+            self.sync_toolbar();
+        }
     }
 
     fn open_library(&mut self, url: &str) {
@@ -2122,6 +2337,11 @@ impl Browser {
                     }
                 }
                 self.ready = true;
+                if self.data.split.is_some() && self.window.is_focused() && !self.appearance_open {
+                    if let Some(page) = self.pages.get(&self.active_id()) {
+                        let _ = page.view.focus();
+                    }
+                }
                 startup_log("Toolbar JavaScript ready");
                 self.window.set_visible(true);
                 let _ = self.toolbar.set_visible(true);
@@ -2178,6 +2398,7 @@ impl Browser {
                 }
             }
             UiCommand::NextWindow => self.next_window_requested = true,
+            UiCommand::Split { operation } => self.run_split(operation),
             UiCommand::TabGroup { operation } => {
                 if self
                     .data
@@ -2222,6 +2443,13 @@ impl Browser {
                     self.notice_localized("Завершите печать или загрузку перед закрытием вкладки.");
                     return;
                 }
+                let split_peer = self
+                    .data
+                    .split
+                    .and_then(|split| split.pane(closed_id).map(|pane| split.tab(pane.other())));
+                if split_peer.is_some() {
+                    self.data.split = None;
+                }
                 let closed_active = index == self.data.active;
                 self.closed_tabs.push(self.data.tabs[index].url.clone());
                 if self.closed_tabs.len() > 25 {
@@ -2243,6 +2471,11 @@ impl Browser {
                     self.data.active = index.min(self.data.tabs.len() - 1);
                 } else if index < self.data.active {
                     self.data.active -= 1;
+                }
+                if let Some(peer) = split_peer {
+                    if let Some(active) = self.data.tabs.iter().position(|tab| tab.id == peer) {
+                        self.data.active = active;
+                    }
                 }
                 self.data
                     .tab_groups
@@ -2421,7 +2654,7 @@ impl Browser {
                     let _ = self.toolbar.focus();
                 }
                 for (id, page) in &self.pages {
-                    let _ = page.view.set_visible(!open && *id == self.active_id());
+                    let _ = page.view.set_visible(!open && self.is_visible_tab(*id));
                 }
                 self.resize();
                 self.sync_manager();
@@ -2453,9 +2686,14 @@ impl Browser {
             }
             UiCommand::DiscardBackground => {
                 let active = self.active_id();
+                let split = self.data.split;
                 let before = self.pages.len();
-                self.pages
-                    .retain(|id, page| *id == active || page.loading || page.busy());
+                self.pages.retain(|id, page| {
+                    *id == active
+                        || split.is_some_and(|split| split.pane(*id).is_some())
+                        || page.loading
+                        || page.busy()
+                });
                 self.sync_toolbar();
                 self.notice(&format!("Выгружено вкладок: {}. Активная вкладка, загружающиеся страницы и скачивания сохранены.", before - self.pages.len()));
             }
@@ -2659,7 +2897,7 @@ impl Browser {
             discarded = self.enforce_page_budget();
             self.persist();
         }
-        if self.active_id() == tab_id || discarded {
+        if self.is_visible_tab(tab_id) || discarded {
             self.sync_toolbar();
         }
     }
@@ -2784,8 +3022,8 @@ impl Browser {
             );
             let _ = self.dock.set_bounds(dock_bounds);
         }
-        for page in self.pages.values() {
-            let _ = page.view.set_bounds(bounds);
+        for (id, page) in &self.pages {
+            let _ = page.view.set_bounds(self.page_bounds(bounds, *id));
         }
         #[cfg(windows)]
         {
@@ -2975,10 +3213,11 @@ fn main() {
     {
         let args: Vec<String> = std::env::args().collect();
         if let Some(pair) = args.windows(2).find(|a| a[0] == "--session-self-test") {
-            let result = if pair[1] == "downloads" {
-                session_self_test::downloads()
-            } else {
-                session_self_test::run(&pair[1])
+            let result = match pair[1].as_str() {
+                "downloads" => session_self_test::downloads(),
+                "split" => session_self_test::split(false),
+                "split-private" => session_self_test::split(true),
+                phase => session_self_test::run(phase),
             };
             if let Err(error) = result {
                 eprintln!("Native self-test failed: {error}");
@@ -3770,6 +4009,19 @@ fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
             }
             browser.sync_toolbar();
         }
+        #[cfg(windows)]
+        AppEvent::PageFocused { tab_id, generation } => {
+            if browser.ready
+                && !browser.appearance_open
+                && browser.pages.get(&tab_id).is_some_and(|page| {
+                    page.generation == generation && windows_platform::has_page_focus(&page.view)
+                })
+            {
+                if let Some(pane) = browser.data.split.and_then(|split| split.pane(tab_id)) {
+                    browser.focus_split_pane(pane);
+                }
+            }
+        }
         AppEvent::Page {
             tab_id,
             generation,
@@ -3827,6 +4079,7 @@ fn window_snapshot(
     BrowserData {
         tabs: initial.tabs,
         tab_groups: initial.tab_groups,
+        split: initial.split,
         active: initial.active,
         placement: initial.placement,
         additional_windows: windows
@@ -3847,6 +4100,7 @@ fn next_window_data(
     BrowserData {
         tabs: session.tabs,
         tab_groups: session.tab_groups,
+        split: session.split,
         active: session.active,
         placement: session.placement,
         additional_windows: Vec::new(),

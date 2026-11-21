@@ -461,6 +461,7 @@ pub struct BrowserData {
     pub placement: Option<crate::window_session::Placement>,
     pub additional_windows: Vec<crate::window_session::WindowSession>,
     pub tab_groups: crate::tab_groups::TabGroups,
+    pub split: Option<crate::split_view::SplitView>,
     #[serde(flatten)]
     pub profile: std::rc::Rc<ProfileData>,
 }
@@ -473,6 +474,7 @@ impl Default for BrowserData {
             placement: None,
             additional_windows: Vec::new(),
             tab_groups: Default::default(),
+            split: None,
             profile: Default::default(),
         }
     }
@@ -574,6 +576,7 @@ impl BrowserData {
         self.active = 0;
         self.additional_windows.clear();
         self.tab_groups = Default::default();
+        self.split = None;
     }
 
     fn read_data(path: &Path) -> io::Result<Self> {
@@ -646,6 +649,9 @@ impl BrowserData {
         }
         crate::window_session::clean_tabs(&mut self.tabs, &mut self.active);
         self.tab_groups.clean(&mut self.tabs, &mut self.active);
+        self.split = self
+            .split
+            .and_then(|split| split.validate(&self.tabs, &mut self.active));
         self.placement = self.placement.filter(|placement| placement.valid());
         self.additional_windows
             .truncate(crate::window_session::MAX_WINDOWS - 1);

@@ -280,6 +280,37 @@ pub fn install_shortcuts(
     Ok(())
 }
 
+pub fn has_page_focus(view: &wry::WebView) -> bool {
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::{Input::KeyboardAndMouse::GetFocus, WindowsAndMessaging::IsChild},
+    };
+    unsafe {
+        let focused = GetFocus();
+        let mut parent = HWND::default();
+        !focused.is_invalid()
+            && view.controller().ParentWindow(&mut parent).is_ok()
+            && (focused == parent || IsChild(parent, focused).as_bool())
+    }
+}
+
+pub fn page_focus(
+    view: &wry::WebView,
+    proxy: BrowserProxy,
+    tab_id: u64,
+    generation: u64,
+) -> windows::core::Result<()> {
+    unsafe {
+        view.controller().add_GotFocus(
+            &webview2_com::FocusChangedEventHandler::create(Box::new(move |_, _| {
+                let _ = proxy.send_event(AppEvent::PageFocused { tab_id, generation });
+                Ok(())
+            })),
+            &mut 0,
+        )
+    }
+}
+
 pub fn find(view: &wry::WebView) -> windows::core::Result<()> {
     unsafe {
         let core: ICoreWebView2_28 = view.webview().cast()?;

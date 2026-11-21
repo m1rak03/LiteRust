@@ -44,6 +44,7 @@ function Test-SavedGroup {
     foreach ($window in $all) {
         $group = $window.tab_groups.entries | Where-Object { $_.id -eq 7 }
         if ($group -and $group.title -eq 'Research' -and $group.pinned -and $group.collapsed -and
+            ($window.split.panes -join ",") -eq "17,29" -and $window.split.axis -eq "vertical" -and $window.split.percent -eq 41 -and
             $window.tabs[0].group -eq 7 -and $window.tabs[$window.active].url -eq 'literust://bookmarks') { return $true }
     }
     return $false
@@ -68,7 +69,7 @@ try {
         Add-Type -AssemblyName System.Security.Cryptography.ProtectedData
     }
     New-Item -ItemType Directory -Path $root | Out-Null
-    $seed = '{"tabs":[{"url":"literust://newtab","title":"First tab","group":7},{"url":"literust://bookmarks","title":"Second tab","group":7}],"active":1,"account_prompt_seen":true,"tab_groups":{"last_id":7,"entries":[{"id":7,"title":"Research","color":"teal","pinned":true,"collapsed":true}]}}'
+    $seed = '{"tabs":[{"id":17,"url":"literust://newtab","title":"First tab","group":7},{"id":29,"url":"literust://bookmarks","title":"Second tab","group":7}],"active":1,"account_prompt_seen":true,"split":{"panes":[17,29],"axis":"vertical","percent":41,"focus":"second"},"tab_groups":{"last_id":7,"entries":[{"id":7,"title":"Research","color":"teal","pinned":true,"collapsed":true}]}}'
     [IO.File]::WriteAllText($stateFile, $seed, [Text.UTF8Encoding]::new($false))
     $first = Start-FixtureBrowser
     Wait-Condition { (Test-ReadyWindows 1) -and -not $first.HasExited } 'Primary window did not become ready'
@@ -101,7 +102,7 @@ try {
     if (-not $restored.CloseMainWindow() -or -not $restored.WaitForExit(10000)) {
         throw 'Closing the last fixture window did not exit the profile process'
     }
-    Write-Output 'PASS: ordinary window opening, crash recovery, group restore and independent closure'
+    Write-Output 'PASS: ordinary window opening, crash recovery, group and split restore, and independent closure'
 } finally {
     foreach ($process in $processes) {
         if (-not $process.HasExited) {

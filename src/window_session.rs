@@ -38,6 +38,7 @@ impl Placement {
 pub struct WindowSession {
     pub tabs: Vec<Tab>,
     pub tab_groups: crate::tab_groups::TabGroups,
+    pub split: Option<crate::split_view::SplitView>,
     pub active: usize,
     pub placement: Option<Placement>,
 }
@@ -46,6 +47,9 @@ impl WindowSession {
     pub fn clean(&mut self) {
         clean_tabs(&mut self.tabs, &mut self.active);
         self.tab_groups.clean(&mut self.tabs, &mut self.active);
+        self.split = self
+            .split
+            .and_then(|split| split.validate(&self.tabs, &mut self.active));
         self.placement = self.placement.filter(|placement| placement.valid());
     }
 }
@@ -64,10 +68,21 @@ pub(crate) fn clean_tabs(tabs: &mut Vec<Tab>, active: &mut usize) {
     *active = (*active).min(tabs.len() - 1);
     // Pre-v0.5 tabs had no stable ID. Also repair duplicates or zero IDs
     // so callbacks from closed/suspended WebViews never affect other tabs.
-    // IDs identify a running session only. Reassign on startup to avoid
-    // collisions / saturating arithmetic from hostile persisted u64::MAX.
-    for (index, tab) in tabs.iter_mut().enumerate() {
-        tab.id = index as u64 + 1;
+    // Split sessions refer to stable tab IDs. Repair pre-ID tabs, duplicates
+    // and out-of-range IDs while keeping valid references intact.
+    let mut used = std::collections::HashSet::new();
+    for tab in tabs.iter_mut() {
+        if tab.id == 0 || tab.id >= 1 << 52 || !used.insert(tab.id) {
+            tab.id = 0;
+        }
+    }
+    let mut unused = 1;
+    for tab in tabs.iter_mut().filter(|tab| tab.id == 0) {
+        while !used.insert(unused) {
+            unused += 1;
+        }
+        tab.id = unused;
+        unused += 1;
     }
     for tab in tabs {
         tab.title = compact_title(&tab.title);
