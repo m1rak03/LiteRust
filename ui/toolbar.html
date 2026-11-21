@@ -185,6 +185,10 @@ body.split-active{--page-start:172px}
 #notes-link-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 #translation-preview{max-width:760px;margin:12px 0}
 #translation-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:130px;overflow:auto;padding:8px;background:var(--bg)}
+
+#resource-metrics:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 12px;margin:14px 0;}
+#resource-metrics dt{color:var(--muted);overflow-wrap:anywhere;}
+#resource-metrics dd{margin:0;max-width:120px;text-align:right;font-variant-numeric:tabular-nums;}
 </style></head><body>
 <div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><button type="button" id="workspace-switcher" aria-label="Рабочие пространства" title="Рабочие пространства"><i class="workspace-icon" aria-hidden="true"></i><span id="workspace-label">Пространства</span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div><div id="window-drag-space" aria-hidden="true"></div><div class="window-controls"><button id="window-minimize" aria-label="Свернуть окно">−</button><button id="window-maximize" aria-label="Развернуть окно">□</button><button id="window-close" aria-label="Закрыть окно">×</button></div></div>
 <div class="controls">
@@ -290,7 +294,33 @@ body.split-active{--page-start:172px}
 <p><label><input id="browser-background_links" type="checkbox"> Открывать новые ссылки в фоне</label></p>
 <p><label>Масштаб страниц <select id="browser-zoom_percent"><option>50</option><option>75</option><option>90</option><option>100</option><option>110</option><option>125</option><option>150</option><option>175</option><option>200</option></select> %</label></p>
 <p><label><input id="browser-history_enabled" type="checkbox"> Записывать историю посещений</label></p><small>Выключение не удаляет старую историю и не включает приватный режим: вкладки и данные сайтов сохраняются.</small>
-<p><button id="save-browser-settings">Сохранить настройки браузера</button><button id="reset-browser-settings">Сбросить настройки браузера</button></p><small id="browser-settings-status" role="status"></small></article><article data-category="search"><h3>Поиск из адресной строки</h3><p>Выберите сервис для запросов из адресной строки и новой вкладки.</p><label for="search-engine">Поисковая система</label><select id="search-engine" style="padding:10px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--line)"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select><small>Поисковик не меняет движок WebView2 и доверие TLS-сертификатам.</small></article><article data-category="privacy"><h3>История и данные сайтов</h3><button class="settings-action-row" data-menu="clear-history"><span><strong>Очистить историю</strong><small>Удаление записей после подтверждения</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="clear-site-data"><span><strong>Очистить cookies и кэш</strong><small>Вы выйдете из аккаунтов сайтов</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="new-private-window"><span><strong>Открыть приватное окно</strong><small>Отдельная временная сессия</small></span><span data-icon="chevron"></span></button><p>Для отключения записи истории откройте раздел «Запуск и вкладки».</p></article><article data-category="privacy"><h3>Фильтрация рекламы</h3><button data-menu="toggle-network-blocking">Сетевой фильтр</button><button data-menu="toggle-cosmetic-filter">Косметический фильтр</button><small>Экспериментальные функции. Могут влиять на работу некоторых сайтов.</small></article><article data-category="performance"><h3>Управление памятью</h3><button data-menu="cycle-memory-mode">Бюджет памяти</button><button data-menu="toggle-auto-discard">Автовыгрузка вкладок</button><button data-menu="discard-background">Освободить память</button><p>Автовыгрузка отключена по умолчанию. Выгруженные страницы могут потерять несохранённые формы и воспроизведение.</p><p id="settings-performance-state" role="status"></p></article><article data-category="network"><h3>Подключение через VPN</h3><p>Управляйте серверами и областью подключения в VPN-хабе.</p><button id="settings-vpn">Открыть VPN-хаб</button></article><article data-category="network"><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="tls-ca">Национальный удостоверяющий центр</button><button id="tls-store">Открыть сертификаты Windows</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article><article data-category="appearance"><h3>Боковая панель</h3><label for="sidebar-mode">Как открывать</label><select id="sidebar-mode"><option value="click">По нажатию (с подсказками слева)</option><option value="hover">При наведении</option><option value="pinned">Закрепить</option></select><label for="sidebar-width">Ширина раскрытой панели</label><input id="sidebar-width" type="range" min="220" max="320" step="4"><output id="sidebar-width-value"></output><p>Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.</p><div id="sidebar-items"></div><button id="sidebar-reset">Сбросить панель</button></article><article data-category="icons"><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article data-category="shortcuts"><h3>Ваши сочетания клавиш</h3><p>Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.</p><label for="shortcut-search">Найти команду</label><input id="shortcut-search" type="search" placeholder="Например: вкладка или Ctrl+T"><p id="shortcut-status" role="status" aria-live="polite">Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.</p><div id="shortcut-list"></div><button id="shortcut-reset-all">Восстановить стандартные сочетания</button></article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
+<p><button id="save-browser-settings">Сохранить настройки браузера</button><button id="reset-browser-settings">Сбросить настройки браузера</button></p><small id="browser-settings-status" role="status"></small></article><article data-category="search"><h3>Поиск из адресной строки</h3><p>Выберите сервис для запросов из адресной строки и новой вкладки.</p><label for="search-engine">Поисковая система</label><select id="search-engine" style="padding:10px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--line)"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select><small>Поисковик не меняет движок WebView2 и доверие TLS-сертификатам.</small></article><article data-category="privacy"><h3>История и данные сайтов</h3><button class="settings-action-row" data-menu="clear-history"><span><strong>Очистить историю</strong><small>Удаление записей после подтверждения</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="clear-site-data"><span><strong>Очистить cookies и кэш</strong><small>Вы выйдете из аккаунтов сайтов</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="new-private-window"><span><strong>Открыть приватное окно</strong><small>Отдельная временная сессия</small></span><span data-icon="chevron"></span></button><p>Для отключения записи истории откройте раздел «Запуск и вкладки».</p></article><article data-category="privacy"><h3>Фильтрация рекламы</h3><button data-menu="toggle-network-blocking">Сетевой фильтр</button><button data-menu="toggle-cosmetic-filter">Косметический фильтр</button><small>Экспериментальные функции. Могут влиять на работу некоторых сайтов.</small></article><article data-category="performance">
+<h3>Ресурсы вкладок</h3>
+<label for="resource-mode">Режим управления памятью</label>
+<select id="resource-mode">
+  <option value="manual">Ручной</option>
+  <option value="automatic">Автоматический</option>
+  <option value="saver">Экономный</option>
+  <option value="performance">Производительный</option>
+</select>
+<p id="resource-mode-description"></p>
+<p id="settings-performance-state" role="status"></p>
+<button data-menu="discard-background">Освободить память</button>
+<button id="resource-refresh">Измерить ресурсы</button>
+<dl id="resource-metrics" aria-live="polite" hidden>
+  <dt>Вкладок в пространстве</dt><dd data-metric="total"></dd>
+  <dt>Видимые вкладки</dt><dd data-metric="visible"></dd>
+  <dt>Фоновые вкладки</dt><dd data-metric="background"></dd>
+  <dt>Вкладки в закреплённых группах</dt><dd data-metric="pinned"></dd>
+  <dt>Неиспользуемые вкладки</dt><dd data-metric="idle"></dd>
+  <dt>Вкладки со звуком</dt><dd data-metric="playing_audio"></dd>
+  <dt>Вкладки с загрузками</dt><dd data-metric="downloading"></dd>
+  <dt>Процессы WebView2</dt><dd data-metric="process_count"></dd>
+  <dt>Частная выделенная память процессов</dt><dd data-metric="private_bytes"></dd>
+  <dt>CPU процессов WebView2</dt><dd data-metric="cpu_percent"></dd>
+</dl>
+<small id="resource-scope" hidden>Вкладки относятся к текущему пространству. Процессы могут обслуживать несколько окон профиля. CPU измеряется короткой выборкой.</small>
+</article><article data-category="network"><h3>Подключение через VPN</h3><p>Управляйте серверами и областью подключения в VPN-хабе.</p><button id="settings-vpn">Открыть VPN-хаб</button></article><article data-category="network"><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="tls-ca">Национальный удостоверяющий центр</button><button id="tls-store">Открыть сертификаты Windows</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article><article data-category="appearance"><h3>Боковая панель</h3><label for="sidebar-mode">Как открывать</label><select id="sidebar-mode"><option value="click">По нажатию (с подсказками слева)</option><option value="hover">При наведении</option><option value="pinned">Закрепить</option></select><label for="sidebar-width">Ширина раскрытой панели</label><input id="sidebar-width" type="range" min="220" max="320" step="4"><output id="sidebar-width-value"></output><p>Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.</p><div id="sidebar-items"></div><button id="sidebar-reset">Сбросить панель</button></article><article data-category="icons"><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article data-category="shortcuts"><h3>Ваши сочетания клавиш</h3><p>Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.</p><label for="shortcut-search">Найти команду</label><input id="shortcut-search" type="search" placeholder="Например: вкладка или Ctrl+T"><p id="shortcut-status" role="status" aria-live="polite">Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.</p><div id="shortcut-list"></div><button id="shortcut-reset-all">Восстановить стандартные сочетания</button></article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
 <section id="vpn" class="hub-panel vpn-workspace" hidden aria-label="VPN-хаб">
 <div class="vpn-servers">
   <div class="vpn-title"><div><span class="eyebrow">LITERUST / VPN</span><h2>Серверы</h2></div><button id="vpn-open-import" title="Добавить ключ или подписку" aria-label="Добавить серверы">＋</button></div>
@@ -869,12 +899,11 @@ function render(){
   document.getElementById('history').title=`История (${state.history})`;
   document.getElementById('downloads').title=`Загрузки (${state.downloads})`;
   const mark=document.getElementById('mode-badge');
-  mark.textContent=state.private_mode?'ПРИВАТНО':'LiteRust 0.17-alpha.2';
+  mark.textContent=state.private_mode?'ПРИВАТНО':'LiteRust';
   mark.classList.toggle('private',Boolean(state.private_mode));
   document.getElementById('toggle-network-blocking').textContent='Сетевой AdBlock (ограниченные правила): '+(state.network_blocking?'вкл.':'выкл.');
-  document.getElementById('toggle-auto-discard').textContent='Автовыгрузка (потеря форм): '+(state.auto_discard?'вкл.':'выкл.');
-  const memoryModes={1:'Eco',3:'Balanced',5:'Performance'};
-  document.getElementById('cycle-memory-mode').textContent=`Память: ${memoryModes[state.live_tab_budget]||'Balanced'} (${state.live_tab_budget||3} вклад.)`;
+  document.getElementById('toggle-auto-discard').textContent='Автовыгрузка: '+(state.auto_discard?'вкл.':'выкл.');
+  document.getElementById('cycle-memory-mode').textContent='Цель автовыгрузки: '+(state.live_tab_budget||3);
   const siteToggle=document.getElementById('toggle-site-adblock');
   siteToggle.disabled=!state.network_blocking||!state.site_host;
   siteToggle.textContent=state.site_host
@@ -908,11 +937,11 @@ document.getElementById('toggle-network-blocking').onclick=()=>{
 };
 document.getElementById('toggle-auto-discard').onclick=()=>{
   menu.classList.remove('open');
-  if(state.auto_discard || confirm('Включить автоматическую выгрузку вкладок? Несохранённые формы, медиа и состояние сайтов будут потеряны при превышении бюджета.'))send('toggle_auto_discard');
+  if(state.auto_discard || confirm('Включить автоматическую выгрузку неактивных вкладок? При возврате выгруженные страницы перезагрузятся.'))send('toggle_auto_discard');
 };
 document.getElementById('cycle-memory-mode').onclick=()=>{
   menu.classList.remove('open');
-  if(!state.auto_discard || confirm('Изменение бюджета может немедленно выгрузить вкладки и потерять формы. Продолжить?'))send('cycle_memory_mode');
+  if(!state.auto_discard || confirm('При изменении цели некоторые фоновые вкладки могут выгрузиться. Продолжить?'))send('cycle_memory_mode');
 };
 document.getElementById('toggle-site-adblock').onclick=()=>{
   menu.classList.remove('open');
@@ -1550,9 +1579,41 @@ document.getElementById('vpn-close-import').onclick=()=>{document.getElementById
 document.getElementById('vpn-scope').onchange=()=>{state.vpn_system_scope=document.getElementById('vpn-scope').value==='system';if(state.vpn_enabled)applyVpn(true);else send('vpn_scope',{system:state.vpn_system_scope});};
 document.getElementById('vpn-power').onclick=()=>applyVpn(!(state.vpn_enabled&&Number(document.getElementById('vpn-server').value)===(state.vpn_selected||0)));
 document.getElementById('vpn-probe').onclick=()=>send('vpn_probe');
+const resourceMode=document.getElementById('resource-mode');
+const resourceModeDescription=document.getElementById('resource-mode-description');
+const resourceDescriptions={
+  manual:'Выгружайте фоновые вкладки вручную.',
+  automatic:'Браузер старается соблюдать выбранную цель для числа загруженных вкладок.',
+  saver:'Браузер старается оставить не больше двух загруженных вкладок.',
+  performance:'Браузер сохраняет вкладки загруженными и отключает подсказку экономии памяти.'
+};
+resourceMode.onchange=()=>send('set_resource_mode',{mode:resourceMode.value});
+const resourceMetrics=document.getElementById('resource-metrics');
+const resourceRefresh=document.getElementById('resource-refresh');
+resourceRefresh.onclick=()=>{resourceRefresh.disabled=true;send('sample_resources');};
+window.resourcesUpdate=([counts,sample])=>{
+  const setMetric=(name,value)=>{resourceMetrics.querySelector('[data-metric="'+name+'"]').textContent=value??'—';};
+  for(const key of ['total','visible','background','pinned','idle','playing_audio','downloading']){
+    setMetric(key,counts[key]);
+  }
+  const format=new Intl.NumberFormat(document.documentElement.lang||'ru',{maximumFractionDigits:1});
+  const scope=sample?.process_count;
+  const coverage=read=>read===scope?'':' ('+read+'/'+scope+')';
+  setMetric('process_count',scope==null?null:(sample.partial_inventory?'≥ ':'')+scope);
+  setMetric('private_bytes',sample?.private_bytes==null?null:
+    format.format(sample.private_bytes/1048576)+' MiB'+coverage(sample.memory_coverage));
+  setMetric('cpu_percent',sample?.cpu_percent==null?null:
+    format.format(sample.cpu_percent)+'%'+coverage(sample.cpu_coverage));
+  resourceMetrics.hidden=false;
+  document.getElementById('resource-scope').hidden=false;
+  resourceRefresh.disabled=false;
+};
 function updateHub(){
+  const mode=state.resource_mode||(state.auto_discard?'automatic':'manual');
+  resourceMode.value=mode;
+  resourceModeDescription.textContent=resourceDescriptions[mode]||'';
   document.getElementById('settings-performance-state').textContent='Живых вкладок: '+(state.live_ids?.length||0)+' · Автовыгрузка: '+(state.auto_discard?'включена':'выключена');
-  document.getElementById('tools-memory-summary').textContent='Живых вкладок: '+(state.live_ids?.length||0)+'. Выгрузка удаляет несохранённые формы фоновых страниц.';
+  document.getElementById('tools-memory-summary').textContent='Живых вкладок: '+(state.live_ids?.length||0)+'. При возврате на выгруженную вкладку страница загрузится заново.';
   if(!document.getElementById('tools').hidden)renderToolsTabs();
   if(document.activeElement.id!=='account-always')document.getElementById('account-always').checked=!!state.account_prompt_always;
   if(panelName==='tools')renderToolPreferences();
@@ -1625,7 +1686,7 @@ document.getElementById('theme-search').oninput=filterThemes;
 document.getElementById('google-account').onclick=()=>{menu.classList.remove('open');send('open_google_account');};
 document.getElementById('discard-background').onclick=()=>{
   menu.classList.remove('open');
-  if(confirm('Выгрузить фоновые вкладки? Несохранённые формы и воспроизведение на них будут потеряны. При открытии вкладки загрузятся заново.'))send('discard_background');
+  if(confirm('Выгрузить подходящие фоновые вкладки? При возврате сайты загрузятся заново.'))send('discard_background');
 };
 document.getElementById('search-engine').onchange=e=>send('set_search_engine',{engine:e.target.value});
 document.getElementById('wallpaper-save').onclick=()=>{const value=document.getElementById('wallpaper-url').value.trim();if(!value.startsWith('https://')){document.getElementById('wallpaper-status').textContent='Нужна HTTPS-ссылка на изображение.';return;}send('set_background',{value});};

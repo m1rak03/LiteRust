@@ -33,5 +33,6 @@ pub mod i18n;
 
 pub mod split_view;
 pub mod tab_groups;
+pub mod tab_resources;
 pub mod window_session;
 pub mod workspaces;

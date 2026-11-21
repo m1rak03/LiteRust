@@ -333,6 +333,10 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut original_generations = [0; 2];
     let saved_page = root.join("saved-page.html");
     let mut page_saved = None;
+    let mut resources_measured = false;
+    let mut dirty_tab = 0;
+    let mut pinned_tab = 0;
+    let page_position = Arc::new(AtomicI32::new(-1));
     let selection_result = Arc::new(std::sync::Mutex::new(None::<String>));
     let mut since = started;
     let mut result = Err("Split test timed out");
@@ -350,6 +354,12 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
             return;
         }
         if let Event::UserEvent(WindowMessage::Browser { event, .. }) = event {
+            if let AppEvent::ResourcesMeasured(sample) = &event {
+                resources_measured = sample.process_count.is_some_and(|count| count > 0)
+                    && sample.memory_coverage > 0 && sample.private_bytes.is_some_and(|bytes| bytes > 0)
+                    && sample.cpu_coverage > 0 && sample.cpu_percent.is_some_and(|cpu| (0.0..=100.0).contains(&cpu));
+                let _ = writeln!(log, "resource sample: {sample:?}");
+            }
             if let AppEvent::SavePageFinished { saved, .. } = &event {
                 page_saved = Some(*saved);
             }
@@ -618,6 +628,70 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                         return Err("The native WebView2 Save As callback or output file failed");
                     }
                 }
+                10 => {
+                    browser.handle(UiCommand::AppearancePanel { open: false, name: None });
+                    browser.pages[&ids[0]].view.evaluate_script("window.scrollTo(0,245);")
+                        .map_err(|_| "Set scroll restoration fixture")?;
+                    browser.new_tab(Some(&urls[1]));
+                    dirty_tab = browser.active_id();
+                }
+                11 if loaded(&browser, dirty_tab, &urls[1]) => {
+                    browser.pages[&dirty_tab].view.evaluate_script(
+                        "const field=document.createElement('input');field.value='changed';document.body.append(field);",
+                    ).map_err(|_| "Add fixture form data")?;
+                    browser.new_tab(Some(&urls[2]));
+                    pinned_tab = browser.active_id();
+                }
+                12 if loaded(&browser, pinned_tab, &urls[2]) => {
+                    let id = {
+                        let data = &mut browser.data;
+                        let (tabs, active, groups) = (&mut data.tabs, &mut data.active, &mut data.tab_groups);
+                        if !groups.create(tabs, active, &[pinned_tab], "Pinned fixture", Color::Blue) {
+                            return Err("Create pinned group for resource test");
+                        }
+                        let Some(id) = tabs.iter().find(|tab| tab.id == pinned_tab).and_then(|tab| tab.group) else {
+                            return Err("Pinned fixture tab has no group");
+                        };
+                        id
+                    };
+                    browser.handle(UiCommand::TabGroup {
+                        operation: literust_browser::tab_groups::Operation::Pin { id },
+                    });
+                    browser.new_tab(None);
+                    browser.handle(UiCommand::AppearancePanel { open: true, name: Some("settings".into()) });
+                    browser.handle(UiCommand::SampleResources);
+                    browser.handle(UiCommand::DiscardBackground);
+                }
+                13 if resources_measured && !browser.pages.contains_key(&ids[0])
+                    && browser.release_deadline().is_none() =>
+                {
+                    let counts = browser.tab_counts();
+                    if counts.pinned != 1 || !browser.pages.contains_key(&dirty_tab)
+                        || !browser.pages.contains_key(&pinned_tab)
+                        || !browser.pages.contains_key(&browser.active_id())
+                    {
+                        return Err("Resource release lost a visible, pinned or edited tab");
+                    }
+                    if browser.data.tabs.iter().find(|tab| tab.id == ids[0]).and_then(|tab| tab.scroll_position) != Some([0,245]) {
+                        return Err("Released tab did not retain its scroll position");
+                    }
+                    browser.handle(UiCommand::AppearancePanel { open: false, name: None });
+                    let index = browser.data.tabs.iter().position(|tab| tab.id == ids[0]).ok_or("Released tab missing")?;
+                    browser.handle(UiCommand::SelectTab { index, tab_id: Some(ids[0]) });
+                }
+                14 if loaded(&browser, ids[0], &urls[0]) => {
+                    let position = page_position.clone();
+                    browser.pages[&ids[0]].view.evaluate_script_with_callback("Math.round(window.scrollY)", move |json| {
+                        position.store(json.trim().parse::<f64>().map(|value| value as i32).unwrap_or(-2), Ordering::Relaxed);
+                    }).map_err(|_| "Read restored scroll")?;
+                }
+                15 if page_position.load(Ordering::Relaxed) != -1 => {
+                    let position = page_position.load(Ordering::Relaxed);
+                    let _ = writeln!(log, "restored scroll position: {position}");
+                    if position.abs_diff(245) > 1 {
+                        return Err("Released tab did not restore its scroll position");
+                    }
+                }
                 _ => return Ok(false),
             }
             Ok(true)
@@ -627,7 +701,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = writeln!(log, "phase {stage}: true");
                 stage += 1;
                 since = Instant::now();
-                if stage == 10 {
+                if stage == 16 {
                     result = Ok(());
                     *flow = ControlFlow::Exit;
                 }
@@ -647,6 +721,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
         log,
         "PASS: note editing and page links, native selection capture, and native Save As HTML"
     )?;
+    writeln!(log, "PASS: process metrics, edited and pinned tab protection, manual release and scroll restoration")?;
     Ok(())
 }
 

@@ -91,6 +91,8 @@ pub struct Tab {
     pub back: Vec<String>,
     #[serde(default)]
     pub forward: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scroll_position: Option<[i32; 2]>,
 }
 
 impl Default for Tab {
@@ -108,6 +110,7 @@ impl Tab {
             title: "Новая вкладка".into(),
             back: Vec::new(),
             forward: Vec::new(),
+            scroll_position: None,
         }
     }
     pub fn web(url: &str) -> Self {
@@ -118,6 +121,7 @@ impl Tab {
             title: Self::title_for(url),
             back: Vec::new(),
             forward: Vec::new(),
+            scroll_position: None,
         }
     }
     pub fn navigate(&mut self, next: &str) {
@@ -132,6 +136,7 @@ impl Tab {
         }
         self.forward.clear();
         self.url = next.into();
+        self.scroll_position = None;
         self.title = match next {
             NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS => Self::internal(next).title,
             _ => Self::title_for(next),
@@ -141,6 +146,7 @@ impl Tab {
         if let Some(previous) = self.back.pop() {
             self.forward.push(self.url.clone());
             self.url = previous;
+            self.scroll_position = None;
             self.title = Self::title_for(&self.url);
             true
         } else {
@@ -151,6 +157,7 @@ impl Tab {
         if let Some(next) = self.forward.pop() {
             self.back.push(self.url.clone());
             self.url = next;
+            self.scroll_position = None;
             self.title = Self::title_for(&self.url);
             true
         } else {
@@ -180,6 +187,7 @@ impl Tab {
             title: title.into(),
             back: Vec::new(),
             forward: Vec::new(),
+            scroll_position: None,
         }
     }
 }
@@ -533,7 +541,9 @@ pub struct ProfileData {
     pub adblock_exceptions: Vec<String>,
     #[serde(default = "default_live_tab_budget")]
     pub live_tab_budget: u8,
-    /// Explicit opt-in: unloading loses forms, media and page state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_mode: Option<crate::tab_resources::Mode>,
+    /// Retained for importing and opening profiles from earlier versions.
     pub auto_discard: bool,
 }
 
@@ -566,6 +576,7 @@ impl Default for ProfileData {
             network_blocking: false,
             adblock_exceptions: vec![],
             live_tab_budget: DEFAULT_LIVE_TAB_BUDGET,
+            resource_mode: None,
             auto_discard: false,
         }
     }
@@ -1158,6 +1169,7 @@ mod tests {
                 title: "BAD".into(),
                 back: vec![],
                 forward: vec![],
+                scroll_position: None,
             }],
             ..BrowserData::default()
         };

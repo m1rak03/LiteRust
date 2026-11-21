@@ -829,3 +829,31 @@ VPN-хаб доступен в Windows-сборке	The VPN hub is available in 
 Для сохранения страницы обновите Microsoft WebView2 Runtime.	Update Microsoft WebView2 Runtime to save pages.
 Страница сохранена.	Page saved.
 WebView2 не смог сохранить страницу.	WebView2 could not save the page.
+
+Ресурсы вкладок	Tab resources
+Режим управления памятью	Memory management mode
+Ручной	Manual
+Автоматический	Automatic
+Экономный	Saver
+Производительный	Performance
+Измерить ресурсы	Measure resources
+Вкладок в пространстве	Tabs in this workspace
+Видимые вкладки	Visible tabs
+Фоновые вкладки	Background tabs
+Вкладки в закреплённых группах	Tabs in pinned groups
+Неиспользуемые вкладки	Idle tabs
+Вкладки со звуком	Tabs playing audio
+Вкладки с загрузками	Tabs with downloads
+Процессы WebView2	WebView2 processes
+Частная выделенная память процессов	Process private commit
+CPU процессов WebView2	WebView2 process CPU
+Вкладки относятся к текущему пространству. Процессы могут обслуживать несколько окон профиля. CPU измеряется короткой выборкой.	Tab counts cover the current workspace. Processes may serve multiple windows in a profile. CPU uses a short sample.
+Выгружайте фоновые вкладки вручную.	Release background tabs on demand.
+Браузер старается соблюдать выбранную цель для числа загруженных вкладок.	LiteRust tries to meet the selected live tab target.
+Браузер старается оставить не больше двух загруженных вкладок.	LiteRust tries to keep at most two tabs live.
+Браузер сохраняет вкладки загруженными и отключает подсказку экономии памяти.	LiteRust keeps tabs live and turns off the memory-saving hint.
+Цель автовыгрузки:	Live tab target:
+Включить автоматическую выгрузку неактивных вкладок? При возврате выгруженные страницы перезагрузятся.	Enable automatic release of inactive tabs? Released pages reload when you return.
+При изменении цели некоторые фоновые вкладки могут выгрузиться. Продолжить?	Changing the target can release some background tabs. Continue?
+. При возврате на выгруженную вкладку страница загрузится заново.	. Released pages reload when you return.
+Выгрузить подходящие фоновые вкладки? При возврате сайты загрузятся заново.	Release eligible background tabs? Pages reload when you return.

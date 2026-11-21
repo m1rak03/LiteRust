@@ -4,11 +4,16 @@
 use literust_browser::{
     google_passwords, import, layout,
     local_profiles::{self, Catalog, ProfileDetails},
-    network_block, notes, omnibox, page_tools, security, split_view, storage, tab_groups, vpn,
-    window_session, workspaces,
+    network_block, notes, omnibox, page_tools, security, split_view, storage, tab_groups,
+    tab_resources, vpn, window_session, workspaces,
 };
+mod browser_resources;
 #[cfg(windows)]
 mod session_self_test;
+#[cfg(windows)]
+mod tab_load_benchmark;
+#[cfg(windows)]
+mod webview_resources;
 #[cfg(windows)]
 mod windows_platform;
 
@@ -42,6 +47,7 @@ use wry::{MemoryUsageLevel, WebViewBuilderExtWindows, WebViewExtWindows};
 
 const TOOLBAR: &str = include_str!("../ui/toolbar.html");
 const LIBRARY: &str = include_str!("../ui/library.html");
+const PAGE_ACTIVITY: &str = include_str!("../ui/page-activity.js");
 const COSMETIC_FILTER: &str = include_str!("../ui/cosmetic-filter.js");
 const APPEARANCE_SCRIPT: &str = include_str!("../ui/appearance.js");
 const DOCK: &str = include_str!("../ui/dock.html");
@@ -67,16 +73,6 @@ fn routed_builder(builder: WebViewBuilder<'_>, port: Option<u16>) -> WebViewBuil
         builder
     }
 }
-// Each mode caps the number of live WebViews, not the number of saved tabs.
-
-fn lru_victim(entries: impl IntoIterator<Item = (u64, u64)>, protected_id: u64) -> Option<u64> {
-    entries
-        .into_iter()
-        .filter(|(id, _)| *id != protected_id)
-        .min_by_key(|(_, last_used)| *last_used)
-        .map(|(id, _)| id)
-}
-
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum UiCommand {
@@ -314,6 +310,10 @@ enum UiCommand {
     ToggleSiteAdblock,
     CycleMemoryMode,
     ToggleAutoDiscard,
+    SetResourceMode {
+        mode: tab_resources::Mode,
+    },
+    SampleResources,
 }
 
 impl std::fmt::Debug for UiCommand {
@@ -341,6 +341,12 @@ enum AppEvent {
         request: u64,
         text: Option<String>,
     },
+    ReleaseAssessed {
+        request: u64,
+        position: Option<[i32; 2]>,
+    },
+    #[cfg(windows)]
+    ResourcesMeasured(webview_resources::Sample),
     #[cfg(windows)]
     SavePageFinished {
         saved: bool,
@@ -463,6 +469,7 @@ struct ToolbarState<'a> {
     site_host: Option<String>,
     site_adblock_exception: bool,
     live_tab_budget: u8,
+    resource_mode: tab_resources::Mode,
     url_warning: Option<String>,
     auto_discard: bool,
 }
@@ -497,7 +504,9 @@ struct LivePage {
     printing: std::rc::Rc<std::cell::Cell<bool>>,
     view: WebView,
     last_used: u64,
+    last_visible: std::time::Instant,
     generation: u64,
+    navigation_serial: u64,
     loading: bool,
     foreground: bool,
 }
@@ -562,6 +571,7 @@ struct Browser {
     ui_language: storage::Language,
     shortcut_catalog: Vec<(&'static str, String, &'static str)>,
     dirty: std::cell::Cell<bool>,
+    resources: browser_resources::Controller,
     note_cache: std::cell::RefCell<Option<notes::Notebook>>,
     note_save_at: Option<std::time::Instant>,
     translation_request: u64,
@@ -654,6 +664,7 @@ impl Browser {
                 .collect(),
             data,
             dirty: std::cell::Cell::new(false),
+            resources: Default::default(),
             note_cache: Default::default(),
             note_save_at: None,
             translation_request: 0,
@@ -1291,6 +1302,7 @@ impl Browser {
             site_host: storage::site_host(url),
             site_adblock_exception: self.data.adblock_exception_for(url),
             live_tab_budget: self.data.live_tab_budget,
+            resource_mode: self.resource_mode(),
             url_warning: security::hostname_warning(url)
                 .map(|warning| literust_browser::i18n::template(warning, self.ui_language)),
             auto_discard: self.data.auto_discard,
@@ -1622,6 +1634,7 @@ impl Browser {
         let mut builder = builder
             .with_visible(false)
             .with_bounds(bounds)
+            .with_initialization_script(PAGE_ACTIVITY)
             .with_navigation_handler(move |url| {
                 // NavigateToString uses a runtime-specific navigation URI. Only the
                 // next application-requested HTML load receives this allowance.
@@ -1748,7 +1761,9 @@ impl Browser {
             printing: Default::default(),
             view,
             last_used: self.usage_clock,
+            last_visible: std::time::Instant::now(),
             generation,
+            navigation_serial: 0,
             loading: false,
             foreground: false,
         })
@@ -1782,38 +1797,10 @@ impl Browser {
             .map_or_else(|| id == self.active_id(), |split| split.pane(id).is_some())
     }
 
-    fn window_page_budget(&self) -> usize {
-        usize::from(self.data.live_tab_budget).max(if self.data.split.is_some() { 2 } else { 1 })
-    }
-
-    fn discard_one_background_page(&mut self) -> bool {
-        let victim = lru_victim(
-            self.pages
-                .iter()
-                .filter(|(id, page)| !self.is_visible_tab(**id) && !page.busy() && !page.loading)
-                .map(|(id, page)| (*id, page.last_used)),
-            self.active_id(),
-        );
-        victim.and_then(|id| self.pages.remove(&id)).is_some()
-    }
-
-    fn enforce_page_budget(&mut self) -> bool {
-        if !self.data.auto_discard {
-            return false;
-        }
-        let before = self.pages.len();
-        while self.pages.len() > self.window_page_budget() && self.discard_one_background_page() {}
-        self.pages.len() != before
-    }
-
     fn ensure_page(&mut self, id: u64) -> bool {
         if self.pages.contains_key(&id) {
             return true;
         }
-        while self.data.auto_discard
-            && self.pages.len() >= self.window_page_budget()
-            && self.discard_one_background_page()
-        {}
         match self.make_view(id) {
             Ok(page) => {
                 self.pages.insert(id, page);
@@ -1854,16 +1841,23 @@ impl Browser {
             }
         }
         let split = self.data.split;
+        #[cfg(windows)]
+        let prefer_speed = self.resource_mode() == tab_resources::Mode::Performance;
+        let now = std::time::Instant::now();
         for (id, page) in &mut self.pages {
             let shown = *id == active || split.is_some_and(|split| split.pane(*id).is_some());
             if shown {
                 page.last_used = self.usage_clock;
+                page.last_visible = now;
             }
             if shown != page.foreground {
+                if !shown {
+                    page.last_visible = now;
+                }
                 page.foreground = shown;
                 let _ = page.view.set_visible(shown && !self.appearance_open);
                 #[cfg(windows)]
-                let _ = page.view.set_memory_usage_level(if shown {
+                let _ = page.view.set_memory_usage_level(if shown || prefer_speed {
                     MemoryUsageLevel::Normal
                 } else {
                     MemoryUsageLevel::Low
@@ -1876,6 +1870,8 @@ impl Browser {
                 let _ = page.view.focus();
             }
         }
+        self.refresh_release_candidates();
+        self.enforce_page_budget();
         self.sync_toolbar();
     }
 
@@ -1912,6 +1908,7 @@ impl Browser {
         let html = html.map(|html| self.themed_html(html));
         let block_for_url = self.filter_enabled_for(&url);
         if let Some(page) = self.pages.get_mut(&id) {
+            page.navigation_serial = page.navigation_serial.wrapping_add(1);
             // Adjust the CDP rule list before starting a toolbar-initiated navigation.
             // CDP completion is async: this is best-effort and not a security boundary.
             #[cfg(windows)]
@@ -3180,19 +3177,9 @@ impl Browser {
                     }
                 }
             }
-            UiCommand::DiscardBackground => {
-                let active = self.active_id();
-                let split = self.data.split;
-                let before = self.pages.len();
-                self.pages.retain(|id, page| {
-                    *id == active
-                        || split.is_some_and(|split| split.pane(*id).is_some())
-                        || page.loading
-                        || page.busy()
-                });
-                self.sync_toolbar();
-                self.notice(&format!("Выгружено вкладок: {}. Активная вкладка, загружающиеся страницы и скачивания сохранены.", before - self.pages.len()));
-            }
+            UiCommand::DiscardBackground => self.start_manual_release(),
+            UiCommand::SetResourceMode { mode } => self.set_resource_mode(mode),
+            UiCommand::SampleResources => self.sample_resources(),
             UiCommand::OpenGoogleAccount => {
                 if self.private_mode {
                     self.notice_localized(
@@ -3264,17 +3251,16 @@ impl Browser {
                 });
             }
             UiCommand::ToggleAutoDiscard => {
-                self.data.auto_discard = !self.data.auto_discard;
-                self.enforce_page_budget();
-                self.persist();
-                self.sync_toolbar();
+                self.set_resource_mode(if self.data.auto_discard {
+                    tab_resources::Mode::Manual
+                } else {
+                    tab_resources::Mode::Automatic
+                });
             }
             UiCommand::CycleMemoryMode => {
-                let budget = self.data.cycle_live_tab_budget();
-                self.enforce_page_budget();
-                self.persist();
-                self.sync_toolbar();
-                self.notice(&format!("Бюджет: {budget}. Он применяется только при включённой автовыгрузке; формы и медиа при выгрузке теряются."));
+                let mode = self.resource_mode();
+                self.data.cycle_live_tab_budget();
+                self.set_resource_mode(mode);
             }
             UiCommand::ToggleSiteAdblock => {
                 let url = self.current_url().to_owned();
@@ -3355,6 +3341,9 @@ impl Browser {
         let enabled_for_url = self.filter_enabled_for(&url);
         if let Some(page) = self.pages.get_mut(&tab_id) {
             page.loading = loading;
+            if loading {
+                page.navigation_serial = page.navigation_serial.wrapping_add(1);
+            }
             if !loading && valid_web_url(&url) {
                 // Preserve readable default HTML on sites that do not specify a background.
                 let _ = page.view.set_background_color((255, 255, 255, 255));
@@ -3385,6 +3374,16 @@ impl Browser {
         }
         let mut discarded = false;
         if !loading {
+            if valid_web_url(&url) {
+                let position = self
+                    .tab_for_page_mut(tab_id)
+                    .and_then(|tab| tab.scroll_position.take());
+                if let (Some([x, y]), Some(page)) = (position, self.pages.get(&tab_id)) {
+                    let _ = page.view.evaluate_script(&format!(
+                        "requestAnimationFrame(() => {{ if (scrollX === 0 && scrollY === 0) scrollTo({x},{y}); }});"
+                    ));
+                }
+            }
             discarded = self.enforce_page_budget();
             self.persist();
         }
@@ -3712,6 +3711,7 @@ fn main() {
                 "downloads" => session_self_test::downloads(),
                 "split" => session_self_test::split(false),
                 "split-private" => session_self_test::split(true),
+                "tab-load" => tab_load_benchmark::run(),
                 phase => session_self_test::run(phase),
             };
             if let Err(error) = result {
@@ -4193,12 +4193,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             *control_flow = ControlFlow::Exit;
             return;
         }
-        for browser in &mut windows { browser.animate_drawer(); }
+        for browser in &mut windows {
+            browser.animate_drawer();
+            browser.poll_release(now);
+        }
         let animation_at = windows.iter().any(|browser| browser.dock_animation.is_some())
             .then(|| now + std::time::Duration::from_millis(16));
         let vpn_at = vpn_port.is_some().then(|| now + std::time::Duration::from_secs(2));
         let note_at = windows.iter().filter_map(|browser| browser.note_save_at).min();
-        *control_flow = [animation_at, placement_save_at, vpn_at, note_at].into_iter().flatten().min()
+        let release_at = windows.iter().filter_map(Browser::release_deadline).min();
+        *control_flow = [animation_at, placement_save_at, vpn_at, note_at, release_at].into_iter().flatten().min()
             .map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
     });
 }
@@ -4497,6 +4501,11 @@ fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
                 browser.translation_selection = text.map(|text| (tab_id, generation, text));
             }
         }
+        AppEvent::ReleaseAssessed { request, position } => {
+            browser.apply_release_result(request, position)
+        }
+        #[cfg(windows)]
+        AppEvent::ResourcesMeasured(sample) => browser.display_resources(&sample),
         #[cfg(windows)]
         AppEvent::SavePageFinished { saved, cancelled } => {
             if saved {
@@ -4676,13 +4685,6 @@ fn next_window_data(
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn lru_never_evicts_active_tab() {
-        let entries = vec![(10, 7), (20, 1), (30, 4)];
-        assert_eq!(lru_victim(entries.clone(), 10), Some(20));
-        assert_eq!(lru_victim(entries, 20), Some(30));
-        assert_eq!(lru_victim([(10, 7)], 10), None);
-    }
     #[test]
     fn google_manager_command_is_explicitly_opt_in() {
         assert!(matches!(

@@ -11,6 +11,7 @@ for (const page of ['toolbar', 'start', 'library', 'dock']) {
 }
 new Script(readFileSync(new URL('../ui/appearance.js', import.meta.url), 'utf8'), {filename:'appearance.js'});
 new Script(readFileSync(new URL('../ui/cosmetic-filter.js', import.meta.url), 'utf8'), {filename:'cosmetic-filter.js'});
+new Script(readFileSync(new URL('../ui/page-activity.js', import.meta.url), 'utf8'), {filename:'page-activity.js'});
 const ui = readFileSync(new URL('../ui/toolbar.html', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.rs', import.meta.url), 'utf8');
 const storage = readFileSync(new URL('../src/storage.rs', import.meta.url), 'utf8');
@@ -38,7 +39,9 @@ const sec = readFileSync(new URL('../src/security.rs', import.meta.url), 'utf8')
 assert.match(block, /Network\.setBlockedURLs/);
 assert.match(block, /Network\.enable/);
 assert.match(sec, /url\.username\(\)\.is_empty\(\)/);
-assert.match(main, /usize::from\(self\.data\.live_tab_budget\)/);
+const resources = readFileSync(new URL('../src/browser_resources.rs', import.meta.url), 'utf8');
+assert.match(resources, /self\.data\.live_tab_budget/);
+assert.match(resources, /page\.navigation_serial == pending\.navigation/);
 assert.match(main, /pages: HashMap<u64, LivePage>/);
 assert.match(main, /let \(mut data, data_file\) = if private_mode/);
 assert.match(main, /if !loading && !self\.private_mode/);
