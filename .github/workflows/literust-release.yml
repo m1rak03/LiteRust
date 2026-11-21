@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['docs/releases/0.16.0-alpha.3.md']
+    paths: ['docs/releases/0.16.0-alpha.4.md']
 permissions:
   contents: write
 jobs:
@@ -137,6 +137,7 @@ jobs:
           } finally {
             Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           }
+          & ./tools/test-window-lifecycle.ps1 -Exe (Resolve-Path target/release/literust-browser.exe)
           & ./tools/test-sessions-windows.ps1 -Exe (Resolve-Path target/release/literust-browser.exe)
           if ($LASTEXITCODE -ne 0) { throw 'Session storage test failed' }
           Copy-Item "$env:LOCALAPPDATA/LiteRustSessionTest/results.log" target/release/session-self-test.log
@@ -147,7 +148,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
           & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/setup.nsi
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
-          $exe = 'packaging/LiteRust-0.16.0-alpha.3-Setup-x64.exe'
+          $exe = 'packaging/LiteRust-0.16.0-alpha.4-Setup-x64.exe'
           gh release download v0.16.0-alpha.2 --repo $env:GITHUB_REPOSITORY --pattern LiteRust-0.16.0-alpha.2-Setup-x64.exe --dir previous
           if ($LASTEXITCODE -ne 0) { throw 'Previous installer download failed' }
           $oldInstall = Start-Process previous/LiteRust-0.16.0-alpha.2-Setup-x64.exe -ArgumentList '/S' -Wait -PassThru
@@ -230,7 +231,7 @@ jobs:
           if (Test-Path "$desktop/LiteRust.lnk") { throw 'Desktop shortcut not removed' }
           if (Test-Path "$folder/literust-browser.exe") { Get-ChildItem $folder; throw "Installed browser not removed, uninstall exit: $($uninstall.ExitCode)" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  LiteRust-0.16.0-alpha.3-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+          "$hash  LiteRust-0.16.0-alpha.4-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
       - name: Preserve installer under test
         if: always()
         uses: actions/upload-artifact@v4
@@ -252,5 +253,5 @@ jobs:
       - name: Publish verified prerelease
         shell: pwsh
         run: |
-          gh release create v0.16.0-alpha.3 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LiteRust 0.16.0-alpha.3 — профили и восстановление' --prerelease --notes-file docs/releases/0.16.0-alpha.3.md packaging/LiteRust-0.16.0-alpha.3-Setup-x64.exe packaging/SHA256SUMS.txt "${{ runner.temp }}/literust-source/literust-browser-0.16.0-alpha.3-source.zip"
+          gh release create v0.16.0-alpha.4 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LiteRust 0.16.0-alpha.4 — окна и вкладки' --prerelease --notes-file docs/releases/0.16.0-alpha.4.md packaging/LiteRust-0.16.0-alpha.4-Setup-x64.exe packaging/SHA256SUMS.txt "${{ runner.temp }}/literust-source/literust-browser-0.16.0-alpha.4-source.zip"
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }

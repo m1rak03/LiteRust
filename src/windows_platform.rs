@@ -1,12 +1,11 @@
 //! COM integrations absent from Wry's portable API. All callbacks run on the UI STA.
-use super::AppEvent;
+use super::{AppEvent, BrowserProxy};
 use std::{
     cell::Cell,
     path::PathBuf,
     rc::Rc,
     sync::atomic::{AtomicU64, Ordering},
 };
-use tao::event_loop::EventLoopProxy;
 use webview2_com::{
     take_pwstr, DownloadStartingEventHandler, Microsoft::Web::WebView2::Win32::*,
     StateChangedEventHandler,
@@ -17,7 +16,7 @@ static NEXT_DOWNLOAD: AtomicU64 = AtomicU64::new(1);
 
 pub fn configure(
     view: &wry::WebView,
-    proxy: EventLoopProxy<AppEvent>,
+    proxy: BrowserProxy,
     shortcuts: Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
 ) -> windows::core::Result<Rc<Cell<usize>>> {
     install_shortcuts(view, proxy.clone(), shortcuts)?;
@@ -107,7 +106,7 @@ pub fn configure(
 /// Sites retain no access to privileged IPC.
 pub fn install_shortcuts(
     view: &wry::WebView,
-    proxy: EventLoopProxy<AppEvent>,
+    proxy: BrowserProxy,
     shortcuts: Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
 ) -> windows::core::Result<()> {
     unsafe {
@@ -294,7 +293,7 @@ pub fn print_pdf(
     path: PathBuf,
     options: PdfOptions<'_>,
     busy: Rc<Cell<bool>>,
-    proxy: EventLoopProxy<AppEvent>,
+    proxy: BrowserProxy,
 ) -> windows::core::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::{HSTRING, PCWSTR};
@@ -365,19 +364,14 @@ pub fn register_profile_window(
     }
 }
 
-/// Find the normal window on this desktop. Window markers permit focus only.
-pub fn activate_profile_window(root: &std::path::Path) -> bool {
+fn find_profile_window(root: &std::path::Path) -> Option<windows::Win32::Foundation::HWND> {
     use windows::{
         core::{BOOL, HSTRING},
         Win32::{
             Foundation::{HWND, LPARAM},
-            UI::WindowsAndMessaging::{
-                EnumWindows, FlashWindowEx, GetPropW, IsIconic, IsWindowVisible,
-                SetForegroundWindow, ShowWindowAsync, FLASHWINFO, FLASHW_TRAY, SW_RESTORE,
-            },
+            UI::WindowsAndMessaging::{EnumWindows, GetPropW},
         },
     };
-
     struct Search {
         property: HSTRING,
         found: HWND,
@@ -398,10 +392,20 @@ pub fn activate_profile_window(root: &std::path::Path) -> bool {
     // EnumWindows invokes the callback synchronously with this stack-owned state.
     unsafe {
         let _ = EnumWindows(Some(find), LPARAM(std::ptr::from_mut(&mut search) as isize));
-        let hwnd = search.found;
-        if hwnd.is_invalid() {
-            return false;
-        }
+    }
+    (!search.found.is_invalid()).then_some(search.found)
+}
+
+/// Find the normal window on this desktop. Window markers permit focus only.
+pub fn activate_profile_window(root: &std::path::Path) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        FlashWindowEx, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindowAsync, FLASHWINFO,
+        FLASHW_TRAY, SW_RESTORE,
+    };
+    let Some(hwnd) = find_profile_window(root) else {
+        return false;
+    };
+    unsafe {
         if !IsWindowVisible(hwnd).as_bool() {
             // Startup is in progress; let Ready expose the window once painted.
             return true;
@@ -420,4 +424,84 @@ pub fn activate_profile_window(root: &std::path::Path) -> bool {
         }
         true
     }
+}
+
+const NEW_WINDOW_MESSAGE: windows::core::PCWSTR = windows::core::w!("LiteRust.OpenNormalWindow.v1");
+
+pub fn request_profile_window(root: &std::path::Path) -> bool {
+    use windows::Win32::{
+        Foundation::{LPARAM, WPARAM},
+        UI::WindowsAndMessaging::{PostMessageW, RegisterWindowMessageW},
+    };
+    let Some(window) = find_profile_window(root) else {
+        return false;
+    };
+    unsafe {
+        let message = RegisterWindowMessageW(NEW_WINDOW_MESSAGE);
+        message != 0 && PostMessageW(Some(window), message, WPARAM(0), LPARAM(0)).is_ok()
+    }
+}
+
+pub fn install_window_request(
+    window: &tao::window::Window,
+    proxy: BrowserProxy,
+) -> windows::core::Result<()> {
+    use tao::platform::windows::WindowExtWindows;
+    use windows::{
+        core::Error,
+        Win32::{
+            Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+            UI::{
+                Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
+                WindowsAndMessaging::{RegisterWindowMessageW, WM_NCDESTROY},
+            },
+        },
+    };
+
+    struct Relay {
+        message: u32,
+        proxy: BrowserProxy,
+    }
+    unsafe extern "system" fn relay(
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        id: usize,
+        data: usize,
+    ) -> LRESULT {
+        let context = data as *mut Relay;
+        if message == WM_NCDESTROY {
+            // The UI thread owns this context from installation through destruction.
+            if unsafe { RemoveWindowSubclass(hwnd, Some(relay), id) }.as_bool() {
+                unsafe {
+                    drop(Box::from_raw(context));
+                }
+            }
+        } else {
+            let context = unsafe { &*context };
+            if message == context.message && wparam.0 == 0 && lparam.0 == 0 {
+                let _ = context
+                    .proxy
+                    .send_event(AppEvent::Ui(super::UiCommand::NewWindow));
+                return LRESULT(0);
+            }
+        }
+        unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+    }
+
+    let message = unsafe { RegisterWindowMessageW(NEW_WINDOW_MESSAGE) };
+    if message == 0 {
+        return Err(Error::from_thread());
+    }
+    let context = Box::into_raw(Box::new(Relay { message, proxy }));
+    if !unsafe { SetWindowSubclass(HWND(window.hwnd() as _), Some(relay), 1, context as usize) }
+        .as_bool()
+    {
+        unsafe {
+            drop(Box::from_raw(context));
+        }
+        return Err(Error::from_thread());
+    }
+    Ok(())
 }

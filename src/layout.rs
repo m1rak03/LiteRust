@@ -15,6 +15,14 @@ pub struct Bounds {
     pub width: f64,
     pub height: f64,
 }
+
+/// Round shared edges once. Separately rounding each width can leave a pixel
+/// between adjacent child windows at fractional Windows scale factors.
+pub fn physical_axis(start: f64, length: f64, scale: f64) -> (i32, u32) {
+    let left = (start * scale).round() as i32;
+    let right = ((start + length.max(1.0)) * scale).round() as i32;
+    (left, right.saturating_sub(left).max(1) as u32)
+}
 pub fn arrange(width: f64, height: f64, toolbar: f64, position: DockPosition) -> (Bounds, Bounds) {
     let width = width.max(1.0);
     let space = (height - toolbar).max(1.0);
@@ -70,6 +78,14 @@ pub fn arrange(width: f64, height: f64, toolbar: f64, position: DockPosition) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_child_edges_line_up_at_fractional_dpi() {
+        for dpi in [1.0, 1.25, 1.5, 1.75] {
+            let (sidebar_left, sidebar_width) = physical_axis(6.0, 54.0, dpi);
+            let (page_left, _) = physical_axis(60.0, 700.2, dpi);
+            assert_eq!(sidebar_left + sidebar_width as i32, page_left);
+        }
+    }
     #[test]
     fn docks_never_overlap_content_or_leave_window() {
         for pos in [

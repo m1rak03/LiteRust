@@ -40,7 +40,7 @@ assert.match(block, /Network\.enable/);
 assert.match(sec, /url\.username\(\)\.is_empty\(\)/);
 assert.match(main, /self.data.live_tab_budget as usize/);
 assert.match(main, /pages: HashMap<u64, LivePage>/);
-assert.match(main, /let \(data, data_file, context\) = if private_mode/);
+assert.match(main, /let \(mut data, data_file\) = if private_mode/);
 assert.match(main, /if !loading && !self\.private_mode/);
 assert.match(storage, /pub id: u64/);
 assert.match(portal, /https:\/\/passwords\.google\.com\//);

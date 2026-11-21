@@ -1,11 +1,11 @@
-//! LiteRust Browser 0.16-alpha.3: per-site network-filter exceptions, permission prompts,
+//! LiteRust Browser 0.16-alpha.4: per-site network-filter exceptions, permission prompts,
 //! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use literust_browser::{
     google_passwords, import, layout,
     local_profiles::{self, Catalog, ProfileDetails},
-    network_block, security, storage, vpn,
+    network_block, security, storage, vpn, window_session,
 };
 #[cfg(windows)]
 mod session_self_test;
@@ -27,10 +27,10 @@ use storage::{
     escape_html, valid_web_url, BrowserData, Tab, BOOKMARKS, DOWNLOADS, HISTORY, MAX_TABS, NEW_TAB,
 };
 use tao::{
-    dpi::LogicalSize,
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
-    window::{Window, WindowBuilder},
+    event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
+    window::{Window, WindowBuilder, WindowId},
 };
 use wry::{
     dpi::{LogicalPosition, LogicalSize as WebLogicalSize},
@@ -208,6 +208,13 @@ enum UiCommand {
     Reload,
     Home,
     NewTab,
+    NewWindow,
+    NextWindow,
+    MoveTab {
+        source: u64,
+        target: u64,
+        after: bool,
+    },
     SelectTab {
         index: usize,
     },
@@ -301,6 +308,28 @@ enum AppEvent {
         running: bool,
         ok: bool,
     },
+}
+
+#[derive(Debug)]
+enum WindowMessage {
+    Browser { window: WindowId, event: AppEvent },
+}
+
+#[derive(Clone)]
+struct BrowserProxy {
+    window: WindowId,
+    event_loop: EventLoopProxy<WindowMessage>,
+}
+
+impl BrowserProxy {
+    fn send_event(&self, event: AppEvent) -> bool {
+        self.event_loop
+            .send_event(WindowMessage::Browser {
+                window: self.window,
+                event,
+            })
+            .is_ok()
+    }
 }
 
 #[derive(Serialize)]
@@ -407,8 +436,7 @@ struct Browser {
     profile_scan_pending: bool,
     shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
     closed_tabs: Vec<String>,
-    #[cfg(windows)]
-    system_vpn: Option<literust_browser::system_vpn::SystemTunnel>,
+    system_vpn_active: bool,
     app_icon_applied: bool,
     // Drop child controllers before the context and native parent window.
     pages: HashMap<u64, LivePage>,
@@ -419,9 +447,7 @@ struct Browser {
         Option<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment>,
     context: Option<WebContext>,
     window: Window,
-    vpn_vault: vpn::Vault,
-    #[cfg(windows)]
-    vpn_tunnel: Option<literust_browser::vpn_platform::Tunnel>,
+    vpn_vault: std::rc::Rc<vpn::Vault>,
     vpn_port: Option<u16>,
     vpn_running: bool,
     vpn_importing: bool,
@@ -431,8 +457,12 @@ struct Browser {
     data: BrowserData,
     ui_language: storage::Language,
     shortcut_catalog: Vec<(&'static str, String, &'static str)>,
-    data_file: Option<PathBuf>,
-    proxy: EventLoopProxy<AppEvent>,
+    dirty: std::cell::Cell<bool>,
+    backup_requested: bool,
+    shared_home_changed: bool,
+    new_window_requested: bool,
+    next_window_requested: bool,
+    proxy: BrowserProxy,
     private_mode: bool,
     next_tab_id: u64,
     next_generation: u64,
@@ -440,6 +470,7 @@ struct Browser {
     close_requested: bool,
     appearance_open: bool,
     account_prompt_checked: bool,
+    ready: bool,
 }
 
 impl Browser {
@@ -450,8 +481,7 @@ impl Browser {
         dock: WebView,
         context: Option<WebContext>,
         data: BrowserData,
-        data_file: Option<PathBuf>,
-        proxy: EventLoopProxy<AppEvent>,
+        proxy: BrowserProxy,
         private_mode: bool,
         local_profiles: Catalog,
     ) -> Self {
@@ -483,14 +513,11 @@ impl Browser {
             )),
             closed_tabs: Vec::new(),
             app_icon_applied: false,
-            #[cfg(windows)]
-            system_vpn: None,
+            system_vpn_active: false,
             window,
             toolbar,
             dock,
-            vpn_vault: vpn::Vault::default(),
-            #[cfg(windows)]
-            vpn_tunnel: None,
+            vpn_vault: Default::default(),
             vpn_port: None,
             vpn_running: false,
             vpn_importing: false,
@@ -513,7 +540,11 @@ impl Browser {
                 })
                 .collect(),
             data,
-            data_file,
+            dirty: std::cell::Cell::new(false),
+            backup_requested: false,
+            shared_home_changed: false,
+            new_window_requested: false,
+            next_window_requested: false,
             proxy,
             private_mode,
             next_tab_id,
@@ -522,6 +553,7 @@ impl Browser {
             close_requested: false,
             appearance_open: false,
             account_prompt_checked: false,
+            ready: false,
         }
     }
 
@@ -535,6 +567,7 @@ impl Browser {
         startup_log(&format!("Shortcut dispatched: {name}"));
         let command = match name {
             "new_tab" => UiCommand::NewTab,
+            "new_window" => UiCommand::NewWindow,
             "close_tab" => UiCommand::CloseTab {
                 index: self.data.active,
             },
@@ -676,7 +709,7 @@ impl Browser {
         self.sync_toolbar();
     }
 
-    fn back_up_profile(&self) {
+    fn write_profile_backup(&self, snapshot: &BrowserData) {
         if self.private_mode {
             return;
         }
@@ -687,7 +720,7 @@ impl Browser {
             .as_millis();
         let path = path.join(format!("browser-data-{timestamp}.json"));
         match fs::create_dir_all(path.parent().expect("backup directory"))
-            .and_then(|()| self.data.backup_metadata(&path))
+            .and_then(|()| snapshot.backup_metadata(&path))
         {
             Ok(()) => self.notice(&format!(
                 "{}: {}",
@@ -706,15 +739,9 @@ impl Browser {
     }
 
     fn system_vpn_running(&self) -> bool {
-        #[cfg(windows)]
-        {
-            self.system_vpn.as_ref().is_some_and(|tun| tun.alive())
-        }
-        #[cfg(not(windows))]
-        {
-            false
-        }
+        self.system_vpn_active
     }
+
     fn refresh_newtabs(&mut self) {
         let active = self.active_id();
         let ids: Vec<_> = self
@@ -794,12 +821,95 @@ impl Browser {
     }
 
     fn persist(&self) {
-        if let Some(ref file) = self.data_file {
-            if let Err(err) = self.data.save(file) {
-                eprintln!("Failed to persist browser state: {err}");
-                self.notice_localized(
-                    "Не удалось сохранить профиль. Проверьте свободное место и права доступа.",
-                );
+        if !self.private_mode {
+            self.dirty.set(true);
+        }
+    }
+
+    fn session(&self) -> window_session::WindowSession {
+        let size = self.window.inner_size();
+        let placement = self
+            .window
+            .outer_position()
+            .ok()
+            .filter(|_| !self.window.is_minimized())
+            .and_then(|p| {
+                let current = window_session::Placement {
+                    x: p.x,
+                    y: p.y,
+                    width: size.width,
+                    height: size.height,
+                    maximized: self.window.is_maximized(),
+                };
+                current.valid().then_some(current)
+            });
+        window_session::WindowSession {
+            tabs: self.data.tabs.clone(),
+            active: self.data.active,
+            placement: placement.or(self.data.placement),
+        }
+    }
+
+    fn use_shared_profile(&mut self, profile: std::rc::Rc<storage::ProfileData>) {
+        let zoom_changed =
+            profile.browser_settings.zoom_percent != self.data.browser_settings.zoom_percent;
+        let rules_changed = profile.network_blocking != self.data.network_blocking
+            || profile.adblock_exceptions != self.data.adblock_exceptions;
+        let icon_changed = profile.custom_icons != self.data.custom_icons;
+        let sidebar_changed = profile.dock_position != self.data.dock_position
+            || profile.sidebar.width != self.data.sidebar.width
+            || profile.sidebar.mode != self.data.sidebar.mode;
+        let theme_changed = profile.appearance != self.data.appearance;
+        if profile.shortcuts.0 != self.data.shortcuts.0 {
+            self.shortcuts.borrow_mut().bindings = profile.shortcuts.clone();
+        }
+        self.data.profile = profile;
+        if zoom_changed {
+            let zoom = f64::from(self.data.browser_settings.zoom_percent) / 100.0;
+            for page in self.pages.values() {
+                let _ = page.view.zoom(zoom);
+            }
+        }
+        if theme_changed {
+            let appearance = serde_json::to_string(&self.data.appearance).unwrap_or_default();
+            for tab in self
+                .data
+                .tabs
+                .iter()
+                .filter(|tab| tab.url.starts_with("literust://"))
+            {
+                if let Some(page) = self.pages.get(&tab.id) {
+                    let _ = page
+                        .view
+                        .evaluate_script(&format!("window.applyAppearance?.({appearance});"));
+                }
+            }
+        }
+        if rules_changed {
+            self.update_filter_for_live_pages();
+        }
+        if icon_changed {
+            self.sync_icons();
+        }
+        if sidebar_changed {
+            self.dock_animation = None;
+            self.dock_expanded = false;
+            self.dock_peek = false;
+            self.resize();
+        }
+        self.enforce_page_budget();
+    }
+
+    fn sync_home(&self, persisted: bool) {
+        let Some(value) = self.data.home.as_ref() else {
+            return;
+        };
+        let json = literust_browser::home::script_json(value);
+        for tab in self.data.tabs.iter().filter(|tab| tab.url == NEW_TAB) {
+            if let Some(page) = self.pages.get(&tab.id) {
+                let _ = page
+                    .view
+                    .evaluate_script(&format!("window.homeSync?.({json},{persisted});"));
             }
         }
     }
@@ -975,13 +1085,12 @@ impl Browser {
     }
 
     fn layout_bounds(&self) -> (Rect, Rect) {
-        let size = self
-            .window
-            .inner_size()
-            .to_logical::<f64>(self.window.scale_factor());
+        let scale = self.window.scale_factor();
+        let inset = self.frame_inset();
+        let size = self.window.inner_size().to_logical::<f64>(scale);
         let (mut dock, page) = layout::arrange_sidebar(
-            size.width - 2.0 * self.frame_inset(),
-            size.height - 2.0 * self.frame_inset(),
+            size.width - 2.0 * inset,
+            size.height - 2.0 * inset,
             TOOLBAR_HEIGHT,
             self.data.dock_position,
             &self.data.sidebar,
@@ -991,20 +1100,22 @@ impl Browser {
             && !self.dock_expanded
             && self.data.dock_position == layout::DockPosition::Left
         {
-            dock = layout::peek_sidebar(dock, size.width);
+            dock = layout::peek_sidebar(dock, size.width - 2.0 * inset);
         }
         (
-            rect(
-                dock.x + self.frame_inset(),
-                dock.y + self.frame_inset(),
+            physical_rect(
+                dock.x + inset,
+                dock.y + inset,
                 dock.width,
                 dock.height,
+                scale,
             ),
-            rect(
-                page.x + self.frame_inset(),
-                page.y + self.frame_inset(),
+            physical_rect(
+                page.x + inset,
+                page.y + inset,
                 page.width,
                 page.height,
+                scale,
             ),
         )
     }
@@ -1230,7 +1341,7 @@ impl Browser {
             let _ = page.view.set_visible(!self.appearance_open);
             #[cfg(windows)]
             let _ = page.view.set_memory_usage_level(MemoryUsageLevel::Normal);
-            if !self.appearance_open {
+            if self.ready && !self.appearance_open && self.window.is_focused() {
                 let _ = page.view.focus();
             }
         }
@@ -1463,25 +1574,9 @@ impl Browser {
                     );
                     return;
                 }
-                let previous = self.data.home.replace(value.clone());
-                if let Some(file) = &self.data_file {
-                    if let Err(error) = self.data.save(file) {
-                        self.data.home = previous;
-                        self.notice(&format!("Не удалось сохранить главную страницу: {error}"));
-                        return;
-                    }
-                }
-                let persisted = self.data_file.is_some();
-                let json = literust_browser::home::script_json(&value);
-                for tab in &self.data.tabs {
-                    if tab.url == NEW_TAB {
-                        if let Some(page) = self.pages.get(&tab.id) {
-                            let _ = page.view.evaluate_script(&format!(
-                                "window.homeSync?.({json},{persisted});"
-                            ));
-                        }
-                    }
-                }
+                self.data.home = Some(value);
+                self.shared_home_changed = true;
+                self.persist();
             }
             UiCommand::SetSidebar { value } => {
                 self.dock_animation = None;
@@ -1578,7 +1673,7 @@ impl Browser {
                 self.scan_profiles();
             }
             UiCommand::ProfileBackup => {
-                self.back_up_profile();
+                self.backup_requested = !self.private_mode;
             }
             UiCommand::ProfileSwitch { id } => {
                 if self.private_mode || id == current_profile_id() {
@@ -1757,7 +1852,7 @@ impl Browser {
                 if self.private_mode || self.vpn_vault.enabled {
                     return;
                 }
-                self.vpn_vault.system_scope = system;
+                std::rc::Rc::make_mut(&mut self.vpn_vault).system_scope = system;
                 #[cfg(windows)]
                 if literust_browser::vpn_platform::save(&profile_root(), &self.vpn_vault).is_err() {
                     self.notice_localized("Не удалось сохранить область VPN");
@@ -1801,21 +1896,14 @@ impl Browser {
                     self.notice_localized("Дождитесь завершения скачиваний перед изменением VPN.");
                     return;
                 }
-                let previous = (
-                    self.vpn_vault.enabled,
-                    self.vpn_vault.selected,
-                    self.vpn_vault.system_scope,
-                );
-                self.vpn_vault.system_scope = system;
-                self.vpn_vault.enabled = enabled;
-                self.vpn_vault.selected = selected;
+                let previous = self.vpn_vault.clone();
+                let vault = std::rc::Rc::make_mut(&mut self.vpn_vault);
+                vault.system_scope = system;
+                vault.enabled = enabled;
+                vault.selected = selected;
                 #[cfg(windows)]
                 if literust_browser::vpn_platform::save(&profile_root(), &self.vpn_vault).is_err() {
-                    (
-                        self.vpn_vault.enabled,
-                        self.vpn_vault.selected,
-                        self.vpn_vault.system_scope,
-                    ) = previous;
+                    self.vpn_vault = previous;
                     self.notice_localized("Не удалось сохранить защищённые настройки VPN");
                     return;
                 }
@@ -1951,6 +2039,7 @@ impl Browser {
                             .evaluate_script("window.openPanel?.('accounts');");
                     }
                 }
+                self.ready = true;
                 startup_log("Toolbar JavaScript ready");
                 self.window.set_visible(true);
                 let _ = self.toolbar.set_visible(true);
@@ -1991,6 +2080,38 @@ impl Browser {
                 self.navigate_internal(&home);
             }
             UiCommand::NewTab => self.new_tab(Some(NEW_TAB)),
+            UiCommand::NewWindow => {
+                if self.private_mode {
+                    if let Err(error) = std::env::current_exe().and_then(|executable| {
+                        Command::new(executable)
+                            .arg("--profile")
+                            .arg(current_profile_id())
+                            .arg("--new-window")
+                            .spawn()
+                    }) {
+                        self.notice(&error.to_string());
+                    }
+                } else {
+                    self.new_window_requested = true;
+                }
+            }
+            UiCommand::NextWindow => self.next_window_requested = true,
+            UiCommand::MoveTab {
+                source,
+                target,
+                after,
+            } => {
+                if window_session::move_tab(
+                    &mut self.data.tabs,
+                    &mut self.data.active,
+                    source,
+                    target,
+                    after,
+                ) {
+                    self.persist();
+                    self.sync_toolbar();
+                }
+            }
             UiCommand::SelectTab { index } => {
                 if index < self.data.tabs.len() && index != self.data.active {
                     self.data.active = index;
@@ -2020,6 +2141,9 @@ impl Browser {
                     self.next_tab_id = self.next_tab_id.saturating_add(1);
                     self.data.tabs.push(tab);
                     self.data.active = 0;
+                    self.close_requested = true;
+                    self.persist();
+                    return;
                 } else if closed_active {
                     self.data.active = index.min(self.data.tabs.len() - 1);
                 } else if index < self.data.active {
@@ -2436,9 +2560,13 @@ impl Browser {
             position.x += size.width - width;
         }
         if (width - self.dock_width.get()).abs() >= 0.5 {
-            let _ = self
-                .dock
-                .set_bounds(rect(position.x, position.y, width, size.height));
+            let _ = self.dock.set_bounds(physical_rect(
+                position.x,
+                position.y,
+                width,
+                size.height,
+                scale,
+            ));
             self.dock_width.set(width);
         }
     }
@@ -2448,15 +2576,14 @@ impl Browser {
             "window.updateWindowState?.({});",
             self.window.is_maximized()
         ));
-        let size = self
-            .window
-            .inner_size()
-            .to_logical::<f64>(self.window.scale_factor());
-        let _ = self.toolbar.set_bounds(rect(
+        let scale = self.window.scale_factor();
+        let size = self.window.inner_size().to_logical::<f64>(scale);
+        let _ = self.toolbar.set_bounds(physical_rect(
             self.frame_inset(),
             self.frame_inset(),
             size.width - 2.0 * self.frame_inset(),
             self.toolbar_height(),
+            scale,
         ));
         let (dock_bounds, bounds) = self.layout_bounds();
         if self.dock_animation.is_none() {
@@ -2554,6 +2681,15 @@ fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
     Rect {
         position: LogicalPosition::new(x, y).into(),
         size: WebLogicalSize::new(width.max(1.0), height.max(1.0)).into(),
+    }
+}
+
+fn physical_rect(x: f64, y: f64, width: f64, height: f64, scale: f64) -> Rect {
+    let (x, width) = layout::physical_axis(x, width, scale);
+    let (y, height) = layout::physical_axis(y, height, scale);
+    Rect {
+        position: wry::dpi::PhysicalPosition::new(x, y).into(),
+        size: wry::dpi::PhysicalSize::new(width, height).into(),
     }
 }
 
@@ -2709,6 +2845,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let private_mode = args.iter().any(|arg| arg == "--private");
     let restarting = args.iter().any(|arg| arg == "--resume-after-restart");
+    let new_window = args.iter().any(|arg| arg == "--new-window");
     let selected = args
         .windows(2)
         .find(|pair| pair[0] == "--profile")
@@ -2731,8 +2868,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Ok((catalog, lock)) => break (catalog, Some(lock)),
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     #[cfg(windows)]
-                    if !restarting && windows_platform::activate_profile_window(&profile_root()) {
-                        return Ok(());
+                    if !restarting {
+                        let root = profile_root();
+                        let accepted = if new_window {
+                            windows_platform::request_profile_window(&root)
+                        } else {
+                            windows_platform::activate_profile_window(&root)
+                        };
+                        if accepted {
+                            return Ok(());
+                        }
                     }
                     // The owner may still be creating its window, or closing for a restart.
                     if attempts >= if restarting { 40 } else { 8 } {
@@ -2779,42 +2924,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         startup_log(&format!("WebView2 Runtime available: {version}"));
     }
     startup_log("Creating event loop and window");
-    let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
-    let window = WindowBuilder::new()
-        .with_maximized(true)
-        .with_decorations(false)
-        .with_visible(false)
-        .with_background_color((16, 20, 33, 255))
-        .with_window_icon(
-            tao::window::Icon::from_rgba(
-                include_bytes!("../packaging/default-icon.rgba").to_vec(),
-                64,
-                64,
-            )
-            .ok(),
-        )
-        .with_title(if private_mode {
-            "LiteRust 0.16-alpha.3 — приватное окно"
-        } else {
-            "LiteRust Browser 0.16-alpha.3"
-        })
-        .with_inner_size(LogicalSize::new(1280.0, 800.0))
-        .with_min_inner_size(LogicalSize::new(690.0, 400.0))
-        .build(&event_loop)?;
-
-    #[cfg(windows)]
-    if !private_mode {
-        windows_platform::register_profile_window(&window, &profile_root())?;
-    }
-
-    let (data, data_file, context) = if private_mode {
+    let event_loop = EventLoopBuilder::<WindowMessage>::with_user_event().build();
+    let (mut data, data_file) = if private_mode {
         // No normal profile opened and no browser-data.json read/written.
         let mut data = BrowserData::default().clean();
         if args.iter().any(|arg| arg == "--ui-en") {
             data.browser_settings.language = storage::Language::En;
-            window.set_title("LiteRust 0.16-alpha.3 — private window");
         }
-        (data, None, None)
+        (data, None)
     } else {
         let root = profile_root();
         fs::create_dir_all(&root)?;
@@ -2822,11 +2939,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut data = BrowserData::recover(&file)?;
         data.apply_startup(restarting);
         data.save(&file)?; // migrate plaintext metadata before opening site views
-        (
-            data,
-            Some(file),
-            Some(WebContext::new(Some(root.join("WebView2")))),
-        )
+        (data, Some(file))
     };
     #[cfg(windows)]
     let mut vpn_vault = literust_browser::vpn_platform::load(&profile_root())?;
@@ -2844,7 +2957,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     #[cfg(windows)]
-    let vpn_tunnel = if vpn_vault.enabled {
+    let mut vpn_tunnel = if vpn_vault.enabled {
         Some(literust_browser::vpn_platform::Tunnel::start(&vpn_vault).map_err(|_|std::io::Error::other("VPN не запустился. Прямое соединение не включено. Запустите LiteRust с --vpn-off, чтобы изменить ключ."))?)
     } else {
         None
@@ -2852,7 +2965,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     let vpn_port = vpn_tunnel.as_ref().map(|t| t.port);
     #[cfg(windows)]
-    let system_vpn = if vpn_vault.enabled && vpn_vault.system_scope && !private_mode {
+    let mut system_vpn = if vpn_vault.enabled && vpn_vault.system_scope && !private_mode {
         let result = literust_browser::system_vpn::SystemTunnel::start(
             vpn_tunnel.as_ref().unwrap().socks_port,
         );
@@ -2865,9 +2978,310 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     #[cfg(not(windows))]
     let vpn_port: Option<u16> = None;
+    #[cfg(windows)]
+    let system_vpn_active = system_vpn.is_some();
+    #[cfg(not(windows))]
+    let system_vpn_active = false;
+    let options = WindowOptions {
+        private_mode,
+        local_profiles: catalog,
+        vpn_vault: std::rc::Rc::new(vpn_vault),
+        vpn_port,
+        vpn_running: vpn_port.is_some(),
+        system_vpn_active,
+    };
+    let mut pending_sessions =
+        std::collections::VecDeque::from(std::mem::take(&mut data.additional_windows));
+    let mut restore_failed = false;
+    let proxy = event_loop.create_proxy();
+    let mut windows = vec![create_browser(
+        &event_loop,
+        &proxy,
+        data,
+        options.clone(),
+        None,
+    )?];
+    if new_window && !private_mode {
+        windows[0].new_window_requested = true;
+    }
+    let mut focused = windows[0].window.id();
+    let mut placement_save_at = None;
+    startup_log("Entering event loop");
+
+    event_loop.run(move |event, target, control_flow| {
+        let now = std::time::Instant::now();
+        let mut handled = None;
+        let mut refresh = false;
+        #[cfg(windows)]
+        {
+            if windows[0].vpn_running && vpn_tunnel.as_mut().is_some_and(|tunnel| !tunnel.alive()) {
+                for browser in &mut windows {
+                    browser.vpn_running = false;
+                    browser.notice_localized("VPN остановился. Прямое соединение не включается. Откройте VPN-хаб.");
+                }
+                refresh = true;
+            }
+            if system_vpn.as_ref().is_some_and(|tunnel| !tunnel.alive()) {
+                system_vpn.take();
+                for browser in &mut windows {
+                    browser.system_vpn_active = false;
+                    browser.notice_localized("VPN всего ПК остановлен. Windows может использовать обычную сеть. Браузер остаётся на своём прокси.");
+                }
+                refresh = true;
+            }
+        }
+        match event {
+            Event::UserEvent(WindowMessage::Browser { window, event }) => {
+                if let Some(index) = windows.iter().position(|browser| browser.window.id() == window) {
+                    dispatch_browser_event(&mut windows[index], event);
+                    handled = Some(index);
+                }
+            }
+            Event::WindowEvent { window_id, event, .. } => {
+                if let Some(browser) = windows.iter_mut().find(|browser| browser.window.id() == window_id) {
+                    match event {
+                        WindowEvent::Focused(true) => {
+                            focused = window_id;
+                            if browser.ready && browser.window.is_focused() {
+                                if browser.appearance_open {
+                                    let _ = browser.toolbar.focus();
+                                } else if let Some(page) = browser.pages.get(&browser.active_id()) {
+                                    let _ = page.view.focus();
+                                }
+                            }
+                            placement_save_at = Some(now + std::time::Duration::from_millis(250));
+                        }
+                        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                            browser.resize();
+                            placement_save_at = Some(now + std::time::Duration::from_millis(250));
+                        }
+                        WindowEvent::Moved(_) => placement_save_at = Some(now + std::time::Duration::from_millis(250)),
+                        WindowEvent::CloseRequested => browser.close_requested = true,
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        let mut home_changed = false;
+        if let Some(index) = handled {
+            let profile = windows[index].data.profile.clone();
+            let vpn_vault = windows[index].vpn_vault.clone();
+            let vpn_importing = windows[index].vpn_importing;
+            let vpn_probing = windows[index].vpn_probing;
+            let vpn_probe = windows[index].vpn_probe.clone();
+            home_changed = std::mem::take(&mut windows[index].shared_home_changed);
+            for (peer, browser) in windows.iter_mut().enumerate() {
+                if peer != index && !std::rc::Rc::ptr_eq(&browser.data.profile, &profile) {
+                    browser.use_shared_profile(profile.clone());
+                    browser.sync_toolbar();
+                }
+                if !std::rc::Rc::ptr_eq(&browser.vpn_vault, &vpn_vault)
+                    || (browser.vpn_importing, browser.vpn_probing, &browser.vpn_probe) != (vpn_importing, vpn_probing, &vpn_probe)
+                {
+                    browser.vpn_vault = vpn_vault.clone();
+                    browser.vpn_importing = vpn_importing;
+                    browser.vpn_probing = vpn_probing;
+                    browser.vpn_probe.clone_from(&vpn_probe);
+                    browser.sync_toolbar();
+                }
+            }
+        }
+        if refresh {
+            windows.iter().for_each(Browser::sync_toolbar);
+        }
+
+        let mut changed = false;
+        if let Some(index) = windows.iter().position(|browser| browser.close_requested) {
+            changed = true;
+            if windows.len() > 1 {
+                let closed = windows.remove(index);
+                // The worker events from a closed window are dropped with its controllers.
+                if closed.vpn_importing || closed.vpn_probing {
+                    for browser in &mut windows {
+                        browser.vpn_importing = false;
+                        browser.vpn_probing = false;
+                        browser.sync_toolbar();
+                    }
+                }
+                if focused == closed.window.id() {
+                    let next = &windows[index.min(windows.len()-1)].window;
+                    focused = next.id();
+                    next.set_focus();
+                }
+            }
+        }
+        // Restore children after the preceding shell has processed its own Ready
+        // event. WebView2 pumps native messages while creating a controller.
+        if !restore_failed && !pending_sessions.is_empty()
+            && windows.iter().all(|browser| browser.ready && !browser.close_requested)
+        {
+            let source = &windows[0];
+            let session = pending_sessions.front().expect("pending session").clone();
+            let data = next_window_data(source.data.profile.clone(), session);
+            let options = window_options(source, &options);
+            match create_browser(target, &proxy, data, options, Some(source)) {
+                Ok(mut browser) => {
+                    browser.account_prompt_checked = true;
+                    pending_sessions.pop_front();
+                    windows.push(browser);
+                    changed = true;
+                }
+                Err(error) => {
+                    restore_failed = true;
+                    source.notice(&error.to_string());
+                }
+            }
+        }
+        if let Some(index) = windows.iter().position(|browser| browser.new_window_requested) {
+            windows[index].new_window_requested = false;
+            if windows.len() + pending_sessions.len() < window_session::MAX_WINDOWS {
+                let source = &windows[index];
+                let data = next_window_data(source.data.profile.clone(), window_session::WindowSession {
+                    tabs: vec![Tab::new()], ..Default::default()
+                });
+                let lens = window_options(source, &options);
+                match create_browser(target, &proxy, data, lens, Some(source)) {
+                    Ok(mut browser) => {
+                        browser.account_prompt_checked = true;
+                        focused = browser.window.id();
+                        windows.push(browser);
+                        changed = true;
+                    }
+                    Err(error) => windows[index].notice(&format!("{}: {error}", windows[index].ui_language.pick("Не удалось открыть окно", "Unable to open window"))),
+                }
+            } else {
+                windows[index].notice_localized("Достигнут предел открытых окон.");
+            }
+        }
+        if let Some(index) = windows.iter().position(|browser| browser.next_window_requested) {
+            windows[index].next_window_requested = false;
+            let next = &windows[(index+1)%windows.len()].window;
+            next.set_minimized(false);
+            next.set_focus();
+        }
+
+        let first = windows.iter().position(|browser| browser.window.id() == focused).unwrap_or(0);
+        let restart = windows.iter_mut().any(|browser| std::mem::take(&mut browser.restart_requested));
+        let dirty = windows.iter().fold(changed, |pending, browser| browser.dirty.replace(false) || pending);
+        let placement_due = placement_save_at.is_some_and(|time| time <= now);
+        if placement_due { placement_save_at = None; }
+        let save = !private_mode && (dirty || placement_due || restart);
+        let backup = windows.iter().position(|browser| browser.backup_requested);
+        let mut persisted = false;
+        if save || backup.is_some() {
+            let snapshot = window_snapshot(&windows, first, &pending_sessions);
+            if save {
+                if let Some(path) = &data_file {
+                    match snapshot.save(path) {
+                        Ok(()) => { persisted = true; placement_save_at = None; }
+                        Err(error) => {
+                            eprintln!("Failed to persist browser state: {error}");
+                            windows[first].notice_localized("Не удалось сохранить профиль. Проверьте свободное место и права доступа.");
+                        }
+                    }
+                }
+            }
+            if let Some(index) = backup {
+                windows[index].backup_requested = false;
+                windows[index].write_profile_backup(&snapshot);
+            }
+        }
+        if home_changed {
+            windows.iter().for_each(|browser| browser.sync_home(persisted));
+        }
+        if restart {
+            match std::env::current_exe().and_then(|exe| Command::new(exe).arg("--profile").arg(current_profile_id()).arg("--resume-after-restart").spawn()) {
+                Ok(_) => {
+                    #[cfg(windows)] { system_vpn.take(); vpn_tunnel.take(); }
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
+                Err(_) => windows[first].notice_localized("Настройки VPN сохранены. Закройте и заново запустите LiteRust для применения."),
+            }
+        }
+        if windows.len() == 1 && windows[0].close_requested {
+            #[cfg(windows)] { system_vpn.take(); vpn_tunnel.take(); }
+            *control_flow = ControlFlow::Exit;
+            return;
+        }
+        for browser in &mut windows { browser.animate_drawer(); }
+        let animation_at = windows.iter().any(|browser| browser.dock_animation.is_some())
+            .then(|| now + std::time::Duration::from_millis(16));
+        let vpn_at = vpn_port.is_some().then(|| now + std::time::Duration::from_secs(2));
+        *control_flow = [animation_at, placement_save_at, vpn_at].into_iter().flatten().min()
+            .map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
+    });
+}
+
+#[derive(Clone)]
+struct WindowOptions {
+    private_mode: bool,
+    local_profiles: Catalog,
+    vpn_vault: std::rc::Rc<vpn::Vault>,
+    vpn_port: Option<u16>,
+    vpn_running: bool,
+    system_vpn_active: bool,
+}
+
+fn create_browser(
+    target: &EventLoopWindowTarget<WindowMessage>,
+    event_loop: &EventLoopProxy<WindowMessage>,
+    data: BrowserData,
+    options: WindowOptions,
+    sibling: Option<&Browser>,
+) -> Result<Browser, Box<dyn std::error::Error>> {
+    let private_mode = options.private_mode;
+    let title = if private_mode {
+        data.browser_settings
+            .language
+            .pick("LiteRust — приватное окно", "LiteRust — private window")
+    } else {
+        concat!("LiteRust ", env!("CARGO_PKG_VERSION"))
+    };
+    let mut builder = WindowBuilder::new()
+        .with_maximized(true)
+        .with_decorations(false)
+        .with_visible(false)
+        .with_background_color((16, 20, 33, 255))
+        .with_window_icon(
+            tao::window::Icon::from_rgba(
+                include_bytes!("../packaging/default-icon.rgba").to_vec(),
+                64,
+                64,
+            )
+            .ok(),
+        )
+        .with_title(title)
+        .with_inner_size(LogicalSize::new(1280.0, 800.0))
+        .with_min_inner_size(LogicalSize::new(690.0, 400.0));
+    if let Some(place) = data.placement.filter(|place| {
+        target.available_monitors().any(|monitor| {
+            let (pos, size) = (monitor.position(), monitor.size());
+            place.overlaps(pos.x, pos.y, size.width, size.height)
+        })
+    }) {
+        builder = builder
+            .with_position(PhysicalPosition::new(place.x, place.y))
+            .with_inner_size(PhysicalSize::new(place.width, place.height))
+            .with_maximized(place.maximized);
+    }
+    let window = builder.build(target)?;
+    let proxy = BrowserProxy {
+        window: window.id(),
+        event_loop: event_loop.clone(),
+    };
+    #[cfg(windows)]
+    if !private_mode {
+        windows_platform::install_window_request(&window, proxy.clone())?;
+        windows_platform::register_profile_window(&window, &profile_root())?;
+    }
+    let catalog = options.local_profiles;
+    let vpn_port = options.vpn_port;
+    let context = (!private_mode).then(|| WebContext::new(Some(profile_root().join("WebView2"))));
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
     let language = data.browser_settings.language;
-    let toolbar_proxy = event_loop.create_proxy();
+    let toolbar_proxy = proxy.clone();
     startup_log("Creating toolbar WebView");
     let mut ui_context = WebContext::new(Some(profile_root().join("Interface-v2")));
     let toolbar_builder = if private_mode {
@@ -2875,6 +3289,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         WebViewBuilder::new_with_web_context(&mut ui_context)
     };
+    #[cfg(windows)]
+    let toolbar_builder = match sibling {
+        Some(browser) => toolbar_builder.with_environment(browser.toolbar.environment()),
+        None => toolbar_builder,
+    };
+    #[cfg(not(windows))]
+    let _ = sibling;
     let toolbar_initial_document = std::cell::Cell::new(true);
     let toolbar = routed_builder(toolbar_builder, vpn_port)
         .with_visible(false)
@@ -2917,7 +3338,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .build_as_child(&window)?;
 
-    let dock_proxy = event_loop.create_proxy();
+    let dock_proxy = proxy.clone();
     let dock_builder = if private_mode {
         WebViewBuilder::new()
     } else {
@@ -2997,8 +3418,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         dock,
         context,
         data,
-        data_file,
-        event_loop.create_proxy(),
+        proxy,
         private_mode,
         catalog,
     );
@@ -3015,146 +3435,193 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             browser.shortcuts.clone(),
         )?;
     }
-    browser.vpn_vault = vpn_vault;
-    browser.vpn_port = vpn_port;
-    browser.vpn_running = vpn_port.is_some();
     #[cfg(windows)]
     {
-        browser.vpn_tunnel = vpn_tunnel;
-        browser.system_vpn = system_vpn;
+        browser.page_environment = sibling.and_then(|peer| peer.page_environment.clone());
     }
+    browser.vpn_vault = options.vpn_vault;
+    browser.vpn_port = options.vpn_port;
+    browser.vpn_running = options.vpn_running;
+    browser.system_vpn_active = options.system_vpn_active;
     browser.resize();
     startup_log("Toolbar WebView created; creating active page");
     browser.show_active();
 
-    startup_log("Entering event loop");
+    Ok(browser)
+}
 
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = if browser.vpn_port.is_some() { ControlFlow::WaitUntil(std::time::Instant::now()+std::time::Duration::from_secs(2)) } else { ControlFlow::Wait };
-        #[cfg(windows)]
-        if browser.vpn_running && browser.vpn_tunnel.as_mut().is_some_and(|t|!t.alive()) {
-            browser.vpn_running=false;browser.sync_toolbar();
-            browser.notice_localized("VPN остановился. Прямое соединение не включается. Откройте VPN-хаб.");
+fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
+    match event {
+        AppEvent::Ui(cmd) => browser.handle(cmd),
+        AppEvent::ProfilesScanned { revision, result } => {
+            browser.on_profiles_scanned(revision, result)
         }
-        #[cfg(windows)]
-        if browser.system_vpn.as_ref().is_some_and(|t|!t.alive()) {
-            browser.system_vpn.take();browser.sync_toolbar();browser.notice_localized("VPN всего ПК остановлен. Windows может использовать обычную сеть. Браузер остаётся на своём прокси.");
+        AppEvent::InternalCommand {
+            tab_id,
+            generation,
+            command,
+        } => {
+            if browser.matching_view(tab_id, generation)
+                && browser.active_id() == tab_id
+                && browser.current_url() == NEW_TAB
+            {
+                browser.handle(command);
+            }
         }
-        match event {
-            Event::UserEvent(AppEvent::Ui(cmd)) => browser.handle(cmd),
-            Event::UserEvent(AppEvent::ProfilesScanned { revision, result }) => browser.on_profiles_scanned(revision, result),
-            Event::UserEvent(AppEvent::InternalCommand{tab_id,generation,command})=>{
-                if browser.matching_view(tab_id,generation)&&browser.active_id()==tab_id&&browser.current_url()==NEW_TAB {browser.handle(command);}
-            },
-            Event::UserEvent(AppEvent::NewTabAppearance {tab_id,generation,accounts}) => {
-                if browser.matching_view(tab_id,generation) && browser.data.tabs.iter().any(|t|t.id==tab_id&&t.url==NEW_TAB) {
-                    browser.handle(if accounts { UiCommand::ShowAccounts } else { UiCommand::ShowSettings });
-                }
-            },
-            #[cfg(windows)]
-            Event::UserEvent(AppEvent::PdfFinished { path, success }) => {
-                browser.enforce_page_budget();
-                browser.sync_toolbar();
-                if success {
-                    browser.notice(&format!("{}: {}", browser.ui_language.pick("PDF сохранён", "PDF saved"), path.display()));
+        AppEvent::NewTabAppearance {
+            tab_id,
+            generation,
+            accounts,
+        } => {
+            if browser.matching_view(tab_id, generation)
+                && browser
+                    .data
+                    .tabs
+                    .iter()
+                    .any(|t| t.id == tab_id && t.url == NEW_TAB)
+            {
+                browser.handle(if accounts {
+                    UiCommand::ShowAccounts
                 } else {
-                    browser.notice_localized("WebView2 не смог сохранить PDF.");
-                }
+                    UiCommand::ShowSettings
+                });
             }
-            Event::UserEvent(AppEvent::VpnProbed(result)) => {
-                browser.vpn_probing=false;
-                browser.vpn_probe=if !browser.vpn_running {"VPN остановился".into()} else {match result {Ok(ms)=>format!("HTTPS через VPN: {ms} мс"),Err(message)=>message.into()}};
-                browser.sync_toolbar();
+        }
+        #[cfg(windows)]
+        AppEvent::PdfFinished { path, success } => {
+            browser.enforce_page_budget();
+            browser.sync_toolbar();
+            if success {
+                browser.notice(&format!(
+                    "{}: {}",
+                    browser.ui_language.pick("PDF сохранён", "PDF saved"),
+                    path.display()
+                ));
+            } else {
+                browser.notice_localized("WebView2 не смог сохранить PDF.");
             }
-            Event::UserEvent(AppEvent::VpnImported(result)) => {
-                browser.vpn_importing=false;
+        }
+        AppEvent::VpnProbed(result) => {
+            browser.vpn_probing = false;
+            browser.vpn_probe = if !browser.vpn_running {
+                "VPN остановился".into()
+            } else {
                 match result {
-                    Ok(nodes)=>{
-                        let system_scope=browser.vpn_vault.system_scope;
-                        let previous=std::mem::replace(&mut browser.vpn_vault,vpn::Vault{nodes,enabled:false,selected:0,system_scope});
-                        #[cfg(windows)]
-                        if literust_browser::vpn_platform::save(&profile_root(),&browser.vpn_vault).is_err(){browser.vpn_vault=previous;browser.notice_localized("Не удалось сохранить VPN-ключи");}
-                        else {browser.notice_localized("Серверы импортированы и защищены учётной записью Windows. Выберите сервер и подключитесь.");}
-                        #[cfg(not(windows))]
-                        {browser.vpn_vault=previous;browser.notice_localized("VPN-хаб доступен в Windows-сборке");}
-                    },
-                    Err(message)=>browser.notice_localized(message),
+                    Ok(ms) => format!("HTTPS через VPN: {ms} мс"),
+                    Err(message) => message.into(),
                 }
-                browser.sync_toolbar();
-            },
-            Event::UserEvent(AppEvent::Page {
-                tab_id,
-                generation,
-                url,
-                loading,
-            }) => {
-                browser.on_page_event(tab_id, generation, url, loading);
-            }
-            Event::UserEvent(AppEvent::Title {
-                tab_id,
-                generation,
-                title,
-            }) => {
-                browser.on_title(tab_id, generation, title);
-            }
-            Event::UserEvent(AppEvent::Popup {
-                tab_id,
-                generation,
-                url,
-            }) => {
-                if browser.matching_view(tab_id, generation) {
-                    browser.new_tab(Some(&url));
-                }
-            }
-            Event::UserEvent(AppEvent::DownloadStarted { id, url, file }) => {
-                browser.on_download_start(id, url, file)
-            }
-            Event::UserEvent(AppEvent::DownloadState {
-                id,
-                file,
-                running,
-                ok,
-            }) => browser.on_download_state(id, &file, running, ok),
-            Event::WindowEvent { event: WindowEvent::Focused(true), .. } => {
-                if browser.appearance_open { let _ = browser.toolbar.focus(); }
-                else if let Some(page) = browser.pages.get(&browser.active_id()) { let _ = page.view.focus(); }
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(_),
-                ..
-            }
-            | Event::WindowEvent {
-                event: WindowEvent::ScaleFactorChanged { .. },
-                ..
-            } => browser.resize(),
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                browser.close_requested = true;
-            }
-            _ => {}
+            };
+            browser.sync_toolbar();
         }
-        browser.animate_drawer();
-        if browser.dock_animation.is_some(){*control_flow=ControlFlow::WaitUntil(std::time::Instant::now()+std::time::Duration::from_millis(16));}
-        if browser.close_requested {
-            browser.persist();
-            #[cfg(windows)] { browser.system_vpn.take();browser.vpn_tunnel.take(); }
-            *control_flow=ControlFlow::Exit;
-        }
-        if browser.restart_requested {
-            browser.restart_requested=false;
-            browser.persist();
-            match std::env::current_exe().and_then(|exe|Command::new(exe).arg("--profile").arg(current_profile_id()).arg("--resume-after-restart").spawn()) {
-                Ok(_)=>{
+        AppEvent::VpnImported(result) => {
+            browser.vpn_importing = false;
+            match result {
+                Ok(nodes) => {
+                    let system_scope = browser.vpn_vault.system_scope;
+                    let previous = std::mem::replace(
+                        &mut browser.vpn_vault,
+                        std::rc::Rc::new(vpn::Vault {
+                            nodes,
+                            enabled: false,
+                            selected: 0,
+                            system_scope,
+                        }),
+                    );
                     #[cfg(windows)]
-                    { browser.system_vpn.take(); browser.vpn_tunnel.take(); }
-                    *control_flow=ControlFlow::Exit;
-                },
-                Err(_)=>browser.notice_localized("Настройки VPN сохранены. Закройте и заново запустите LiteRust для применения."),
+                    if literust_browser::vpn_platform::save(&profile_root(), &browser.vpn_vault)
+                        .is_err()
+                    {
+                        browser.vpn_vault = previous;
+                        browser.notice_localized("Не удалось сохранить VPN-ключи");
+                    } else {
+                        browser.notice_localized("Серверы импортированы и защищены учётной записью Windows. Выберите сервер и подключитесь.");
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        browser.vpn_vault = previous;
+                        browser.notice_localized("VPN-хаб доступен в Windows-сборке");
+                    }
+                }
+                Err(message) => browser.notice_localized(message),
+            }
+            browser.sync_toolbar();
+        }
+        AppEvent::Page {
+            tab_id,
+            generation,
+            url,
+            loading,
+        } => {
+            browser.on_page_event(tab_id, generation, url, loading);
+        }
+        AppEvent::Title {
+            tab_id,
+            generation,
+            title,
+        } => {
+            browser.on_title(tab_id, generation, title);
+        }
+        AppEvent::Popup {
+            tab_id,
+            generation,
+            url,
+        } => {
+            if browser.matching_view(tab_id, generation) {
+                browser.new_tab(Some(&url));
             }
         }
-    });
+        AppEvent::DownloadStarted { id, url, file } => browser.on_download_start(id, url, file),
+        AppEvent::DownloadState {
+            id,
+            file,
+            running,
+            ok,
+        } => browser.on_download_state(id, &file, running, ok),
+    }
+}
+
+fn window_options(source: &Browser, initial: &WindowOptions) -> WindowOptions {
+    WindowOptions {
+        local_profiles: source.local_profiles.clone(),
+        vpn_vault: source.vpn_vault.clone(),
+        vpn_running: source.vpn_running,
+        system_vpn_active: source.system_vpn_active,
+        ..initial.clone()
+    }
+}
+
+fn window_snapshot(
+    windows: &[Browser],
+    first: usize,
+    pending: &std::collections::VecDeque<window_session::WindowSession>,
+) -> BrowserData {
+    let initial = windows[first].session();
+    BrowserData {
+        tabs: initial.tabs,
+        active: initial.active,
+        placement: initial.placement,
+        additional_windows: windows
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != first)
+            .map(|(_, browser)| browser.session())
+            .chain(pending.iter().cloned())
+            .collect(),
+        profile: windows[first].data.profile.clone(),
+    }
+}
+
+fn next_window_data(
+    profile: std::rc::Rc<storage::ProfileData>,
+    session: window_session::WindowSession,
+) -> BrowserData {
+    BrowserData {
+        tabs: session.tabs,
+        active: session.active,
+        placement: session.placement,
+        additional_windows: Vec::new(),
+        profile,
+    }
 }
 
 #[cfg(test)]

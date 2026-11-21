@@ -389,9 +389,46 @@ impl Appearance {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BrowserData {
+    pub tabs: Vec<Tab>,
+    pub active: usize,
+    pub placement: Option<crate::window_session::Placement>,
+    pub additional_windows: Vec<crate::window_session::WindowSession>,
+    #[serde(flatten)]
+    pub profile: std::rc::Rc<ProfileData>,
+}
+
+impl Default for BrowserData {
+    fn default() -> Self {
+        Self {
+            tabs: vec![Tab::new()],
+            active: 0,
+            placement: None,
+            additional_windows: Vec::new(),
+            profile: Default::default(),
+        }
+    }
+}
+
+impl std::ops::Deref for BrowserData {
+    type Target = ProfileData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.profile
+    }
+}
+
+impl std::ops::DerefMut for BrowserData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        std::rc::Rc::make_mut(&mut self.profile)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProfileData {
     pub home: Option<crate::home::Dashboard>,
     pub sidebar: crate::layout::Sidebar,
     pub shortcuts: crate::shortcuts::Shortcuts,
@@ -407,8 +444,6 @@ pub struct BrowserData {
     pub search_engine: crate::navigation::SearchEngine,
     pub appearance: Appearance,
     pub dock_position: crate::layout::DockPosition,
-    pub tabs: Vec<Tab>,
-    pub active: usize,
     pub bookmarks: Vec<Bookmark>,
     pub history: Vec<HistoryEntry>,
     pub downloads: Vec<DownloadEntry>,
@@ -423,7 +458,7 @@ pub struct BrowserData {
     pub auto_discard: bool,
 }
 
-impl Default for BrowserData {
+impl Default for ProfileData {
     fn default() -> Self {
         Self {
             home: None,
@@ -441,8 +476,6 @@ impl Default for BrowserData {
             search_engine: crate::navigation::SearchEngine::default(),
             appearance: Appearance::default(),
             dock_position: crate::layout::DockPosition::default(),
-            tabs: vec![Tab::new()],
-            active: 0,
             bookmarks: vec![],
             history: vec![],
             downloads: vec![],
@@ -471,6 +504,7 @@ impl BrowserData {
             Tab::new()
         }];
         self.active = 0;
+        self.additional_windows.clear();
     }
 
     fn read_data(path: &Path) -> io::Result<Self> {
@@ -517,7 +551,7 @@ impl BrowserData {
         if self.home.as_ref().is_some_and(|home| !home.valid()) {
             self.home = None;
         }
-        self.sidebar = self.sidebar.validated();
+        self.sidebar = std::mem::take(&mut self.sidebar).validated();
         self.custom_icons.retain(|key, value| {
             crate::icons::valid_target(key) && crate::icons::png_bytes(value).is_some()
         });
@@ -531,8 +565,9 @@ impl BrowserData {
         self.background_style = self.background_style.validated();
         self.notes = self.notes.chars().take(20_000).collect();
         self.customization = self.customization.validated();
-        self.browser_settings = self.browser_settings.validated();
+        self.browser_settings = std::mem::take(&mut self.browser_settings).validated();
         self.shortcuts.0.remove("fullscreen"); // Retire legacy fullscreen without resetting other assignments.
+        self.shortcuts.add_window_shortcut();
         if !self.shortcuts.validate() {
             self.shortcuts = crate::shortcuts::Shortcuts::default();
         }
@@ -540,33 +575,15 @@ impl BrowserData {
         if !matches!(self.live_tab_budget, 1 | 3 | 5) {
             self.live_tab_budget = DEFAULT_LIVE_TAB_BUDGET;
         }
-        self.tabs.retain(|t| valid_tab_url(&t.url));
-        self.tabs.truncate(MAX_TABS);
-        if self.tabs.is_empty() {
-            self.tabs.push(Tab::new());
-        }
-        self.active = self.active.min(self.tabs.len() - 1);
-        // Pre-v0.5 tabs had no stable ID. Also repair duplicates or zero IDs
-        // so callbacks from closed/suspended WebViews never affect other tabs.
-        // IDs identify a running session only. Reassign on startup to avoid
-        // collisions / saturating arithmetic from hostile persisted u64::MAX.
-        for (index, tab) in self.tabs.iter_mut().enumerate() {
-            tab.id = index as u64 + 1;
-        }
-        for tab in &mut self.tabs {
-            tab.title = compact_title(&tab.title);
-            tab.back.retain(|url| valid_tab_url(url));
-            tab.forward.retain(|url| valid_tab_url(url));
-            if tab.back.len() > 40 {
-                tab.back.drain(..tab.back.len() - 40);
-            }
-            if tab.forward.len() > 40 {
-                tab.forward.drain(..tab.forward.len() - 40);
-            }
+        crate::window_session::clean_tabs(&mut self.tabs, &mut self.active);
+        self.placement = self.placement.filter(|placement| placement.valid());
+        self.additional_windows
+            .truncate(crate::window_session::MAX_WINDOWS - 1);
+        for window in &mut self.additional_windows {
+            window.clean();
         }
         let mut seen_hosts = std::collections::HashSet::new();
-        self.adblock_exceptions = self
-            .adblock_exceptions
+        self.adblock_exceptions = std::mem::take(&mut self.adblock_exceptions)
             .into_iter()
             .filter_map(|value| normalise_host(&value))
             .filter(|host| seen_hosts.insert(host.clone()))
@@ -588,13 +605,15 @@ impl BrowserData {
         }
         self.history.retain(|h| valid_web_url(&h.url));
         if self.history.len() > MAX_HISTORY {
-            self.history.drain(..self.history.len() - MAX_HISTORY);
+            let excess = self.history.len() - MAX_HISTORY;
+            self.history.drain(..excess);
         }
         for h in &mut self.history {
             h.title = compact_title(&h.title);
         }
         if self.downloads.len() > MAX_DOWNLOADS {
-            self.downloads.drain(..self.downloads.len() - MAX_DOWNLOADS);
+            let excess = self.downloads.len() - MAX_DOWNLOADS;
+            self.downloads.drain(..excess);
         }
         // A previous process can terminate mid-download. Never leave a stale
         // indefinite "Downloading" label after restarting the browser.
@@ -1040,7 +1059,10 @@ mod appearance_tests {
         for design in 0..30 {
             for theme in 0..330 {
                 let data = BrowserData {
-                    appearance: Appearance { design, theme },
+                    profile: std::rc::Rc::new(ProfileData {
+                        appearance: Appearance { design, theme },
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 };
                 let recovered: BrowserData =
@@ -1125,16 +1147,19 @@ mod new_preferences_tests {
     #[test]
     fn new_preferences_roundtrip_and_bounds() {
         let mut data = BrowserData {
-            account_prompt_seen: true,
-            account_prompt_always: true,
-            notes: "я".repeat(20_001),
-            background_style: BackgroundStyle {
-                mode: 255,
-                color_a: u32::MAX,
-                color_b: 0,
-                angle: u16::MAX,
-            },
-            ..BrowserData::default()
+            profile: std::rc::Rc::new(ProfileData {
+                account_prompt_seen: true,
+                account_prompt_always: true,
+                notes: "я".repeat(20_001),
+                background_style: BackgroundStyle {
+                    mode: 255,
+                    color_a: u32::MAX,
+                    color_b: 0,
+                    angle: u16::MAX,
+                },
+                ..Default::default()
+            }),
+            ..Default::default()
         };
         data = data.clean();
         assert_eq!(data.notes.chars().count(), 20_000);

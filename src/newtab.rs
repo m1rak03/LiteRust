@@ -239,7 +239,10 @@ mod tests {
         assert!(valid_background(""));
         assert!(!valid_background(&"x".repeat(900_001)));
         let data = BrowserData {
-            background: "https://example.org/image?a=1&b=2".into(),
+            profile: std::rc::Rc::new(crate::storage::ProfileData {
+                background: "https://example.org/image?a=1&b=2".into(),
+                ..Default::default()
+            }),
             ..BrowserData::default()
         };
         assert!(valid_background(&data.background));
@@ -252,7 +255,10 @@ mod tests {
     #[test]
     fn colored_background_overrides_image_and_preserves_account_entry() {
         let mut data = BrowserData {
-            background: "https://example.org/a.jpg".into(),
+            profile: std::rc::Rc::new(crate::storage::ProfileData {
+                background: "https://example.org/a.jpg".into(),
+                ..Default::default()
+            }),
             ..BrowserData::default()
         };
         data.background_style = crate::storage::BackgroundStyle {
@@ -271,7 +277,10 @@ mod tests {
     #[test]
     fn selected_provider_is_rendered() {
         let data = BrowserData {
-            search_engine: crate::navigation::SearchEngine::Yandex,
+            profile: std::rc::Rc::new(crate::storage::ProfileData {
+                search_engine: crate::navigation::SearchEngine::Yandex,
+                ..Default::default()
+            }),
             ..BrowserData::default()
         };
         let html = render(&data, false);

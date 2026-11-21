@@ -19,7 +19,7 @@ impl std::fmt::Debug for Node {
         f.write_str("Node(<redacted>)")
     }
 }
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Vault {
     #[serde(default)]
     pub system_scope: bool,

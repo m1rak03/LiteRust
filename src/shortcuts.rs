@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const ACTIONS: &[(&str, &str, &str)] = &[
     ("new_tab", "Новая вкладка", "Ctrl+T"),
+    ("new_window", "Новое окно", "Ctrl+N"),
     ("close_tab", "Закрыть вкладку", "Ctrl+W|Ctrl+F4"),
     ("reopen_tab", "Вернуть закрытую вкладку", "Ctrl+Shift+T"),
     ("next_tab", "Следующая вкладка", "Ctrl+Tab|Ctrl+PageDown"),
@@ -67,6 +68,16 @@ impl Default for Shortcuts {
     }
 }
 impl Shortcuts {
+    pub fn add_window_shortcut(&mut self) {
+        let key = "Ctrl+N";
+        let entry = if self.action(key).is_none() {
+            vec![key.into()]
+        } else {
+            Vec::new()
+        };
+        self.0.entry("new_window".into()).or_insert(entry);
+    }
+
     pub fn validate(&self) -> bool {
         if self.0.len() != ACTIONS.len() {
             return false;
