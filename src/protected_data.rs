@@ -19,6 +19,10 @@ pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
         Ok(bytes.to_vec())
     }
 }
+pub(crate) fn is_current_format(bytes: &[u8]) -> bool {
+    !cfg!(windows) || bytes.starts_with(MAGIC)
+}
+
 pub fn open(bytes: &[u8]) -> io::Result<Vec<u8>> {
     if let Some(payload) = bytes.strip_prefix(MAGIC) {
         #[cfg(windows)]

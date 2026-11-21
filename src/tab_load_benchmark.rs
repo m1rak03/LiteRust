@@ -36,8 +36,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Benchmark requires an isolated fixture".into());
     }
     let count = std::env::var("LITERUST_BENCHMARK_TABS")?.parse::<usize>()?;
-    if !(1..=32).contains(&count) {
-        return Err("Benchmark supports one to 32 tabs".into());
+    if !(1..=literust_browser::storage::MAX_TABS).contains(&count) {
+        return Err(format!(
+            "Benchmark supports 1 to {} tabs",
+            literust_browser::storage::MAX_TABS
+        )
+        .into());
     }
     let mut events = EventLoopBuilder::<WindowMessage>::with_user_event().build();
     let options = WindowOptions {

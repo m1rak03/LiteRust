@@ -8,6 +8,8 @@ use literust_browser::{
     tab_resources, vpn, window_session, workspaces,
 };
 mod browser_resources;
+mod startup_trace;
+use startup_trace::Phase as StartupPhase;
 #[cfg(windows)]
 mod session_self_test;
 #[cfg(windows)]
@@ -325,6 +327,7 @@ impl std::fmt::Debug for UiCommand {
 }
 #[derive(Debug)]
 enum AppEvent {
+    InitializePages,
     InternalCommand {
         tab_id: u64,
         generation: u64,
@@ -605,6 +608,8 @@ struct Browser {
     close_requested: bool,
     appearance_open: bool,
     account_prompt_checked: bool,
+    initial_page_pending: bool,
+    first_document: Option<(u64, u64)>,
     ready: bool,
 }
 
@@ -699,6 +704,8 @@ impl Browser {
             close_requested: false,
             appearance_open: false,
             account_prompt_checked: false,
+            initial_page_pending: true,
+            first_document: None,
             ready: false,
         }
     }
@@ -2831,6 +2838,9 @@ impl Browser {
                 }
             }
             UiCommand::Ready => {
+                if self.ready {
+                    return;
+                }
                 self.sync_icons();
                 if !self.app_icon_applied && self.data.custom_icons.contains_key("app") {
                     self.app_icon_applied = true;
@@ -2855,23 +2865,16 @@ impl Browser {
                     }
                 }
                 self.ready = true;
-                if self.data.split.is_some() && self.window.is_focused() && !self.appearance_open {
-                    if let Some(page) = self.pages.get(&self.active_id()) {
-                        let _ = page.view.focus();
-                    }
-                }
                 startup_log("Toolbar JavaScript ready");
                 self.window.set_visible(true);
                 let _ = self.toolbar.set_visible(true);
                 let _ = self.dock.set_visible(true);
                 self.resize();
-                if self.appearance_open {
-                    let _ = self.toolbar.focus();
-                } else if let Some(page) = self.pages.get(&self.active_id()) {
-                    let _ = page.view.focus();
-                }
+                let _ = self.toolbar.focus();
                 self.window.request_redraw();
                 self.sync_toolbar();
+                startup_trace::phase(StartupPhase::InterfaceVisible);
+                let _ = self.proxy.send_event(AppEvent::InitializePages);
             }
             UiCommand::Navigate { value } => self.navigate(&value),
             UiCommand::Back => {
@@ -3406,6 +3409,10 @@ impl Browser {
         }
         let mut discarded = false;
         if !loading {
+            if self.first_document == Some((tab_id, generation)) && !url.is_empty() {
+                startup_trace::phase(StartupPhase::FirstDocumentLoaded);
+                self.first_document = None;
+            }
             if valid_web_url(&url) {
                 let position = self
                     .tab_for_page_mut(tab_id)
@@ -3721,7 +3728,6 @@ fn profile_root() -> PathBuf {
         .expect("validated local profile id")
 }
 
-static STARTUP_LOG: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 fn unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -3729,15 +3735,11 @@ fn unix_seconds() -> u64 {
 }
 
 fn startup_log(message: &str) {
-    let Some(file) = STARTUP_LOG.get() else {
-        return;
-    };
-    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(file) {
-        let _ = writeln!(file, "{message}");
-    }
+    startup_trace::note(message);
 }
 
 fn main() {
+    startup_trace::enter();
     #[cfg(windows)]
     {
         let args: Vec<String> = std::env::args().collect();
@@ -3794,7 +3796,7 @@ fn main() {
     }
 
     if let Err(error) = run() {
-        startup_log(&format!("Startup failed: {error}"));
+        startup_log("Startup failed");
         #[cfg(windows)]
         unsafe {
             use windows::{
@@ -3878,12 +3880,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             "startup.log"
         });
-        let _ = fs::write(
-            &file,
-            concat!("LiteRust ", env!("CARGO_PKG_VERSION"), " startup\n"),
-        );
-        let _ = STARTUP_LOG.set(file);
+        startup_trace::open(&file);
     }
+    startup_trace::phase(StartupPhase::ProfilesOpened);
     // Fail before creating any native window: an absent runtime must not leave
     // a blank window while WebView construction is attempted.
     #[cfg(windows)]
@@ -3899,6 +3898,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         startup_log(&format!("WebView2 Runtime available: {version}"));
     }
+    startup_trace::phase(StartupPhase::RuntimeChecked);
     startup_log("Creating event loop and window");
     let event_loop = EventLoopBuilder::<WindowMessage>::with_user_event().build();
     let (mut data, data_file) = if private_mode {
@@ -3912,11 +3912,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let root = profile_root();
         fs::create_dir_all(&root)?;
         let file = root.join("browser-data.json");
-        let mut data = BrowserData::recover(&file)?;
-        data.apply_startup(restarting);
-        data.save(&file)?; // migrate plaintext metadata before opening site views
-        (data, Some(file))
+        (
+            BrowserData::load_for_startup(&file, restarting)?,
+            Some(file),
+        )
     };
+    startup_trace::phase(StartupPhase::SettingsLoaded);
     #[cfg(windows)]
     let mut vpn_vault = literust_browser::vpn_platform::load(&profile_root())?;
     #[cfg(windows)]
@@ -4134,7 +4135,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Restore children after the preceding shell has processed its own Ready
         // event. WebView2 pumps native messages while creating a controller.
         if !restore_failed && !pending_sessions.is_empty()
-            && windows.iter().all(|browser| browser.ready && !browser.close_requested)
+            && windows.iter().all(|browser| browser.ready && !browser.initial_page_pending && !browser.close_requested)
         {
             let source = &windows[0];
             let session = pending_sessions.front().expect("pending session").clone();
@@ -4153,7 +4154,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        if let Some(index) = windows.iter().position(|browser| browser.new_window_requested) {
+        if let Some(index) = windows.iter().position(|browser| browser.new_window_requested && !browser.initial_page_pending) {
             windows[index].new_window_requested = false;
             if windows.len() + pending_sessions.len() < window_session::MAX_WINDOWS {
                 let source = &windows[index];
@@ -4303,6 +4304,7 @@ fn create_browser(
             .with_maximized(place.maximized);
     }
     let window = builder.build(target)?;
+    startup_trace::phase(StartupPhase::WindowCreated);
     let proxy = BrowserProxy {
         window: window.id(),
         event_loop: event_loop.clone(),
@@ -4376,6 +4378,7 @@ fn create_browser(
         })
         .build_as_child(&window)?;
 
+    startup_trace::phase(StartupPhase::ToolbarCreated);
     let dock_proxy = proxy.clone();
     let dock_builder = if private_mode {
         WebViewBuilder::new()
@@ -4484,14 +4487,26 @@ fn create_browser(
     browser.vpn_running = options.vpn_running;
     browser.system_vpn_active = options.system_vpn_active;
     browser.resize();
-    startup_log("Toolbar WebView created; creating active page");
-    browser.show_active();
+    startup_trace::phase(StartupPhase::InterfaceCreated);
+    startup_log("Browser interface WebViews created");
 
     Ok(browser)
 }
 
 fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
     match event {
+        AppEvent::InitializePages => {
+            if std::mem::take(&mut browser.initial_page_pending) {
+                if browser.pages.is_empty() {
+                    browser.show_active();
+                }
+                let id = browser.active_id();
+                if let Some(page) = browser.pages.get(&id) {
+                    startup_trace::phase(StartupPhase::PageControllerReady);
+                    browser.first_document = Some((id, page.generation));
+                }
+            }
+        }
         AppEvent::Ui(cmd) => browser.handle(cmd),
         AppEvent::ProfilesScanned { revision, result } => {
             browser.on_profiles_scanned(revision, result)

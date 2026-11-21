@@ -584,6 +584,14 @@ impl Default for ProfileData {
     }
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum SnapshotSource {
+    Current,
+    Legacy,
+    Backup,
+    Missing,
+}
+
 impl BrowserData {
     pub fn active_workspace(&self) -> Option<&crate::workspaces::Workspace> {
         self.workspace
@@ -673,40 +681,66 @@ impl BrowserData {
         self.split = None;
     }
 
-    fn read_data(path: &Path) -> io::Result<Self> {
+    fn read_data(path: &Path) -> io::Result<(Self, bool)> {
         let bytes = crate::profile::read_limited(path, MAX_BROWSER_DATA_BYTES)?;
+        let current = crate::protected_data::is_current_format(&bytes);
         serde_json::from_slice::<Self>(&crate::protected_data::open(&bytes)?)
+            .map(|data| (data, current))
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
     }
 
-    /// Fail closed if existing files cannot be recovered. Never overwrite an
-    /// unreadable profile with an empty default profile on the next UI event.
+    /// Fail closed if existing files cannot be recovered.
     pub fn load(path: &Path) -> io::Result<Self> {
         Ok(Self::load_snapshot(path)?.0)
     }
 
     /// Call with the profile lock held. Preserve a damaged primary before restoring it.
     pub fn recover(path: &Path) -> io::Result<Self> {
-        let (data, from_backup) = Self::load_snapshot(path)?;
-        if from_backup {
-            let bytes = data.protected_snapshot()?;
-            crate::profile::preserve_damaged(path)?;
-            crate::profile::atomic_write(path, &bytes)?;
+        let (data, source) = Self::load_snapshot(path)?;
+        if source == SnapshotSource::Backup {
+            data.restore_backup(path)?;
         }
         Ok(data)
     }
 
-    fn load_snapshot(path: &Path) -> io::Result<(Self, bool)> {
+    /// Keep an existing sealed session intact until an actual change is saved.
+    /// Legacy profiles and explicit startup resets are committed before browsing.
+    pub fn load_for_startup(path: &Path, resume: bool) -> io::Result<Self> {
+        let (mut data, source) = Self::load_snapshot(path)?;
+        let resets_session = !resume && data.browser_settings.startup != Startup::Restore;
+        data.apply_startup(resume);
+        if source == SnapshotSource::Backup {
+            data.restore_backup(path)?;
+        } else if source != SnapshotSource::Current || resets_session {
+            data.save(path)?;
+        }
+        Ok(data)
+    }
+
+    fn restore_backup(&self, path: &Path) -> io::Result<()> {
+        let bytes = self.protected_snapshot()?;
+        crate::profile::preserve_damaged(path)?;
+        crate::profile::atomic_write(path, &bytes)
+    }
+
+    fn load_snapshot(path: &Path) -> io::Result<(Self, SnapshotSource)> {
         let backup = path.with_extension("json.bak");
         match Self::read_data(path) {
-            Ok(data) => Ok((data.clean(), false)),
+            Ok((data, current)) => Ok((
+                data.clean(),
+                if current {
+                    SnapshotSource::Current
+                } else {
+                    SnapshotSource::Legacy
+                },
+            )),
             Err(primary_error) => match Self::read_data(&backup) {
-                Ok(data) => Ok((data.clean(), true)),
+                Ok((data, _)) => Ok((data.clean(), SnapshotSource::Backup)),
                 Err(backup_error)
                     if primary_error.kind() == io::ErrorKind::NotFound
                         && backup_error.kind() == io::ErrorKind::NotFound =>
                 {
-                    Ok((Self::default().clean(), false))
+                    Ok((Self::default().clean(), SnapshotSource::Missing))
                 }
                 Err(_) => Err(primary_error),
             },
@@ -834,7 +868,7 @@ impl BrowserData {
             .and_then(|modified| modified.elapsed().ok())
             .is_none_or(|elapsed| elapsed >= std::time::Duration::from_secs(120));
         if should_refresh_backup {
-            if let Ok(previous) = Self::read_data(path) {
+            if let Ok((previous, _)) = Self::read_data(path) {
                 crate::profile::atomic_write(&backup, &previous.protected_snapshot()?)?;
             }
         }
@@ -1240,6 +1274,30 @@ mod tests {
         assert!(html.contains("ADD_DATE=\"123\""));
         assert!(!html.contains("javascript:"));
     }
+    #[cfg(windows)]
+    #[test]
+    fn startup_seals_legacy_state_once_and_keeps_a_current_snapshot() {
+        let root =
+            std::env::temp_dir().join(format!("literust-startup-{}-{}", std::process::id(), now()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("browser-data.json");
+        fs::write(
+            &path,
+            br#"{"tabs":[{"id":7,"url":"https://example.org/","title":"Fixture"}]}"#,
+        )
+        .unwrap();
+        let migrated = BrowserData::load_for_startup(&path, false).unwrap();
+        assert_eq!(migrated.tabs[0].id, 7);
+        let sealed = fs::read(&path).unwrap();
+        assert!(crate::protected_data::is_current_format(&sealed));
+        let current = BrowserData::load_for_startup(&path, false).unwrap();
+        assert_eq!(current.tabs[0].url, "https://example.org/");
+        assert_eq!(fs::read(&path).unwrap(), sealed);
+        fs::remove_file(path.with_extension("json.bak")).unwrap();
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
+
     #[test]
     fn browser_state_recovers_from_corrupted_json() {
         let tmpdir = std::env::temp_dir().join(format!(
