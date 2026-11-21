@@ -17,6 +17,21 @@ use windows::{
 };
 use wry::{WebView, WebViewExtWindows};
 
+pub fn watch_audio(
+    view: &WebView,
+    proxy: super::BrowserProxy,
+    tab_id: u64,
+    generation: u64,
+) -> windows::core::Result<()> {
+    let core: ICoreWebView2_8 = view.webview().cast()?;
+    let callback =
+        webview2_com::IsDocumentPlayingAudioChangedEventHandler::create(Box::new(move |_, _| {
+            let _ = proxy.send_event(super::AppEvent::PageAudioChanged { tab_id, generation });
+            Ok(())
+        }));
+    unsafe { core.add_IsDocumentPlayingAudioChanged(&callback, &mut 0) }
+}
+
 #[derive(Debug, Default, Serialize)]
 pub struct Sample {
     pub process_count: Option<usize>,

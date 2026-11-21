@@ -304,6 +304,13 @@ body.split-active{--page-start:172px}
   <option value="performance">Производительный</option>
 </select>
 <p id="resource-mode-description"></p>
+<label for="background-policy">Фоновая активность</label>
+<select id="background-policy">
+  <option value="off">Стандартное поведение WebView2</option>
+  <option value="browser_pages">Только страницы LiteRust</option>
+  <option value="idle_sites">Страницы LiteRust и неактивные сайты</option>
+</select>
+<p id="background-policy-description"></p>
 <p id="settings-performance-state" role="status"></p>
 <button data-menu="discard-background">Освободить память</button>
 <button id="resource-refresh">Измерить ресурсы</button>
@@ -1155,7 +1162,6 @@ window.openPanel=name=>{
   if(typeof cancelShortcutRecording==='function')cancelShortcutRecording();
   for(const id of ['appearance','settings','vpn','accounts','tools','print','bookmarks-manager','downloads-manager','workspaces'])document.getElementById(id).hidden=id!==name;
   menu.classList.remove('open');send('appearance_panel',['settings','bookmarks-manager','downloads-manager','workspaces','tools'].includes(name)?{open:true,name}:{open:Boolean(name)});
-  if(name!=='downloads-manager')clearTimeout(downloadPoll);
   if(name==='tools'){renderToolsTabs();renderToolPreferences();renderNotes();}
   else resetTranslation();
   if(name==='workspaces')renderWorkspaces(workspaceFor(state.current_workspace));
@@ -1365,7 +1371,6 @@ const downloadLabels={
   cancelled:'Отменено',interrupted:'Прервано'
 };
 let recentDownloads=[];
-let downloadPoll;
 const bookmarkSearch=document.getElementById('bookmarks-search');
 const folderFilter=document.getElementById('bookmark-folder-filter');
 const folderName=document.getElementById('bookmark-folder-name');
@@ -1450,10 +1455,8 @@ function renderDownloadList(){
 }
 window.downloadManagerUpdate=items=>{
   if(panelName!=='downloads-manager')return;
-  clearTimeout(downloadPoll);recentDownloads=items;renderDownloadList();
-  if(items.some(item=>item.progress.can_pause)){
-    downloadPoll=setTimeout(()=>{if(panelName==='downloads-manager')send('download_refresh');},400);
-  }
+  recentDownloads=items;
+  renderDownloadList();
 };
 downloadSearch.oninput=renderDownloadList;
 downloadFilter.onchange=renderDownloadList;
@@ -1588,6 +1591,14 @@ const resourceDescriptions={
   performance:'Браузер сохраняет вкладки загруженными и отключает подсказку экономии памяти.'
 };
 resourceMode.onchange=()=>send('set_resource_mode',{mode:resourceMode.value});
+const backgroundPolicy=document.getElementById('background-policy');
+const backgroundDescription=document.getElementById('background-policy-description');
+const backgroundDescriptions={
+  off:'LiteRust оставляет стандартное поведение фоновых страниц.',
+  browser_pages:'Подсказка экономии памяти действует только для фоновых страниц LiteRust.',
+  idle_sites:'Через минуту LiteRust проверяет, можно ли применить подсказку к неактивному сайту.'
+};
+backgroundPolicy.onchange=()=>send('set_background_policy',{policy:backgroundPolicy.value});
 const resourceMetrics=document.getElementById('resource-metrics');
 const resourceRefresh=document.getElementById('resource-refresh');
 resourceRefresh.onclick=()=>{resourceRefresh.disabled=true;send('sample_resources');};
@@ -1612,6 +1623,10 @@ function updateHub(){
   const mode=state.resource_mode||(state.auto_discard?'automatic':'manual');
   resourceMode.value=mode;
   resourceModeDescription.textContent=resourceDescriptions[mode]||'';
+  const policy=state.background_policy||'browser_pages';
+  backgroundPolicy.value=policy;
+  backgroundPolicy.disabled=mode==='performance';
+  backgroundDescription.textContent=backgroundDescriptions[mode==='performance'?'off':policy]||'';
   document.getElementById('settings-performance-state').textContent='Живых вкладок: '+(state.live_ids?.length||0)+' · Автовыгрузка: '+(state.auto_discard?'включена':'выключена');
   document.getElementById('tools-memory-summary').textContent='Живых вкладок: '+(state.live_ids?.length||0)+'. При возврате на выгруженную вкладку страница загрузится заново.';
   if(!document.getElementById('tools').hidden)renderToolsTabs();

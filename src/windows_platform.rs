@@ -9,15 +9,18 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 use webview2_com::{
-    take_pwstr, DownloadStartingEventHandler, Microsoft::Web::WebView2::Win32::*,
-    StateChangedEventHandler,
+    take_pwstr, BytesReceivedChangedEventHandler, DownloadStartingEventHandler,
+    Microsoft::Web::WebView2::Win32::*, StateChangedEventHandler,
 };
 use windows::core::{Interface, PWSTR};
 use wry::WebViewExtWindows;
 static NEXT_DOWNLOAD: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Default)]
-pub struct Downloads(Rc<RefCell<HashMap<u64, ICoreWebView2DownloadOperation>>>);
+pub struct Downloads {
+    operations: Rc<RefCell<HashMap<u64, ICoreWebView2DownloadOperation>>>,
+    last_progress: Rc<Cell<Option<std::time::Instant>>>,
+}
 
 impl Downloads {
     pub fn reserve_ids(count: usize) {
@@ -25,11 +28,11 @@ impl Downloads {
     }
 
     fn operation(&self, id: u64) -> Option<ICoreWebView2DownloadOperation> {
-        self.0.borrow().get(&id).cloned()
+        self.operations.borrow().get(&id).cloned()
     }
 
     pub fn contains(&self, id: u64) -> bool {
-        self.0.borrow().contains_key(&id)
+        self.operations.borrow().contains_key(&id)
     }
 
     pub fn progress(&self, id: u64) -> Option<DownloadProgress> {
@@ -142,7 +145,8 @@ pub fn configure(
     install_shortcuts(view, proxy.clone(), shortcuts)?;
     let active = Rc::new(Cell::new(0usize));
     let pending = active.clone();
-    let registry = Rc::downgrade(&downloads.0);
+    let registry = Rc::downgrade(&downloads.operations);
+    let progress_clock = downloads.last_progress.clone();
     // Fail view creation if these settings cannot be applied. Google's vault is
     // not replaced by WebView2's separate local password/autofill store.
     unsafe {
@@ -180,18 +184,39 @@ pub fn configure(
                 let mut path = PWSTR::null();
                 args.ResultFilePath(&mut path)?;
                 let file = take_pwstr(path);
+                let progress_events = proxy.clone();
+                let last_progress = progress_clock.clone();
+                let mut progress_token = 0;
+                let progress_registered = operation
+                    .add_BytesReceivedChanged(
+                        &BytesReceivedChangedEventHandler::create(Box::new(move |_, _| {
+                            let now = std::time::Instant::now();
+                            if last_progress.get().is_none_or(|previous| {
+                                now - previous >= std::time::Duration::from_millis(350)
+                            }) {
+                                last_progress.set(Some(now));
+                                let _ = progress_events.send_event(AppEvent::DownloadBytesChanged);
+                            }
+                            Ok(())
+                        })),
+                        &mut progress_token,
+                    )
+                    .is_ok();
                 let events = proxy.clone();
                 let count = pending.clone();
                 let weak = registry.clone();
                 let token = Rc::new(Cell::new(0));
                 let callback_token = token.clone();
                 let mut registration = 0;
-                operation.add_StateChanged(
+                let state_registered = operation.add_StateChanged(
                     &StateChangedEventHandler::create(Box::new(move |op, _| {
                         let Some(op) = op else { return Ok(()) };
                         let (status, progress) = observation(&op)?;
                         if !progress.can_cancel {
                             let _ = op.remove_StateChanged(callback_token.get());
+                            if progress_registered {
+                                let _ = op.remove_BytesReceivedChanged(progress_token);
+                            }
                             if let Some(operations) = weak.upgrade() {
                                 if operations.borrow_mut().remove(&id).is_some() {
                                     count.set(count.get().saturating_sub(1));
@@ -210,7 +235,13 @@ pub fn configure(
                         Ok(())
                     })),
                     &mut registration,
-                )?;
+                );
+                if let Err(error) = state_registered {
+                    if progress_registered {
+                        let _ = operation.remove_BytesReceivedChanged(progress_token);
+                    }
+                    return Err(error);
+                }
                 token.set(registration);
                 operations.borrow_mut().insert(id, operation);
                 pending.set(pending.get() + 1);

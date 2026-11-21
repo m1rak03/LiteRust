@@ -857,3 +857,11 @@ CPU процессов WebView2	WebView2 process CPU
 При изменении цели некоторые фоновые вкладки могут выгрузиться. Продолжить?	Changing the target can release some background tabs. Continue?
 . При возврате на выгруженную вкладку страница загрузится заново.	. Released pages reload when you return.
 Выгрузить подходящие фоновые вкладки? При возврате сайты загрузятся заново.	Release eligible background tabs? Pages reload when you return.
+
+Фоновая активность	Background activity
+Стандартное поведение WebView2	Standard WebView2 behavior
+Только страницы LiteRust	LiteRust pages only
+Страницы LiteRust и неактивные сайты	LiteRust pages and idle sites
+LiteRust оставляет стандартное поведение фоновых страниц.	LiteRust uses the standard behavior for background pages.
+Подсказка экономии памяти действует только для фоновых страниц LiteRust.	The memory-saving hint applies only to background LiteRust pages.
+Через минуту LiteRust проверяет, можно ли применить подсказку к неактивному сайту.	After a minute, LiteRust checks whether it can apply the memory-saving hint to an idle site.

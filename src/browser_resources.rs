@@ -1,7 +1,7 @@
 use super::{AppEvent, Browser, LivePage, Tab};
 use literust_browser::{
     tab_groups::TabGroups,
-    tab_resources::{self, Mode, TabCounts},
+    tab_resources::{self, BackgroundPolicy, Mode, TabCounts},
 };
 use std::{
     collections::HashSet,
@@ -14,13 +14,23 @@ use wry::WebViewExtWindows;
 pub(super) struct Controller {
     checked: HashSet<u64>,
     pending: Option<Probe>,
+    #[cfg(windows)]
+    background_due: Option<Instant>,
     next_probe: u64,
     manual_released: Option<usize>,
     #[cfg(windows)]
     sampling: bool,
 }
 
+#[derive(Clone, Copy)]
+enum ProbeKind {
+    Release,
+    #[cfg(windows)]
+    MemoryHint,
+}
+
 struct Probe {
+    kind: ProbeKind,
     request: u64,
     tab: u64,
     generation: u64,
@@ -34,21 +44,11 @@ impl Browser {
     }
 
     pub(super) fn set_resource_mode(&mut self, mode: Mode) {
-        #[cfg(windows)]
-        if (mode == Mode::Performance) != (self.resource_mode() == Mode::Performance) {
-            for page in self.pages.values().filter(|page| !page.foreground) {
-                let hint = if mode == Mode::Performance {
-                    wry::MemoryUsageLevel::Normal
-                } else {
-                    wry::MemoryUsageLevel::Low
-                };
-                let _ = page.view.set_memory_usage_level(hint);
-            }
-        }
         self.data.resource_mode = Some(mode);
         self.data.auto_discard = matches!(mode, Mode::Automatic | Mode::Saver);
         self.refresh_release_candidates();
         self.enforce_page_budget();
+        self.update_background_hints(Instant::now());
         self.persist();
         self.sync_toolbar();
     }
@@ -149,7 +149,7 @@ impl Browser {
                     self.eligible(id, page).map(|external| (id, page, external))
                 })
                 .min_by_key(|(id, page, _)| (page.last_used, *id));
-            let Some((id, page, external)) = candidate else {
+            let Some((id, _page, external)) = candidate else {
                 self.finish_manual_release();
                 break;
             };
@@ -158,28 +158,36 @@ impl Browser {
                 continue;
             }
             self.resources.checked.insert(id);
-            self.resources.next_probe = self.resources.next_probe.wrapping_add(1);
-            let request = self.resources.next_probe;
-            let pending = Probe {
-                request,
-                tab: id,
-                generation: page.generation,
-                navigation: page.navigation_serial,
-                deadline: Instant::now() + Duration::from_secs(2),
-            };
-            let proxy = self.proxy.clone();
-            if page.view.evaluate_script_with_callback(
-                "typeof window.__liteRustReleasePosition === 'function' ? window.__liteRustReleasePosition() : null",
-                move |json| {
-                    let _ = proxy.send_event(AppEvent::ReleaseAssessed {
-                        request, position: tab_resources::release_position(&json),
-                    });
-                },
-            ).is_ok() {
-                self.resources.pending = Some(pending);
-            }
+            self.assess_document(id, ProbeKind::Release);
         }
         self.pages.len() != before
+    }
+
+    fn assess_document(&mut self, id: u64, kind: ProbeKind) {
+        let Some(page) = self.pages.get(&id) else {
+            return;
+        };
+        self.resources.next_probe = self.resources.next_probe.wrapping_add(1);
+        let request = self.resources.next_probe;
+        let pending = Probe {
+            kind,
+            request,
+            tab: id,
+            generation: page.generation,
+            navigation: page.navigation_serial,
+            deadline: Instant::now() + Duration::from_secs(2),
+        };
+        let proxy = self.proxy.clone();
+        if page.view.evaluate_script_with_callback(
+        "typeof window.__liteRustReleasePosition === 'function' ? window.__liteRustReleasePosition() : null",
+        move |json| {
+            let _ = proxy.send_event(AppEvent::ReleaseAssessed {
+                request, position: tab_resources::release_position(&json),
+            });
+        },
+    ).is_ok() {
+        self.resources.pending = Some(pending);
+    }
     }
 
     pub(super) fn apply_release_result(&mut self, request: u64, position: Option<[i32; 2]>) {
@@ -191,34 +199,151 @@ impl Browser {
             return;
         };
         let safe = position.is_some()
-            && self.needs_release()
             && self.pages.get(&pending.tab).is_some_and(|page| {
                 page.generation == pending.generation
                     && page.navigation_serial == pending.navigation
                     && self.eligible(pending.tab, page) == Some(true)
             });
-        if safe {
-            self.release_page(pending.tab, position);
-            self.persist();
+        let mut released = false;
+        match pending.kind {
+            ProbeKind::Release if safe && self.needs_release() => {
+                self.release_page(pending.tab, position);
+                self.persist();
+                released = true;
+            }
+            ProbeKind::Release => {}
+            #[cfg(windows)]
+            ProbeKind::MemoryHint if safe => {
+                if let Some(page) = self.pages.get_mut(&pending.tab) {
+                    page.idle_hint_approved = Some(true);
+                }
+            }
+            #[cfg(windows)]
+            ProbeKind::MemoryHint => {}
         }
-        if self.enforce_page_budget() || safe {
+        if self.enforce_page_budget() || released {
             self.sync_toolbar();
         }
+        self.update_background_hints(Instant::now());
+    }
+
+    pub(super) fn set_background_policy(&mut self, policy: BackgroundPolicy) {
+        self.data.background_policy = policy;
+        self.background_policy_changed();
+        self.persist();
+        self.sync_toolbar();
+    }
+
+    pub(super) fn background_policy_changed(&mut self) {
+        #[cfg(windows)]
+        for page in self.pages.values_mut() {
+            page.idle_hint_approved = None;
+        }
+        self.update_background_hints(Instant::now());
+    }
+
+    // WebView2's memory hint keeps scripts and network connections running. Control
+    // expensive assessment here instead of driving it from a repeating UI timer.
+    pub(super) fn update_background_hints(&mut self, now: Instant) {
+        #[cfg(windows)]
+        {
+            let policy = self.data.background_policy.for_mode(self.resource_mode());
+            let quiet_time = Duration::from_secs(60);
+            let mut deadline = None;
+            let mut candidate = None;
+            let mut changes = Vec::new();
+            for (&id, page) in &self.pages {
+                let mut use_low = false;
+                if policy != BackgroundPolicy::Off
+                    && !page.foreground
+                    && !page.loading
+                    && !page.busy()
+                {
+                    match self.pinned_and_external(id, page) {
+                        Some((false, false)) => use_low = true,
+                        Some((false, true))
+                            if policy == BackgroundPolicy::IdleSites
+                                && self.eligible(id, page) == Some(true) =>
+                        {
+                            if let Some(approved) = page.idle_hint_approved {
+                                use_low = approved;
+                            } else if self.resources.pending.is_none() {
+                                let due = page.last_visible + quiet_time;
+                                if due <= now {
+                                    let rank = (page.last_used, id);
+                                    if candidate.is_none_or(|(current, _)| rank < current) {
+                                        candidate = Some((rank, id));
+                                    }
+                                } else {
+                                    deadline = Some(
+                                        deadline.map_or(due, |earliest: Instant| earliest.min(due)),
+                                    );
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if use_low != page.memory_hint_low {
+                    changes.push((id, use_low));
+                }
+            }
+            for (id, low) in changes {
+                if let Some(page) = self.pages.get_mut(&id) {
+                    page.memory_hint_low = low;
+                    let hint = if low {
+                        wry::MemoryUsageLevel::Low
+                    } else {
+                        wry::MemoryUsageLevel::Normal
+                    };
+                    let _ = page.view.set_memory_usage_level(hint);
+                }
+            }
+            if let Some((_, id)) = candidate {
+                // Failed or inconclusive replies leave the standard policy in place.
+                self.pages
+                    .get_mut(&id)
+                    .expect("selected live tab")
+                    .idle_hint_approved = Some(false);
+                self.assess_document(id, ProbeKind::MemoryHint);
+                if self.resources.pending.is_none() {
+                    deadline = Some(now + Duration::from_millis(50));
+                }
+            }
+            self.resources.background_due = deadline;
+        }
+        #[cfg(not(windows))]
+        let _ = now;
     }
 
     pub(super) fn release_deadline(&self) -> Option<Instant> {
-        self.resources.pending.as_ref().map(|probe| probe.deadline)
+        let pending = self.resources.pending.as_ref().map(|probe| probe.deadline);
+        #[cfg(windows)]
+        let pending = pending.or(self.resources.background_due);
+        pending
     }
 
     pub(super) fn poll_release(&mut self, now: Instant) {
-        if self
-            .release_deadline()
-            .is_some_and(|deadline| deadline <= now)
-        {
+        let expired = self
+            .resources
+            .pending
+            .as_ref()
+            .is_some_and(|probe| probe.deadline <= now);
+        if expired {
             self.resources.pending = None;
             if self.enforce_page_budget() {
                 self.sync_toolbar();
             }
+        }
+        #[cfg(windows)]
+        if expired
+            || (self.resources.pending.is_none()
+                && self
+                    .resources
+                    .background_due
+                    .is_some_and(|deadline| deadline <= now))
+        {
+            self.update_background_hints(now);
         }
     }
 

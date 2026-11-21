@@ -25,6 +25,13 @@ async function run() {
       window.downloadManagerUpdate(entries);
     });
     const entry = page.locator('[data-download-id="1"]');
+    await page.waitForTimeout(500);
+    assert.equal(await page.evaluate(() => sent.some(message => message.action === 'download_refresh')), false);
+    await page.evaluate(() => {
+      entries[0].progress.received = 80;
+      window.downloadManagerUpdate(entries);
+    });
+    assert.equal(await entry.locator('progress').getAttribute('value'), '80');
     await entry.getByRole('button', { name: 'Пауза' }).click();
     assert.deepEqual(await page.evaluate(() => sent.find(m => m.action === 'download_control')),
       { action: 'download_control', id: 1, operation: 'pause' });

@@ -42,6 +42,7 @@ async function run() {
         assert.match(report, /PASS: workspace switching retained the original WebViews/);
         assert.match(report, /PASS: note editing and page links, native selection capture, and native Save As HTML/);
         assert.match(report, /PASS: process metrics, edited and pinned tab protection, manual release and scroll restoration/);
+        assert.match(report, /PASS: real WebView2 background policy, protected tabs and continued page scripts/);
         console.log(phase + '\n' + report.trimEnd());
       } finally {
         clearTimeout(timeout);

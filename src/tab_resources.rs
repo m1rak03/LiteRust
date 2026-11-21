@@ -31,6 +31,26 @@ impl Mode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundPolicy {
+    Off,
+    IdleSites,
+    #[default]
+    #[serde(other)]
+    BrowserPages,
+}
+
+impl BackgroundPolicy {
+    pub fn for_mode(self, mode: Mode) -> Self {
+        if mode == Mode::Performance {
+            Self::Off
+        } else {
+            self
+        }
+    }
+}
+
 /// Script results contain only coordinates. Unknown, incomplete and modified
 /// documents do not return a coordinate pair.
 pub fn release_position(json: &str) -> Option<[i32; 2]> {

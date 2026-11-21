@@ -21,7 +21,7 @@ Find a tab, bookmark, quick link, or visited page in the address bar. Type “>�
 
 Use Tools to keep notes, customize shortcuts, open selected text in Google Translate, or save the current page through WebView2. [Browser tools and notes](docs/releases/0.17.0-alpha.5.md)
 
-In Settings → Performance, choose how to manage tab memory or measure WebView2 resource use. [Tab resources](docs/releases/0.18.0-alpha.1.md)
+In Settings → Performance, choose how to manage tab memory or measure WebView2 resource use. [Tab resources](docs/releases/0.18.0-alpha.1.md) · [Background activity](docs/releases/0.18.0-alpha.2.md)
 
 - **Tab groups.** Right-click a tab to create a group, or Ctrl-click several tabs first to group the selection. Click a group header to collapse it. Right-click the header to edit, pin or ungroup. See the [0.17.0-alpha.1 release notes](docs/releases/0.17.0-alpha.1.md).
 - **Downloads and bookmarks.** Filter downloads, check progress and open the destination folder. WebView2 controls the availability of pause, resume and cancel. Search and sort bookmarks, and create folders to organise them. See the [0.16.0-alpha.5 release notes](docs/releases/0.16.0-alpha.5.md).

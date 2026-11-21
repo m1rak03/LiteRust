@@ -24,7 +24,7 @@ for(const action of ['open_google_passwords','new_private_window','toggle_cosmet
 }
 assert.match(main, /with_incognito\(true\)/);
 assert.match(main, /with_permission_handler\(site_permission_policy\)/);
-assert.match(main, /MemoryUsageLevel::Low/);
+assert.match(main, /update_background_hints/);
 assert.match(main, /network_block::apply/);
 assert.match(main, /update_filter_for_live_pages/);
 assert.match(storage, /adblock_exceptions: Vec<String>/);
@@ -41,6 +41,8 @@ assert.match(block, /Network\.enable/);
 assert.match(sec, /url\.username\(\)\.is_empty\(\)/);
 const resources = readFileSync(new URL('../src/browser_resources.rs', import.meta.url), 'utf8');
 assert.match(resources, /self\.data\.live_tab_budget/);
+assert.match(resources, /MemoryUsageLevel::Low/);
+assert.doesNotMatch(ui, /downloadPoll/);
 assert.match(resources, /page\.navigation_serial == pending\.navigation/);
 assert.match(main, /pages: HashMap<u64, LivePage>/);
 assert.match(main, /let \(mut data, data_file\) = if private_mode/);

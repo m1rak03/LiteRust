@@ -543,6 +543,7 @@ pub struct ProfileData {
     pub live_tab_budget: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_mode: Option<crate::tab_resources::Mode>,
+    pub background_policy: crate::tab_resources::BackgroundPolicy,
     /// Retained for importing and opening profiles from earlier versions.
     pub auto_discard: bool,
 }
@@ -577,6 +578,7 @@ impl Default for ProfileData {
             adblock_exceptions: vec![],
             live_tab_budget: DEFAULT_LIVE_TAB_BUDGET,
             resource_mode: None,
+            background_policy: Default::default(),
             auto_discard: false,
         }
     }

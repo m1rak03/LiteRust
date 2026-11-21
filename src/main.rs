@@ -43,7 +43,7 @@ use wry::{
     WebView, WebViewBuilder,
 };
 #[cfg(windows)]
-use wry::{MemoryUsageLevel, WebViewBuilderExtWindows, WebViewExtWindows};
+use wry::{WebViewBuilderExtWindows, WebViewExtWindows};
 
 const TOOLBAR: &str = include_str!("../ui/toolbar.html");
 const LIBRARY: &str = include_str!("../ui/library.html");
@@ -265,7 +265,6 @@ enum UiCommand {
     ShowBookmarks,
     ShowHistory,
     ShowDownloads,
-    DownloadRefresh,
     DownloadControl {
         id: u64,
         operation: storage::DownloadAction,
@@ -314,6 +313,9 @@ enum UiCommand {
         mode: tab_resources::Mode,
     },
     SampleResources,
+    SetBackgroundPolicy {
+        policy: tab_resources::BackgroundPolicy,
+    },
 }
 
 impl std::fmt::Debug for UiCommand {
@@ -344,6 +346,11 @@ enum AppEvent {
     ReleaseAssessed {
         request: u64,
         position: Option<[i32; 2]>,
+    },
+    #[cfg(windows)]
+    PageAudioChanged {
+        tab_id: u64,
+        generation: u64,
     },
     #[cfg(windows)]
     ResourcesMeasured(webview_resources::Sample),
@@ -394,6 +401,8 @@ enum AppEvent {
         status: storage::DownloadStatus,
         progress: storage::DownloadProgress,
     },
+    #[cfg(windows)]
+    DownloadBytesChanged,
     #[cfg(windows)]
     DownloadLimit,
 }
@@ -470,6 +479,7 @@ struct ToolbarState<'a> {
     site_adblock_exception: bool,
     live_tab_budget: u8,
     resource_mode: tab_resources::Mode,
+    background_policy: tab_resources::BackgroundPolicy,
     url_warning: Option<String>,
     auto_discard: bool,
 }
@@ -507,6 +517,10 @@ struct LivePage {
     last_visible: std::time::Instant,
     generation: u64,
     navigation_serial: u64,
+    #[cfg(windows)]
+    idle_hint_approved: Option<bool>,
+    #[cfg(windows)]
+    memory_hint_low: bool,
     loading: bool,
     foreground: bool,
 }
@@ -541,6 +555,7 @@ struct Browser {
     suggestion_rows: u8,
     panel: Option<String>,
     dock_state_cache: std::cell::RefCell<String>,
+    toolbar_state_cache: std::cell::RefCell<String>,
     local_profiles: Catalog,
     profile_details: Option<ProfileDetails>,
     profile_revision: u64,
@@ -622,6 +637,7 @@ impl Browser {
             suggestion_rows: 0,
             panel: None,
             dock_state_cache: std::cell::RefCell::new(String::new()),
+            toolbar_state_cache: Default::default(),
             local_profiles,
             profile_details: None,
             profile_revision: 0,
@@ -1010,7 +1026,12 @@ impl Browser {
         if profile.shortcuts.0 != self.data.shortcuts.0 {
             self.shortcuts.borrow_mut().bindings = profile.shortcuts.clone();
         }
+        let policy_changed = self.data.background_policy != profile.background_policy;
+        let old_mode = self.resource_mode();
         self.data.profile = profile;
+        if policy_changed || old_mode != self.resource_mode() {
+            self.background_policy_changed();
+        }
         if zoom_changed {
             let zoom = f64::from(self.data.browser_settings.zoom_percent) / 100.0;
             for page in self.pages.values() {
@@ -1303,6 +1324,7 @@ impl Browser {
             site_adblock_exception: self.data.adblock_exception_for(url),
             live_tab_budget: self.data.live_tab_budget,
             resource_mode: self.resource_mode(),
+            background_policy: self.data.background_policy,
             url_warning: security::hostname_warning(url)
                 .map(|warning| literust_browser::i18n::template(warning, self.ui_language)),
             auto_discard: self.data.auto_discard,
@@ -1319,11 +1341,16 @@ impl Browser {
             {
                 *previous = dock_state;
             }
-            if let Err(err) = self
-                .toolbar
-                .evaluate_script(&format!("window.browserUpdate?.({payload});"))
-            {
-                eprintln!("Cannot update toolbar: {err}");
+            let mut previous = self.toolbar_state_cache.borrow_mut();
+            if !self.ready || *previous != payload {
+                match self
+                    .toolbar
+                    .evaluate_script(&format!("window.browserUpdate?.({payload});"))
+                {
+                    Ok(()) if self.ready => *previous = payload,
+                    Ok(()) => {}
+                    Err(error) => eprintln!("Cannot update toolbar: {error}"),
+                }
             }
         }
         self.sync_manager();
@@ -1752,6 +1779,8 @@ impl Browser {
         #[cfg(windows)]
         windows_platform::page_focus(&view, self.proxy.clone(), tab_id, generation)
             .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
+        #[cfg(windows)]
+        let _ = webview_resources::watch_audio(&view, self.proxy.clone(), tab_id, generation);
         Ok(LivePage {
             workspace: self.workspace_id(),
             allow_internal_navigation,
@@ -1764,6 +1793,10 @@ impl Browser {
             last_visible: std::time::Instant::now(),
             generation,
             navigation_serial: 0,
+            #[cfg(windows)]
+            idle_hint_approved: None,
+            #[cfg(windows)]
+            memory_hint_low: false,
             loading: false,
             foreground: false,
         })
@@ -1841,8 +1874,6 @@ impl Browser {
             }
         }
         let split = self.data.split;
-        #[cfg(windows)]
-        let prefer_speed = self.resource_mode() == tab_resources::Mode::Performance;
         let now = std::time::Instant::now();
         for (id, page) in &mut self.pages {
             let shown = *id == active || split.is_some_and(|split| split.pane(*id).is_some());
@@ -1857,11 +1888,9 @@ impl Browser {
                 page.foreground = shown;
                 let _ = page.view.set_visible(shown && !self.appearance_open);
                 #[cfg(windows)]
-                let _ = page.view.set_memory_usage_level(if shown || prefer_speed {
-                    MemoryUsageLevel::Normal
-                } else {
-                    MemoryUsageLevel::Low
-                });
+                {
+                    page.idle_hint_approved = None;
+                }
             }
         }
         self.resize();
@@ -1872,6 +1901,7 @@ impl Browser {
         }
         self.refresh_release_candidates();
         self.enforce_page_budget();
+        self.update_background_hints(now);
         self.sync_toolbar();
     }
 
@@ -2893,6 +2923,7 @@ impl Browser {
                     .tab_groups
                     .apply(&mut self.data.tabs, &mut self.data.active, operation)
                 {
+                    self.update_background_hints(std::time::Instant::now());
                     self.persist();
                     self.sync_toolbar();
                 } else {
@@ -2911,6 +2942,7 @@ impl Browser {
                     target,
                     after,
                 ) {
+                    self.update_background_hints(std::time::Instant::now());
                     self.persist();
                     self.sync_toolbar();
                 }
@@ -2998,11 +3030,6 @@ impl Browser {
             UiCommand::ShowBookmarks => self.open_manager("bookmarks-manager"),
             UiCommand::ShowHistory => self.open_library(HISTORY),
             UiCommand::ShowDownloads => self.open_manager("downloads-manager"),
-            UiCommand::DownloadRefresh => {
-                if self.panel.as_deref() == Some("downloads-manager") {
-                    self.sync_manager();
-                }
-            }
             UiCommand::DownloadControl { id, operation } => {
                 #[cfg(windows)]
                 if !self.downloads.control(id, operation) {
@@ -3180,6 +3207,7 @@ impl Browser {
             UiCommand::DiscardBackground => self.start_manual_release(),
             UiCommand::SetResourceMode { mode } => self.set_resource_mode(mode),
             UiCommand::SampleResources => self.sample_resources(),
+            UiCommand::SetBackgroundPolicy { policy } => self.set_background_policy(policy),
             UiCommand::OpenGoogleAccount => {
                 if self.private_mode {
                     self.notice_localized(
@@ -3343,6 +3371,10 @@ impl Browser {
             page.loading = loading;
             if loading {
                 page.navigation_serial = page.navigation_serial.wrapping_add(1);
+                #[cfg(windows)]
+                {
+                    page.idle_hint_approved = None;
+                }
             }
             if !loading && valid_web_url(&url) {
                 // Preserve readable default HTML on sites that do not specify a background.
@@ -3387,6 +3419,7 @@ impl Browser {
             discarded = self.enforce_page_budget();
             self.persist();
         }
+        self.update_background_hints(std::time::Instant::now());
         if self.is_visible_tab(tab_id) || discarded {
             self.sync_toolbar();
         }
@@ -3417,6 +3450,7 @@ impl Browser {
     fn on_download_start(&mut self, id: u64, url: String, file: String) {
         let source = download_source(&url);
         self.data.record_download_start(id, source, file);
+        self.update_background_hints(std::time::Instant::now());
         if self.data.downloads.len() > storage::MAX_DOWNLOADS {
             #[cfg(windows)]
             let evict = self
@@ -3442,6 +3476,7 @@ impl Browser {
     ) {
         let terminal = !progress.can_cancel;
         self.data.record_download_state(id, file, status, progress);
+        self.update_background_hints(std::time::Instant::now());
         if terminal {
             self.enforce_page_budget();
         }
@@ -3976,6 +4011,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         match event {
+            #[cfg(windows)]
+            Event::UserEvent(WindowMessage::Browser { event: AppEvent::DownloadBytesChanged, .. }) => {
+                for browser in windows.iter().filter(|browser| browser.panel.as_deref() == Some("downloads-manager")) {
+                    browser.sync_manager();
+                }
+            }
             Event::UserEvent(WindowMessage::Browser { window, event }) => {
                 if let Some(index) = windows.iter().position(|browser| browser.window.id() == window) {
                     dispatch_browser_event(&mut windows[index], event);
@@ -4615,6 +4656,23 @@ fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
             status,
             progress,
         } => browser.on_download_state(id, &file, status, progress),
+        #[cfg(windows)]
+        AppEvent::DownloadBytesChanged => {
+            if browser.panel.as_deref() == Some("downloads-manager") {
+                browser.sync_manager();
+            }
+        }
+        #[cfg(windows)]
+        AppEvent::PageAudioChanged { tab_id, generation } => {
+            if browser.matching_view(tab_id, generation) {
+                let now = std::time::Instant::now();
+                browser.update_background_hints(now);
+                browser.refresh_release_candidates();
+                if browser.enforce_page_budget() {
+                    browser.sync_toolbar();
+                }
+            }
+        }
         #[cfg(windows)]
         AppEvent::DownloadLimit => {
             browser.notice_localized("Достигнут лимит одновременных загрузок.")

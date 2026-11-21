@@ -21,6 +21,13 @@ const fs = require('node:fs');
       await selector.selectOption(mode);
       assert.deepEqual(await settings.evaluate(() => sent.at(-1)), { action: 'set_resource_mode', mode });
     }
+    await settings.locator('#background-policy').selectOption('idle_sites');
+    assert.deepEqual(await settings.evaluate(() => sent.at(-1)), { action: 'set_background_policy', policy: 'idle_sites' });
+    await settings.evaluate(() => window.browserUpdate({
+      tabs: [{ id: 1, title: 'Fixture' }], active: 0, resource_mode: 'performance',
+      background_policy: 'idle_sites', live_ids: [1],
+    }));
+    assert.equal(await settings.locator('#background-policy').isDisabled(), true);
     await settings.locator('#resource-refresh').click();
     assert.deepEqual(await settings.evaluate(() => sent.at(-1)), { action: 'sample_resources' });
     await settings.evaluate(() => window.resourcesUpdate([

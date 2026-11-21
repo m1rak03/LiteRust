@@ -184,6 +184,7 @@ pub fn downloads() -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
     let mut result = Err("Native download fixture timed out");
     let mut phase = 0;
+    let mut progress_event_seen = false;
     events.run_return(|event, _, flow| {
         *flow = ControlFlow::WaitUntil(started + Duration::from_secs(30));
         if started.elapsed() >= Duration::from_secs(30) {
@@ -205,6 +206,10 @@ pub fn downloads() -> Result<(), Box<dyn std::error::Error>> {
                 "transition: {id} {status:?} {progress:?}, reason={:?}",
                 downloads.interrupt_reason(*id)
             );
+        }
+        if matches!(event, AppEvent::DownloadBytesChanged) {
+            progress_event_seen = true;
+            return;
         }
         let next = match event {
             AppEvent::DownloadStarted { id, .. } if phase == 0 => {
@@ -270,6 +275,13 @@ pub fn downloads() -> Result<(), Box<dyn std::error::Error>> {
         phase += 1;
     });
     result?;
+    if !progress_event_seen {
+        return Err("No native download progress event reached the manager".into());
+    }
+    writeln!(
+        log,
+        "PASS: native byte progress events reach the manager without polling"
+    )?;
     writeln!(
         log,
         "PASS: native pause, resume, completion, cancellation and callback cleanup"
@@ -336,6 +348,8 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut resources_measured = false;
     let mut dirty_tab = 0;
     let mut pinned_tab = 0;
+    let mut idle_tab = 0;
+    let renderer_continued = Arc::new(AtomicI32::new(0));
     let page_position = Arc::new(AtomicI32::new(-1));
     let selection_result = Arc::new(std::sync::Mutex::new(None::<String>));
     let mut since = started;
@@ -692,6 +706,59 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                         return Err("Released tab did not restore its scroll position");
                     }
                 }
+                16 => {
+                    let internal = browser.data.tabs.iter().find(|tab| tab.url == super::NEW_TAB
+                        && browser.pages.contains_key(&tab.id)).ok_or("Missing internal resource fixture")?.id;
+                    if !test_low_hint(&browser.pages[&internal].view)
+                        || test_low_hint(&browser.pages[&dirty_tab].view)
+                        || test_low_hint(&browser.pages[&pinned_tab].view)
+                    {
+                        return Err("Default background hints reached a site or missed the browser page");
+                    }
+                    browser.handle(UiCommand::SetBackgroundPolicy { policy: literust_browser::tab_resources::BackgroundPolicy::Off });
+                    if test_low_hint(&browser.pages[&internal].view) {
+                        return Err("Disabling automatic background hints did not restore the standard target");
+                    }
+                    let _ = browser.proxy.send_event(AppEvent::Ui(UiCommand::NewTab));
+                }
+                17 if browser.active_id() != ids[0] => {
+                    idle_tab = browser.active_id();
+                    browser.handle(UiCommand::Navigate { value: urls[2].clone() });
+                }
+                18 if loaded(&browser, idle_tab, &urls[2]) => {
+                    let index = browser.data.tabs.iter().position(|tab| tab.id == ids[0]).ok_or("Visible fixture went missing")?;
+                    browser.handle(UiCommand::SelectTab { index, tab_id: Some(ids[0]) });
+                    for id in [dirty_tab, pinned_tab, idle_tab] {
+                        browser.pages.get_mut(&id).ok_or("Missing background fixture tab")?.last_visible =
+                            Instant::now() - Duration::from_secs(61);
+                    }
+                    browser.pages[&idle_tab].view.evaluate_script(
+                        "window.fixtureTicks=0;setInterval(()=>window.fixtureTicks++,100);",
+                    ).map_err(|_| "Could not prepare background script")?;
+                    browser.handle(UiCommand::SetBackgroundPolicy { policy: literust_browser::tab_resources::BackgroundPolicy::IdleSites });
+                }
+                19 if test_low_hint(&browser.pages[&idle_tab].view) && browser.release_deadline().is_none() => {
+                    if test_low_hint(&browser.pages[&dirty_tab].view)
+                        || test_low_hint(&browser.pages[&pinned_tab].view)
+                        || test_low_hint(&browser.pages[&ids[0]].view)
+                    {
+                        return Err("The optional idle hint changed an edited, pinned or visible page");
+                    }
+                    browser.pages[&idle_tab].view.evaluate_script("window.startIdleTicks=window.fixtureTicks;")
+                        .map_err(|_| "Could not mark background script progress")?;
+                }
+                20 if since.elapsed() >= Duration::from_millis(1800) => {
+                    let result = renderer_continued.clone();
+                    browser.pages[&idle_tab].view.evaluate_script_with_callback(
+                        "window.fixtureTicks > window.startIdleTicks",
+                        move |json| result.store(if json == "true" { 1 } else { -1 }, Ordering::Relaxed),
+                    ).map_err(|_| "Could not assess background script progress")?;
+                }
+                21 if renderer_continued.load(Ordering::Relaxed) != 0 => {
+                    if renderer_continued.load(Ordering::Relaxed) != 1 {
+                        return Err("The background page script stopped under the memory hint");
+                    }
+                }
                 _ => return Ok(false),
             }
             Ok(true)
@@ -701,7 +768,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = writeln!(log, "phase {stage}: true");
                 stage += 1;
                 since = Instant::now();
-                if stage == 16 {
+                if stage == 22 {
                     result = Ok(());
                     *flow = ControlFlow::Exit;
                 }
@@ -722,7 +789,26 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
         "PASS: note editing and page links, native selection capture, and native Save As HTML"
     )?;
     writeln!(log, "PASS: process metrics, edited and pinned tab protection, manual release and scroll restoration")?;
+    writeln!(
+        log,
+        "PASS: real WebView2 background policy, protected tabs and continued page scripts"
+    )?;
     Ok(())
+}
+
+fn test_low_hint(view: &wry::WebView) -> bool {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL,
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+    };
+    use windows::core::Interface;
+
+    let Ok(core) = view.webview().cast::<ICoreWebView2_19>() else {
+        return false;
+    };
+    let mut level = COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL::default();
+    unsafe { core.MemoryUsageTargetLevel(&mut level) }.is_ok()
+        && level == COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
 }
 
 fn set_fixture_save_destination(
