@@ -626,7 +626,7 @@ VPN выключен	VPN is off
 LiteRust в Windows	LiteRust app icon
 AdBlock для	AdBlock for
 Работа	Work
-Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.16-alpha.2 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.	Google Password Manager opens in your external browser. Google manages the passwords there. LiteRust and its WebView2 profile cannot read the Chrome vault or autofill passwords from your Google account.
+Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.16-alpha.3 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.	Google Password Manager opens in your external browser. Google manages the passwords there. LiteRust and its WebView2 profile cannot read the Chrome vault or autofill passwords from your Google account.
 Поиск требует обновления Microsoft WebView2 Runtime.	Update Microsoft WebView2 Runtime to use Find on page.
 Не удалось сохранить профиль. Проверьте свободное место и права доступа.	Unable to save the profile. Check disk space and permissions.
 Дождитесь завершения текущей операции.	Wait for the current operation to finish.
@@ -687,3 +687,22 @@ VPN-хаб доступен в Windows-сборке	The VPN hub is available in 
 Файл слишком большой (максимум 1,5 МБ).	File too large (maximum 1.5 MB).
 Файл пуст.	The file is empty.
 В выбранном HTML-файле не найдены закладки.	No bookmarks were found in the selected HTML file.
+Локальные профили	Local profiles
+Обновить размеры	Refresh sizes
+Удалённые профили	Deleted profiles
+Архив пуст.	The archive is empty.
+Копия настроек и вкладок	Back up settings and tabs
+Копия хранится в папке Backups текущего профиля и защищена учётной записью Windows. Данные сайтов остаются в WebView2.	The backup is saved in the current profile’s Backups folder and protected by your Windows account. Site data stays in WebView2.
+Недоступно	Unavailable
+Восстановить	Restore
+Удалить навсегда	Delete permanently
+Будут удалены сессии сайтов, cookies, локальные данные, закладки, настройки и копии в папке этого профиля. Восстановление после очистки невозможно.	This permanently deletes site sessions, cookies, local data, bookmarks, settings and backups in this profile folder.
+Подсчёт…	Calculating…
+Профиль открыт в другом окне LiteRust	The profile is open in another LiteRust window
+Каталог профилей занят. Повторите действие.	The profile catalogue is busy. Try again.
+Каталог профилей повреждён; исходный файл сохранён	The profile catalogue is damaged. The original file was preserved.
+Нельзя удалить открытый или основной профиль. Закройте нужный профиль и выберите другой.	To remove an inactive profile, close its window and switch to another profile.
+Архив профиля не найден	Profile archive not found
+Некорректный профиль	Invalid profile
+Максимум 16 профилей	Up to 16 profiles
+Имя: от 1 до 60 символов	Enter a name with 1–60 characters

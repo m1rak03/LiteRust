@@ -10,20 +10,27 @@ pub struct ProfileLock {
     _file: File,
 }
 impl ProfileLock {
-    pub fn acquire(root: &Path) -> io::Result<Self> {
-        fs::create_dir_all(root)?;
+    /// Takes ownership of an existing profile directory for maintenance.
+    pub(crate) fn lock_existing(root: &Path) -> io::Result<Self> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
             .open(root.join("profile.lock"))?;
-        file.try_lock().map_err(|_| {
-            io::Error::new(
+        file.try_lock().map_err(|error| match error {
+            fs::TryLockError::WouldBlock => io::Error::new(
                 io::ErrorKind::WouldBlock,
-                "Профиль уже используется другим экземпляром LiteRust или недоступен",
-            )
+                "Профиль открыт в другом окне LiteRust",
+            ),
+            fs::TryLockError::Error(error) => error,
         })?;
+        Ok(Self { _file: file })
+    }
+
+    pub fn acquire(root: &Path) -> io::Result<Self> {
+        fs::create_dir_all(root)?;
+        let lock = Self::lock_existing(root)?;
         // Preserve the exact pre-migration bytes, including records beyond limits.
         let original = root.join("browser-data.json");
         if original.exists() {
@@ -53,7 +60,7 @@ impl ProfileLock {
                                 "profile grew beyond limit",
                             ));
                         }
-                        atomic_write(&archive, &crate::protected_data::migrate(&bytes)?)?;
+                        atomic_write(&archive, &crate::protected_data::protect_backup(&bytes)?)?;
                         Ok(size)
                     });
                     if let Err(error) = result {
@@ -69,17 +76,46 @@ impl ProfileLock {
         for name in ["browser-data.json.bak", "browser-data.pre-v09.json"] {
             let path = root.join(name);
             if path.exists() {
-                if fs::metadata(&path)?.len() > MAX_BROWSER_DATA_BYTES {
-                    return Err(io::Error::other("Profile backup exceeds size limit"));
-                }
-                let bytes = fs::read(&path)?;
-                let protected = crate::protected_data::migrate(&bytes)?;
+                // State loading independently verifies the primary and its backup.
+                // Preserve an oversized backup for recovery without reading it at startup.
+                let Ok(bytes) = read_limited(&path, MAX_BROWSER_DATA_BYTES) else {
+                    continue;
+                };
+                let protected = crate::protected_data::protect_backup(&bytes)?;
                 if protected != bytes {
                     atomic_write(&path, &protected)?;
                 }
             }
         }
-        Ok(Self { _file: file })
+        Ok(lock)
+    }
+}
+
+pub(crate) fn read_limited(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
+    let file = File::open(path)?;
+    let mut bytes = Vec::new();
+    file.take(limit + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Profile file exceeds size limit",
+        ));
+    }
+    Ok(bytes)
+}
+
+pub(crate) fn unique_id() -> io::Result<String> {
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).map_err(|error| io::Error::other(error.to_string()))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+pub(crate) fn preserve_damaged(path: &Path) -> io::Result<()> {
+    let suffix = unique_id()?;
+    match fs::rename(path, path.with_extension(format!("corrupt-{suffix}.json"))) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 

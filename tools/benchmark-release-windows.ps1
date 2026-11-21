@@ -2,9 +2,10 @@ param([Parameter(Mandatory=$true)][string]$OldExe,[Parameter(Mandatory=$true)][s
 $ErrorActionPreference='Stop'
 $rows=[System.Collections.Generic.List[object]]::new()
 $keys=New-Object -ComObject WScript.Shell
-foreach($version in @(@('0.16.0-alpha.1',$OldExe),@('0.16.0-alpha.2',$NewExe))){
+foreach($version in @(@('0.16.0-alpha.2',$OldExe),@('0.16.0-alpha.3',$NewExe))){
  for($repeat=1;$repeat -le 3;$repeat++){
-  $log="$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/startup.log"
+  $logName=if($version[0] -eq '0.16.0-alpha.3'){'private-startup.log'}else{'startup.log'}
+  $log="$env:LOCALAPPDATA/LiteRustBrowser/diagnostics/$logName"
   Remove-Item $log -ErrorAction SilentlyContinue
   $clock=[Diagnostics.Stopwatch]::StartNew()
   $app=Start-Process $version[1] -ArgumentList '--private' -PassThru

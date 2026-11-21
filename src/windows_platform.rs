@@ -208,6 +208,21 @@ pub fn color_scheme(view: &wry::WebView, dark: bool) -> windows::core::Result<()
     }
 }
 
+pub fn verify_private(view: &wry::WebView) -> windows::core::Result<()> {
+    unsafe {
+        let core: ICoreWebView2_13 = view.webview().cast()?;
+        let mut private = windows::core::BOOL::default();
+        core.Profile()?.IsInPrivateModeEnabled(&mut private)?;
+        if !private.as_bool() {
+            return Err(windows::core::Error::new(
+                windows::core::HRESULT(0x80004005u32 as i32),
+                "WebView2 did not create an InPrivate profile",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn print_preview(view: &wry::WebView) -> windows::core::Result<()> {
     unsafe {
         let core: ICoreWebView2_16 = view.webview().cast()?;
@@ -321,4 +336,88 @@ pub fn open_certificates() -> std::io::Result<()> {
         .arg(windows_system_binary("certmgr.msc")?)
         .spawn()?;
     Ok(())
+}
+
+fn profile_window_property(root: &std::path::Path) -> windows::core::HSTRING {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mut hasher = DefaultHasher::new();
+    root.to_string_lossy().to_lowercase().hash(&mut hasher);
+    windows::core::HSTRING::from(format!("LiteRust.Profile.{:016x}", hasher.finish()))
+}
+
+pub fn register_profile_window(
+    window: &tao::window::Window,
+    root: &std::path::Path,
+) -> windows::core::Result<()> {
+    use tao::platform::windows::WindowExtWindows;
+    use windows::Win32::{
+        Foundation::{HANDLE, HWND},
+        UI::WindowsAndMessaging::SetPropW,
+    };
+
+    unsafe {
+        SetPropW(
+            HWND(window.hwnd() as _),
+            &profile_window_property(root),
+            Some(HANDLE(1 as _)),
+        )
+    }
+}
+
+/// Find the normal window on this desktop. Window markers permit focus only.
+pub fn activate_profile_window(root: &std::path::Path) -> bool {
+    use windows::{
+        core::{BOOL, HSTRING},
+        Win32::{
+            Foundation::{HWND, LPARAM},
+            UI::WindowsAndMessaging::{
+                EnumWindows, FlashWindowEx, GetPropW, IsIconic, IsWindowVisible,
+                SetForegroundWindow, ShowWindowAsync, FLASHWINFO, FLASHW_TRAY, SW_RESTORE,
+            },
+        },
+    };
+
+    struct Search {
+        property: HSTRING,
+        found: HWND,
+    }
+    unsafe extern "system" fn find(hwnd: HWND, data: LPARAM) -> BOOL {
+        let search = unsafe { &mut *(data.0 as *mut Search) };
+        if unsafe { GetPropW(hwnd, &search.property) }.is_invalid() {
+            return true.into();
+        }
+        search.found = hwnd;
+        false.into()
+    }
+
+    let mut search = Search {
+        property: profile_window_property(root),
+        found: HWND::default(),
+    };
+    // EnumWindows invokes the callback synchronously with this stack-owned state.
+    unsafe {
+        let _ = EnumWindows(Some(find), LPARAM(std::ptr::from_mut(&mut search) as isize));
+        let hwnd = search.found;
+        if hwnd.is_invalid() {
+            return false;
+        }
+        if !IsWindowVisible(hwnd).as_bool() {
+            // Startup is in progress; let Ready expose the window once painted.
+            return true;
+        }
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindowAsync(hwnd, SW_RESTORE);
+        }
+        if !SetForegroundWindow(hwnd).as_bool() {
+            let _ = FlashWindowEx(&FLASHWINFO {
+                cbSize: std::mem::size_of::<FLASHWINFO>() as u32,
+                hwnd,
+                dwFlags: FLASHW_TRAY,
+                uCount: 3,
+                dwTimeout: 0,
+            });
+        }
+        true
+    }
 }

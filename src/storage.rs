@@ -474,25 +474,7 @@ impl BrowserData {
     }
 
     fn read_data(path: &Path) -> io::Result<Self> {
-        // Profile data is untrusted local input. Refuse huge files before
-        // allocating and deserializing them.
-        if fs::metadata(path)?.len() > MAX_BROWSER_DATA_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "browser-data.json too large",
-            ));
-        }
-        use std::io::Read;
-        let mut bytes = Vec::new();
-        fs::File::open(path)?
-            .take(MAX_BROWSER_DATA_BYTES + 1)
-            .read_to_end(&mut bytes)?;
-        if bytes.len() as u64 > MAX_BROWSER_DATA_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "profile grew beyond limit",
-            ));
-        }
+        let bytes = crate::profile::read_limited(path, MAX_BROWSER_DATA_BYTES)?;
         serde_json::from_slice::<Self>(&crate::protected_data::open(&bytes)?)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
     }
@@ -500,16 +482,31 @@ impl BrowserData {
     /// Fail closed if existing files cannot be recovered. Never overwrite an
     /// unreadable profile with an empty default profile on the next UI event.
     pub fn load(path: &Path) -> io::Result<Self> {
+        Ok(Self::load_snapshot(path)?.0)
+    }
+
+    /// Call with the profile lock held. Preserve a damaged primary before restoring it.
+    pub fn recover(path: &Path) -> io::Result<Self> {
+        let (data, from_backup) = Self::load_snapshot(path)?;
+        if from_backup {
+            let bytes = data.protected_snapshot()?;
+            crate::profile::preserve_damaged(path)?;
+            crate::profile::atomic_write(path, &bytes)?;
+        }
+        Ok(data)
+    }
+
+    fn load_snapshot(path: &Path) -> io::Result<(Self, bool)> {
         let backup = path.with_extension("json.bak");
         match Self::read_data(path) {
-            Ok(data) => Ok(data.clean()),
+            Ok(data) => Ok((data.clean(), false)),
             Err(primary_error) => match Self::read_data(&backup) {
-                Ok(data) => Ok(data.clean()),
+                Ok(data) => Ok((data.clean(), true)),
                 Err(backup_error)
                     if primary_error.kind() == io::ErrorKind::NotFound
                         && backup_error.kind() == io::ErrorKind::NotFound =>
                 {
-                    Ok(Self::default().clean())
+                    Ok((Self::default().clean(), false))
                 }
                 Err(_) => Err(primary_error),
             },
@@ -614,27 +611,46 @@ impl BrowserData {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let encoded = serde_json::to_vec_pretty(self).map_err(io::Error::other)?;
-        if encoded.len() as u64 > MAX_BROWSER_DATA_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "browser state is too large",
-            ));
-        }
+        let encoded = self.protected_snapshot()?;
         let backup = path.with_extension("json.bak");
         let should_refresh_backup = fs::metadata(&backup)
             .and_then(|meta| meta.modified())
             .ok()
             .and_then(|modified| modified.elapsed().ok())
             .is_none_or(|elapsed| elapsed >= std::time::Duration::from_secs(120));
-        if should_refresh_backup && Self::read_data(path).is_ok() {
-            crate::profile::atomic_write(
-                &backup,
-                &crate::protected_data::migrate(&fs::read(path)?)?,
-            )?;
+        if should_refresh_backup {
+            if let Ok(previous) = Self::read_data(path) {
+                crate::profile::atomic_write(&backup, &previous.protected_snapshot()?)?;
+            }
         }
-        let encoded = crate::protected_data::seal(&encoded)?;
         crate::profile::atomic_write(path, &encoded)?;
+        Ok(())
+    }
+
+    fn protected_snapshot(&self) -> io::Result<Vec<u8>> {
+        let encoded = serde_json::to_vec(self).map_err(io::Error::other)?;
+        if encoded.len() as u64 > MAX_BROWSER_DATA_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "browser state is too large",
+            ));
+        }
+        crate::protected_data::seal(&encoded)
+    }
+
+    /// Create a new account-bound backup of LiteRust metadata.
+    pub fn backup_metadata(&self, path: &Path) -> io::Result<()> {
+        use std::io::Write;
+        let bytes = self.protected_snapshot()?;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+        if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
+            drop(file);
+            let _ = fs::remove_file(path);
+            return Err(error);
+        }
         Ok(())
     }
 

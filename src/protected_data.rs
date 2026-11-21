@@ -44,6 +44,16 @@ pub fn migrate(bytes: &[u8]) -> io::Result<Vec<u8>> {
         seal(bytes)
     }
 }
+
+/// Protect a historical copy without changing existing DPAPI envelopes.
+/// Live loads still authenticate the envelope with `open`.
+pub(crate) fn protect_backup(bytes: &[u8]) -> io::Result<Vec<u8>> {
+    if bytes.starts_with(MAGIC) {
+        Ok(bytes.to_vec())
+    } else {
+        seal(bytes)
+    }
+}
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;

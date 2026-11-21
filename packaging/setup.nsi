@@ -2,7 +2,7 @@
 !include "MUI2.nsh"
 !include "x64.nsh"
 Name "LiteRust"
-OutFile "LiteRust-0.16.0-alpha.2-Setup-x64.exe"
+OutFile "LiteRust-0.16.0-alpha.3-Setup-x64.exe"
 InstallDir "$LOCALAPPDATA\Programs\LiteRust"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
@@ -75,7 +75,7 @@ CreateShortcut "$SMPROGRAMS\LiteRust\LiteRust.lnk" "$INSTDIR\literust-browser.ex
 CreateShortcut "$DESKTOP\LiteRust.lnk" "$INSTDIR\literust-browser.exe" "" "$3"
 WriteUninstaller "$INSTDIR\Uninstall.exe"
 WriteRegStr HKCU "Software\LiteRust" "InstallDir" "$INSTDIR"
-WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "DisplayVersion" "0.16.0-alpha.2"
+WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "DisplayVersion" "0.16.0-alpha.3"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "DisplayName" "LiteRust"
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "UninstallString" '"$INSTDIR\Uninstall.exe"'
 WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteRust" "DisplayIcon" "$INSTDIR\literust-browser.exe"

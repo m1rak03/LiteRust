@@ -6,4 +6,20 @@ await p.locator('#local-profile-name').fill('Дом');await p.locator('#local-pr
 await p.locator('#local-profile-list').getByRole('button',{name:'<img',exact:false}).first().click();assert.equal(await p.evaluate(()=>sent.at(-1).action),'profile_switch');
 p.once('dialog',d=>d.dismiss());await p.locator('#local-profile-list').getByRole('button',{name:'Удалить профиль',exact:false}).click();assert.equal(await p.evaluate(()=>sent.at(-1).action),'profile_switch');
 p.once('dialog',d=>d.accept());await p.locator('#local-profile-list').getByRole('button',{name:'Удалить профиль',exact:false}).click();assert.equal(await p.evaluate(()=>sent.at(-1).action),'profile_delete');
+await p.evaluate(()=>window.browserUpdate({...state,profile_details:{
+  bytes:{main:1048576},
+  archived:[{id:'00000000000000000000000000000002',name:'Архив',bytes:4096}]
+}}));
+assert.match(await p.locator('#local-profile-list').innerText(),/1 MiB/);
+assert.match(await p.locator('#profile-archive-list').innerText(),/4 KiB/);
+await p.locator('#profile-archive-list').getByRole('button',{name:'Восстановить'}).click();
+assert.equal(await p.evaluate(()=>sent.at(-1).action),'profile_restore');
+p.once('dialog',d=>d.dismiss());
+await p.locator('#profile-archive-list').getByRole('button',{name:'Удалить навсегда'}).click();
+assert.equal(await p.evaluate(()=>sent.at(-1).action),'profile_restore');
+p.once('dialog',d=>d.accept());
+await p.locator('#profile-archive-list').getByRole('button',{name:'Удалить навсегда'}).click();
+assert.equal(await p.evaluate(()=>sent.at(-1).action),'profile_purge');
+await p.locator('#profile-backup').click();
+assert.equal(await p.evaluate(()=>sent.at(-1).action),'profile_backup');
 await p.evaluate(()=>window.browserUpdate({...state,private_mode:true}));assert(await p.locator('#local-profile-create').isDisabled());assert.deepEqual(errors,[]);console.log('PASS: local profile avatar, safe labels, create/rename/switch/delete commands, confirmation and private restrictions');}finally{await b.close();}})().catch(e=>{console.error(e);process.exit(1)});

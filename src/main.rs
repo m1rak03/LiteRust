@@ -1,9 +1,11 @@
-//! LiteRust Browser 0.16-alpha.2: per-site network-filter exceptions, permission prompts,
+//! LiteRust Browser 0.16-alpha.3: per-site network-filter exceptions, permission prompts,
 //! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use literust_browser::{
-    google_passwords, import, layout, network_block, profile, security, storage, vpn,
+    google_passwords, import, layout,
+    local_profiles::{self, Catalog, ProfileDetails},
+    network_block, security, storage, vpn,
 };
 #[cfg(windows)]
 mod session_self_test;
@@ -104,6 +106,14 @@ enum UiCommand {
     ProfileDelete {
         id: String,
     },
+    ProfileRestore {
+        id: String,
+    },
+    ProfilePurge {
+        id: String,
+    },
+    ProfileDetails,
+    ProfileBackup,
     Shortcut {
         name: String,
     },
@@ -250,6 +260,10 @@ enum AppEvent {
     Ui(UiCommand),
     VpnImported(Result<Vec<vpn::Node>, &'static str>),
     VpnProbed(Result<u128, &'static str>),
+    ProfilesScanned {
+        revision: u64,
+        result: std::io::Result<(Catalog, ProfileDetails)>,
+    },
     #[cfg(windows)]
     PdfFinished {
         path: PathBuf,
@@ -292,7 +306,9 @@ enum AppEvent {
 #[derive(Serialize)]
 struct ToolbarState<'a> {
     sidebar: &'a layout::Sidebar,
-    local_profiles: literust_browser::local_profiles::Catalog,
+    local_profiles: Catalog,
+    profile_details: Option<&'a ProfileDetails>,
+    profile_scan_pending: bool,
     current_profile: &'a str,
     maximized: bool,
     shortcuts: &'a literust_browser::shortcuts::Shortcuts,
@@ -374,7 +390,6 @@ impl LivePage {
 
 struct DrawerAnimation {
     from: f64,
-    to: f64,
     started: std::time::Instant,
 }
 
@@ -386,7 +401,10 @@ struct Browser {
     suggestion_rows: u8,
     panel: Option<String>,
     dock_state_cache: std::cell::RefCell<String>,
-    local_profiles: literust_browser::local_profiles::Catalog,
+    local_profiles: Catalog,
+    profile_details: Option<ProfileDetails>,
+    profile_revision: u64,
+    profile_scan_pending: bool,
     shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
     closed_tabs: Vec<String>,
     #[cfg(windows)]
@@ -435,6 +453,7 @@ impl Browser {
         data_file: Option<PathBuf>,
         proxy: EventLoopProxy<AppEvent>,
         private_mode: bool,
+        local_profiles: Catalog,
     ) -> Self {
         let next_tab_id = data
             .tabs
@@ -452,8 +471,10 @@ impl Browser {
             suggestion_rows: 0,
             panel: None,
             dock_state_cache: std::cell::RefCell::new(String::new()),
-            local_profiles: literust_browser::local_profiles::Catalog::load(&app_root())
-                .unwrap_or_default(),
+            local_profiles,
+            profile_details: None,
+            profile_revision: 0,
+            profile_scan_pending: false,
             shortcuts: std::rc::Rc::new(std::cell::RefCell::new(
                 literust_browser::shortcuts::Runtime {
                     bindings: data.shortcuts.clone(),
@@ -600,6 +621,90 @@ impl Browser {
         self.handle(command);
     }
 
+    fn update_profiles(&mut self, result: std::io::Result<Catalog>) {
+        match result {
+            Ok(catalog) => {
+                self.local_profiles = catalog;
+                self.invalidate_profile_details();
+            }
+            Err(error) => self.notice_localized(&error.to_string()),
+        }
+    }
+
+    fn invalidate_profile_details(&mut self) {
+        self.profile_revision = self.profile_revision.wrapping_add(1);
+        self.profile_details = None;
+        self.scan_profiles();
+        self.sync_toolbar();
+    }
+
+    fn scan_profiles(&mut self) {
+        if self.private_mode || self.profile_scan_pending {
+            return;
+        }
+        let revision = self.profile_revision;
+        let proxy = self.proxy.clone();
+        self.profile_scan_pending = true;
+        self.sync_toolbar();
+        std::thread::spawn(move || {
+            let base = app_root();
+            let result = Catalog::load(&base).and_then(|catalog| {
+                let details = catalog.details(&base)?;
+                Ok((catalog, details))
+            });
+            let _ = proxy.send_event(AppEvent::ProfilesScanned { revision, result });
+        });
+    }
+
+    fn on_profiles_scanned(
+        &mut self,
+        revision: u64,
+        result: std::io::Result<(Catalog, ProfileDetails)>,
+    ) {
+        self.profile_scan_pending = false;
+        if revision != self.profile_revision {
+            self.scan_profiles();
+            return;
+        }
+        match result {
+            Ok((catalog, details)) => {
+                self.local_profiles = catalog;
+                self.profile_details = Some(details);
+            }
+            Err(error) => self.notice_localized(&error.to_string()),
+        }
+        self.sync_toolbar();
+    }
+
+    fn back_up_profile(&self) {
+        if self.private_mode {
+            return;
+        }
+        let path = profile_root().join("Backups");
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let path = path.join(format!("browser-data-{timestamp}.json"));
+        match fs::create_dir_all(path.parent().expect("backup directory"))
+            .and_then(|()| self.data.backup_metadata(&path))
+        {
+            Ok(()) => self.notice(&format!(
+                "{}: {}",
+                self.ui_language
+                    .pick("Резервная копия сохранена", "Backup saved"),
+                path.display()
+            )),
+            Err(error) => self.notice(&format!(
+                "{}: {error}",
+                self.ui_language.pick(
+                    "Не удалось создать резервную копию",
+                    "Unable to create backup"
+                )
+            )),
+        }
+    }
+
     fn system_vpn_running(&self) -> bool {
         #[cfg(windows)]
         {
@@ -715,6 +820,8 @@ impl Browser {
             } else {
                 current_profile_id()
             }),
+            profile_details: self.profile_details.as_ref(),
+            profile_scan_pending: self.profile_scan_pending,
             current_profile: current_profile_id(),
             maximized: self.window.is_maximized(),
             background_style: self.data.background_style,
@@ -1019,6 +1126,11 @@ impl Browser {
             builder = builder.with_initialization_script(COSMETIC_FILTER);
         }
         let view = builder.build_as_child(&self.window)?;
+        #[cfg(windows)]
+        if self.private_mode {
+            windows_platform::verify_private(&view)
+                .map_err(|error| wry::Error::Io(std::io::Error::other(error)))?;
+        }
         #[cfg(windows)]
         if self.page_environment.is_none() {
             let _ = windows_platform::color_scheme(&view, self.dark_theme());
@@ -1411,7 +1523,6 @@ impl Browser {
                 {
                     self.dock_animation = Some(DrawerAnimation {
                         from: self.dock_width.get(),
-                        to: target,
                         started: std::time::Instant::now(),
                     });
                 } else {
@@ -1430,65 +1541,66 @@ impl Browser {
                 self.sync_toolbar();
             }
             UiCommand::ProfileCreate { name } => {
-                if self.private_mode {
-                    self.notice_localized("Управляйте профилями в обычном окне.");
-                    return;
-                }
-                match literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
-                    c.create(&name)?;
-                    Ok(())
-                }) {
-                    Ok(c) => {
-                        self.local_profiles = c;
-                        self.sync_toolbar();
-                    }
-                    Err(e) => self.notice(&e.to_string()),
+                if !self.private_mode {
+                    self.update_profiles(Catalog::create_profile(&app_root(), &name));
                 }
             }
             UiCommand::ProfileUpdate { id, name, avatar } => {
-                if self.private_mode {
-                    return;
-                }
-                match literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
-                    c.update(&id, &name, &avatar)
-                }) {
-                    Ok(c) => {
-                        self.local_profiles = c;
-                        self.sync_toolbar();
-                        self.refresh_newtabs();
-                    }
-                    Err(e) => self.notice(&e.to_string()),
+                if !self.private_mode {
+                    self.update_profiles(Catalog::edit(&app_root(), |catalog| {
+                        catalog.update(&id, &name, &avatar)
+                    }));
+                    self.refresh_newtabs();
                 }
             }
             UiCommand::ProfileDelete { id } => {
-                if self.private_mode {
-                    return;
+                if !self.private_mode {
+                    self.update_profiles(Catalog::delete(&app_root(), &id, current_profile_id()));
                 }
-                match literust_browser::local_profiles::Catalog::delete(
-                    &app_root(),
-                    &id,
-                    current_profile_id(),
-                ) {
-                    Ok(c) => {
-                        self.local_profiles = c;
-                        self.sync_toolbar();
-                        self.notice_localized("Профиль убран из списка. Его данные перемещены в ProfileTrash для восстановления.");
+            }
+            UiCommand::ProfileRestore { id } => {
+                if !self.private_mode {
+                    self.update_profiles(Catalog::restore(&app_root(), &id));
+                }
+            }
+            UiCommand::ProfilePurge { id } => {
+                if !self.private_mode {
+                    match Catalog::purge(&app_root(), &id) {
+                        Ok(()) => self.invalidate_profile_details(),
+                        Err(error) => {
+                            self.invalidate_profile_details();
+                            self.notice_localized(&error.to_string());
+                        }
                     }
-                    Err(e) => self.notice(&e.to_string()),
                 }
+            }
+            UiCommand::ProfileDetails => {
+                self.scan_profiles();
+            }
+            UiCommand::ProfileBackup => {
+                self.back_up_profile();
             }
             UiCommand::ProfileSwitch { id } => {
                 if self.private_mode || id == current_profile_id() {
                     return;
                 }
-                match literust_browser::local_profiles::Catalog::load(&app_root()) {
-                    Ok(c) if c.profiles.iter().any(|p| p.id == id) => {
+                match Catalog::load(&app_root()) {
+                    Ok(catalog) if catalog.profiles.iter().any(|p| p.id == id) => {
+                        #[cfg(windows)]
+                        if local_profiles::root(&app_root(), &id)
+                            .is_ok_and(|root| windows_platform::activate_profile_window(&root))
+                        {
+                            return;
+                        }
                         self.persist();
-                        match std::env::current_exe()
+                        if let Err(error) = std::env::current_exe()
                             .and_then(|exe| Command::new(exe).arg("--profile").arg(&id).spawn())
                         {
-                            Ok(_) => {}
-                            Err(e) => self.notice(&format!("Не удалось открыть профиль: {e}")),
+                            self.notice(&format!(
+                                "{}: {error}",
+                                self.ui_language
+                                    .pick("Не удалось открыть профиль", "Unable to open profile")
+                            ));
                         }
                     }
                     _ => self.notice_localized("Профиль не найден"),
@@ -2306,24 +2418,28 @@ impl Browser {
         let Some(animation) = self.dock_animation.as_ref() else {
             return;
         };
-        let progress = (animation.started.elapsed().as_secs_f64() / 0.2).min(1.0);
-        let width =
-            animation.from + (animation.to - animation.from) * (1.0 - (1.0 - progress).powi(3));
+        let progress = animation.started.elapsed().as_secs_f64() / 0.2;
         let (bounds, _) = self.layout_bounds();
         let scale = self.window.scale_factor();
-        let mut position = bounds.position.to_logical::<f64>(scale);
         let size = bounds.size.to_logical::<f64>(scale);
+        // Snap to the same bounds as the page layout, including after resize or DPI changes.
+        if progress >= 1.0 {
+            let _ = self.dock.set_bounds(bounds);
+            self.dock_width.set(size.width);
+            self.dock_animation = None;
+            return;
+        }
+        let width =
+            animation.from + (size.width - animation.from) * (1.0 - (1.0 - progress).powi(3));
+        let mut position = bounds.position.to_logical::<f64>(scale);
         if matches!(self.data.dock_position, layout::DockPosition::Right) {
             position.x += size.width - width;
         }
-        if (width - self.dock_width.get()).abs() >= 0.5 || progress >= 1.0 {
+        if (width - self.dock_width.get()).abs() >= 0.5 {
             let _ = self
                 .dock
                 .set_bounds(rect(position.x, position.y, width, size.height));
             self.dock_width.set(width);
-        }
-        if progress >= 1.0 {
-            self.dock_animation = None;
         }
     }
 
@@ -2507,8 +2623,11 @@ fn profile_root() -> PathBuf {
         .expect("validated local profile id")
 }
 
+static STARTUP_LOG: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 fn startup_log(message: &str) {
-    let file = profile_root().join("diagnostics").join("startup.log");
+    let Some(file) = STARTUP_LOG.get() else {
+        return;
+    };
     if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(file) {
         let _ = writeln!(file, "{message}");
     }
@@ -2562,13 +2681,6 @@ fn main() {
         );
     }
 
-    let diagnostics = profile_root().join("diagnostics");
-    if fs::create_dir_all(&diagnostics).is_ok() {
-        let _ = fs::write(
-            diagnostics.join("startup.log"),
-            b"LiteRust 0.16.0-alpha.2 startup\n",
-        );
-    }
     if let Err(error) = run() {
         startup_log(&format!("Startup failed: {error}"));
         #[cfg(windows)]
@@ -2592,33 +2704,65 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let catalog = literust_browser::local_profiles::Catalog::load(&app_root())?;
+    let base = app_root();
+    let known_profiles = Catalog::load(&base)?;
     let args: Vec<String> = std::env::args().collect();
+    let private_mode = args.iter().any(|arg| arg == "--private");
+    let restarting = args.iter().any(|arg| arg == "--resume-after-restart");
     let selected = args
         .windows(2)
-        .find(|a| a[0] == "--profile")
-        .map(|a| a[1].clone())
-        .unwrap_or_else(|| catalog.selected.clone());
-    if !catalog.profiles.iter().any(|p| p.id == selected) {
+        .find(|pair| pair[0] == "--profile")
+        .map(|pair| pair[1].clone())
+        .unwrap_or_else(|| known_profiles.selected.clone());
+    if !known_profiles
+        .profiles
+        .iter()
+        .any(|profile| profile.id == selected)
+    {
         return Err(std::io::Error::other("Локальный профиль не найден").into());
     }
     let _ = CURRENT_PROFILE.set(selected);
-    if !std::env::args().any(|a| a == "--private") {
-        literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
-            if !c.profiles.iter().any(|p| p.id == current_profile_id()) {
-                return Err(std::io::Error::other("Профиль больше не существует"));
+    let (catalog, _profile_lock) = if private_mode {
+        (known_profiles, None)
+    } else {
+        let mut attempts = 0;
+        loop {
+            match Catalog::activate(&base, current_profile_id()) {
+                Ok((catalog, lock)) => break (catalog, Some(lock)),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    #[cfg(windows)]
+                    if !restarting && windows_platform::activate_profile_window(&profile_root()) {
+                        return Ok(());
+                    }
+                    // The owner may still be creating its window, or closing for a restart.
+                    if attempts >= if restarting { 40 } else { 8 } {
+                        return Err(error.into());
+                    }
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+                Err(error) => return Err(error.into()),
             }
-            let path = profile_root();
-            let archived = app_root().join("ProfileTrash").join(current_profile_id());
-            if !path.exists() && archived.exists() {
-                fs::rename(archived, path)?;
-            }
-            Ok(())
-        })?;
-    }
-    fs::create_dir_all(profile_root().join("diagnostics"))?;
+        }
+    };
 
-    let private_mode = std::env::args().any(|arg| arg == "--private");
+    let diagnostics = if private_mode {
+        base.join("diagnostics")
+    } else {
+        profile_root().join("diagnostics")
+    };
+    if fs::create_dir_all(&diagnostics).is_ok() {
+        let file = diagnostics.join(if private_mode {
+            "private-startup.log"
+        } else {
+            "startup.log"
+        });
+        let _ = fs::write(
+            &file,
+            concat!("LiteRust ", env!("CARGO_PKG_VERSION"), " startup\n"),
+        );
+        let _ = STARTUP_LOG.set(file);
+    }
     // Fail before creating any native window: an absent runtime must not leave
     // a blank window while WebView construction is attempted.
     #[cfg(windows)]
@@ -2650,51 +2794,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok(),
         )
         .with_title(if private_mode {
-            "LiteRust 0.16-alpha.2 — приватное окно"
+            "LiteRust 0.16-alpha.3 — приватное окно"
         } else {
-            "LiteRust Browser 0.16-alpha.2"
+            "LiteRust Browser 0.16-alpha.3"
         })
         .with_inner_size(LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(LogicalSize::new(690.0, 400.0))
         .build(&event_loop)?;
 
-    let _profile_lock = if private_mode {
-        None
-    } else {
-        Some({
-            let mut lock = profile::ProfileLock::acquire(&profile_root());
-            if std::env::args().any(|a| a == "--resume-after-restart") {
-                for _ in 0..40 {
-                    if lock.is_ok() {
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(250));
-                    lock = profile::ProfileLock::acquire(&profile_root());
-                }
-            }
-            lock?
-        })
-    };
+    #[cfg(windows)]
     if !private_mode {
-        literust_browser::local_profiles::Catalog::edit(&app_root(), |c| {
-            c.selected = current_profile_id().into();
-            Ok(())
-        })?;
+        windows_platform::register_profile_window(&window, &profile_root())?;
     }
+
     let (data, data_file, context) = if private_mode {
         // No normal profile opened and no browser-data.json read/written.
         let mut data = BrowserData::default().clean();
         if args.iter().any(|arg| arg == "--ui-en") {
             data.browser_settings.language = storage::Language::En;
-            window.set_title("LiteRust 0.16-alpha.2 — private window");
+            window.set_title("LiteRust 0.16-alpha.3 — private window");
         }
         (data, None, None)
     } else {
         let root = profile_root();
         fs::create_dir_all(&root)?;
         let file = root.join("browser-data.json");
-        let mut data = BrowserData::load(&file)?;
-        data.apply_startup(std::env::args().any(|a| a == "--resume-after-restart"));
+        let mut data = BrowserData::recover(&file)?;
+        data.apply_startup(restarting);
         data.save(&file)?; // migrate plaintext metadata before opening site views
         (
             data,
@@ -2874,6 +3000,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         data_file,
         event_loop.create_proxy(),
         private_mode,
+        catalog,
     );
     #[cfg(windows)]
     {
@@ -2915,6 +3042,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         match event {
             Event::UserEvent(AppEvent::Ui(cmd)) => browser.handle(cmd),
+            Event::UserEvent(AppEvent::ProfilesScanned { revision, result }) => browser.on_profiles_scanned(revision, result),
             Event::UserEvent(AppEvent::InternalCommand{tab_id,generation,command})=>{
                 if browser.matching_view(tab_id,generation)&&browser.active_id()==tab_id&&browser.current_url()==NEW_TAB {browser.handle(command);}
             },

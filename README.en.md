@@ -14,6 +14,8 @@ LiteRust is a Windows browser built with Rust and Microsoft WebView2. Arrange qu
 - **Accounts.** Open the official sign-in pages for Google, Yandex, Microsoft, Yahoo, Opera or Mozilla (Firefox). Site sessions belong to the active local profile. Opera Sync and Firefox Sync continue to run in their respective browsers.
 - **Memory.** Background tabs use WebView2’s low-memory mode. Optional tab discard releases inactive views when the tab budget is exceeded. Discarded tabs reload when selected, so unsaved form state can be lost.
 
+Profile settings also show storage sizes and let you restore or delete archived profiles and back up settings and tabs locally. See the [0.16.0-alpha.3 release notes](docs/releases/0.16.0-alpha.3.md).
+
 ## Certificates and network
 
 Settings → Network and certificates links to the [Gosuslugi instructions](https://www.gosuslugi.ru/tls), the [Russian National Certification Authority](https://nuc.voskhod.ru/) and the Windows certificate manager. Follow the official instructions to install the root and issuing certificates if you need them. Installing a root certificate expands the trust of Windows applications. LiteRust relies on WebView2 for TLS validation.
