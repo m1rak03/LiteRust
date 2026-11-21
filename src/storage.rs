@@ -79,6 +79,8 @@ fn now() -> u64 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tab {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<u32>,
     #[serde(default)]
     pub id: u64,
     pub url: String,
@@ -101,6 +103,7 @@ impl Tab {
     pub fn new() -> Self {
         Self {
             id: 0,
+            group: None,
             url: NEW_TAB.to_owned(),
             title: "Новая вкладка".into(),
             back: Vec::new(),
@@ -110,6 +113,7 @@ impl Tab {
     pub fn web(url: &str) -> Self {
         Self {
             id: 0,
+            group: None,
             url: url.into(),
             title: Self::title_for(url),
             back: Vec::new(),
@@ -171,6 +175,7 @@ impl Tab {
         };
         Self {
             id: 0,
+            group: None,
             url: url.into(),
             title: title.into(),
             back: Vec::new(),
@@ -455,6 +460,7 @@ pub struct BrowserData {
     pub active: usize,
     pub placement: Option<crate::window_session::Placement>,
     pub additional_windows: Vec<crate::window_session::WindowSession>,
+    pub tab_groups: crate::tab_groups::TabGroups,
     #[serde(flatten)]
     pub profile: std::rc::Rc<ProfileData>,
 }
@@ -466,6 +472,7 @@ impl Default for BrowserData {
             active: 0,
             placement: None,
             additional_windows: Vec::new(),
+            tab_groups: Default::default(),
             profile: Default::default(),
         }
     }
@@ -566,6 +573,7 @@ impl BrowserData {
         }];
         self.active = 0;
         self.additional_windows.clear();
+        self.tab_groups = Default::default();
     }
 
     fn read_data(path: &Path) -> io::Result<Self> {
@@ -637,6 +645,7 @@ impl BrowserData {
             self.live_tab_budget = DEFAULT_LIVE_TAB_BUDGET;
         }
         crate::window_session::clean_tabs(&mut self.tabs, &mut self.active);
+        self.tab_groups.clean(&mut self.tabs, &mut self.active);
         self.placement = self.placement.filter(|placement| placement.valid());
         self.additional_windows
             .truncate(crate::window_session::MAX_WINDOWS - 1);
@@ -1046,6 +1055,7 @@ mod tests {
     fn restricts_restored_tabs() {
         let d = BrowserData {
             tabs: vec![Tab {
+                group: None,
                 id: 0,
                 url: "javascript:alert(1)".into(),
                 title: "BAD".into(),

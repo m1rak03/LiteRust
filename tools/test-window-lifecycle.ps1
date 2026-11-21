@@ -37,6 +37,18 @@ function Test-ReadyWindows([int]$Count) {
     return ([regex]::Matches($log, 'Toolbar JavaScript ready').Count -ge $Count)
 }
 
+function Test-SavedGroup {
+    $data = Read-FixtureState
+    if ($null -eq $data) { return $false }
+    $all = @($data) + @($data.additional_windows)
+    foreach ($window in $all) {
+        $group = $window.tab_groups.entries | Where-Object { $_.id -eq 7 }
+        if ($group -and $group.title -eq 'Research' -and $group.pinned -and $group.collapsed -and
+            $window.tabs[0].group -eq 7 -and $window.tabs[$window.active].url -eq 'literust://bookmarks') { return $true }
+    }
+    return $false
+}
+
 function Read-FixtureState {
     try {
         $bytes = [IO.File]::ReadAllBytes($stateFile)
@@ -55,6 +67,9 @@ try {
     } else {
         Add-Type -AssemblyName System.Security.Cryptography.ProtectedData
     }
+    New-Item -ItemType Directory -Path $root | Out-Null
+    $seed = '{"tabs":[{"url":"literust://newtab","title":"First tab","group":7},{"url":"literust://bookmarks","title":"Second tab","group":7}],"active":1,"account_prompt_seen":true,"tab_groups":{"last_id":7,"entries":[{"id":7,"title":"Research","color":"teal","pinned":true,"collapsed":true}]}}'
+    [IO.File]::WriteAllText($stateFile, $seed, [Text.UTF8Encoding]::new($false))
     $first = Start-FixtureBrowser
     Wait-Condition { (Test-ReadyWindows 1) -and -not $first.HasExited } 'Primary window did not become ready'
 
@@ -63,6 +78,7 @@ try {
         throw 'New window request did not reach the existing profile process'
     }
     Wait-Condition { (Test-ReadyWindows 2) -and (Read-FixtureState).additional_windows.Count -eq 1 } 'The second window was not saved'
+    Wait-Condition { Test-SavedGroup } 'The selected tab or group was lost while opening another window'
 
     # A deliberate interruption of this fixture covers recovery without a shutdown event.
     $first.Kill()
@@ -70,6 +86,7 @@ try {
     Remove-Item -LiteralPath $logFile
     $restored = Start-FixtureBrowser
     Wait-Condition { (Test-ReadyWindows 2) -and -not $restored.HasExited } 'The two windows were not restored after interruption'
+    Wait-Condition { Test-SavedGroup } 'The selected tab or group was lost after crash recovery'
 
     Wait-Condition {
         $restored.Refresh()
@@ -84,7 +101,7 @@ try {
     if (-not $restored.CloseMainWindow() -or -not $restored.WaitForExit(10000)) {
         throw 'Closing the last fixture window did not exit the profile process'
     }
-    Write-Output 'PASS: ordinary window opening, crash recovery and independent closure'
+    Write-Output 'PASS: ordinary window opening, crash recovery, group restore and independent closure'
 } finally {
     foreach ($process in $processes) {
         if (-not $process.HasExited) {

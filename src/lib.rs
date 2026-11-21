@@ -28,4 +28,5 @@ pub mod local_profiles;
 pub mod home;
 pub mod i18n;
 
+pub mod tab_groups;
 pub mod window_session;

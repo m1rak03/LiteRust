@@ -4,7 +4,7 @@
 use literust_browser::{
     google_passwords, import, layout,
     local_profiles::{self, Catalog, ProfileDetails},
-    network_block, security, storage, vpn, window_session,
+    network_block, security, storage, tab_groups, vpn, window_session,
 };
 #[cfg(windows)]
 mod session_self_test;
@@ -209,6 +209,9 @@ enum UiCommand {
     NewTab,
     NewWindow,
     NextWindow,
+    TabGroup {
+        operation: tab_groups::Operation,
+    },
     MoveTab {
         source: u64,
         target: u64,
@@ -370,6 +373,7 @@ struct ToolbarState<'a> {
     browser_settings: storage::BrowserSettings,
     search_engine: literust_browser::navigation::SearchEngine,
     tabs: Vec<TabSummary<'a>>,
+    tab_groups: &'a [tab_groups::TabGroup],
     appearance: storage::Appearance,
     dock_position: layout::DockPosition,
     vpn_enabled: bool,
@@ -405,6 +409,7 @@ struct ToolbarState<'a> {
 #[derive(Serialize)]
 struct TabSummary<'a> {
     id: u64,
+    group: Option<u32>,
     title: &'a str,
 }
 
@@ -871,6 +876,7 @@ impl Browser {
             });
         window_session::WindowSession {
             tabs: self.data.tabs.clone(),
+            tab_groups: self.data.tab_groups.clone(),
             active: self.data.active,
             placement: placement.or(self.data.placement),
         }
@@ -969,6 +975,7 @@ impl Browser {
                 .iter()
                 .map(|t| TabSummary {
                     id: t.id,
+                    group: t.group,
                     title: if t.url == NEW_TAB {
                         self.ui_language.pick("Новая вкладка", "New tab")
                     } else {
@@ -976,6 +983,7 @@ impl Browser {
                     },
                 })
                 .collect(),
+            tab_groups: self.data.tab_groups.entries(),
             customization: self.data.customization,
             shortcuts: &self.data.shortcuts,
             shortcut_catalog: &self.shortcut_catalog,
@@ -2170,12 +2178,24 @@ impl Browser {
                 }
             }
             UiCommand::NextWindow => self.next_window_requested = true,
+            UiCommand::TabGroup { operation } => {
+                if self
+                    .data
+                    .tab_groups
+                    .apply(&mut self.data.tabs, &mut self.data.active, operation)
+                {
+                    self.persist();
+                    self.sync_toolbar();
+                } else {
+                    self.notice_localized("Проверьте имя группы и выбранные вкладки.");
+                }
+            }
             UiCommand::MoveTab {
                 source,
                 target,
                 after,
             } => {
-                if window_session::move_tab(
+                if self.data.tab_groups.move_tab(
                     &mut self.data.tabs,
                     &mut self.data.active,
                     source,
@@ -2215,6 +2235,7 @@ impl Browser {
                     self.next_tab_id = self.next_tab_id.saturating_add(1);
                     self.data.tabs.push(tab);
                     self.data.active = 0;
+                    self.data.tab_groups = Default::default();
                     self.close_requested = true;
                     self.persist();
                     return;
@@ -2223,6 +2244,9 @@ impl Browser {
                 } else if index < self.data.active {
                     self.data.active -= 1;
                 }
+                self.data
+                    .tab_groups
+                    .organize(&mut self.data.tabs, &mut self.data.active);
                 self.show_active();
                 self.persist();
             }
@@ -3802,6 +3826,7 @@ fn window_snapshot(
     let initial = windows[first].session();
     BrowserData {
         tabs: initial.tabs,
+        tab_groups: initial.tab_groups,
         active: initial.active,
         placement: initial.placement,
         additional_windows: windows
@@ -3821,6 +3846,7 @@ fn next_window_data(
 ) -> BrowserData {
     BrowserData {
         tabs: session.tabs,
+        tab_groups: session.tab_groups,
         active: session.active,
         placement: session.placement,
         additional_windows: Vec::new(),

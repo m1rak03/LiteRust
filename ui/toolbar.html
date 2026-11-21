@@ -111,6 +111,34 @@ html,body{height:100%;width:100%;margin:0;overflow:hidden;background:var(--bg);c
 .library-record-actions button{margin:0}
 .library-empty{color:var(--muted);margin:20px 0}
 @media(max-width:760px){.library-manager .library-record{grid-template-columns:1fr;gap:7px}}
+
+.tab-group{display:flex;flex:0 0 auto;align-items:center;gap:6px;max-width:155px;height:28px;margin:4px 1px;padding:0 8px;border:1px solid var(--line);border-radius:var(--radius,8px);background:var(--bg);color:var(--text);cursor:pointer;font:inherit}
+.tab-group:hover,.tab-group.active{border-color:var(--group-color,var(--accent))}
+.tab-group-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab-group-mark{width:8px;height:8px;flex:none;border-radius:50%;background:var(--group-color,var(--accent))}
+.tab-group-indicator{font-size:10px;color:var(--muted)}
+.tab-group[data-pinned=true] .tab-group-mark{border-radius:2px;transform:rotate(45deg)}
+[data-group-color=blue]{--group-color:#568cdb}
+[data-group-color=teal]{--group-color:#2eacb1}
+[data-group-color=green]{--group-color:#539e63}
+[data-group-color=amber]{--group-color:#c38b37}
+[data-group-color=red]{--group-color:#d3686a}
+[data-group-color=violet]{--group-color:#9a73dc}
+[data-group-color=gray]{--group-color:#8896aa}
+.tabs .tab[data-group-color]{border-bottom-color:var(--group-color)}
+.tab.group-selected{outline:2px solid var(--accent);outline-offset:-3px}
+.tab-group.tab-drop-before,.tab-group.tab-drop-after,.tabs .new.tab-drop-after{box-shadow:inset 0 -2px var(--accent)}
+#tab-group-menu{position:fixed;z-index:120;max-width:calc(100vw - 16px);width:294px;max-height:calc(100vh - 48px);overflow:auto;padding:12px;border:1px solid var(--line);border-radius:var(--radius,9px);background:var(--bg);color:var(--text);box-shadow:0 12px 24px #0005}
+#tab-group-menu h2{font-size:14px;margin:0}
+#tab-group-menu .group-menu-title,#tab-group-menu .group-menu-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#tab-group-menu .group-menu-actions{flex-wrap:wrap;margin-top:8px}
+#tab-group-menu input,#tab-group-menu select{width:100%;min-width:0;margin-top:6px}
+#tab-group-menu label{font-size:12px}
+#group-editor,#group-editor:focus-within{display:grid;gap:4px;margin:8px 0 0;padding:0;background:transparent;border:0;box-shadow:none;outline:0}
+#tab-group-menu input{height:31px;border:1px solid var(--line);border-radius:6px;padding:4px 7px;background:var(--bg);color:var(--text)}
+#tab-group-menu input:focus-visible{border-color:var(--accent);outline:1px solid var(--accent)}
+#tab-group-menu button{font:inherit;color:var(--text);background:transparent;border:1px solid var(--line);border-radius:6px;padding:5px 8px;cursor:pointer}
+#tab-group-menu button:hover,#tab-group-menu button:focus-visible{border-color:var(--accent)}
 </style></head><body>
 <div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div><div id="window-drag-space" aria-hidden="true"></div><div class="window-controls"><button id="window-minimize" aria-label="Свернуть окно">−</button><button id="window-maximize" aria-label="Развернуть окно">□</button><button id="window-close" aria-label="Закрыть окно">×</button></div></div>
 <div class="controls">
@@ -160,7 +188,7 @@ html,body{height:100%;width:100%;margin:0;overflow:hidden;background:var(--bg);c
 <p><label><input id="browser-background_links" type="checkbox"> Открывать новые ссылки в фоне</label></p>
 <p><label>Масштаб страниц <select id="browser-zoom_percent"><option>50</option><option>75</option><option>90</option><option>100</option><option>110</option><option>125</option><option>150</option><option>175</option><option>200</option></select> %</label></p>
 <p><label><input id="browser-history_enabled" type="checkbox"> Записывать историю посещений</label></p><small>Выключение не удаляет старую историю и не включает приватный режим: вкладки и данные сайтов сохраняются.</small>
-<p><button id="save-browser-settings">Сохранить настройки браузера</button><button id="reset-browser-settings">Сбросить настройки браузера</button></p><small id="browser-settings-status" role="status"></small></article><article data-category="search"><h3>Поиск из адресной строки</h3><p>Выберите сервис для запросов из адресной строки и новой вкладки.</p><label for="search-engine">Поисковая система</label><select id="search-engine" style="padding:10px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--line)"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select><small>Поисковик не меняет движок WebView2 и доверие TLS-сертификатам.</small></article><article data-category="privacy"><h3>История и данные сайтов</h3><button class="settings-action-row" data-menu="clear-history"><span><strong>Очистить историю</strong><small>Удаление записей после подтверждения</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="clear-site-data"><span><strong>Очистить cookies и кэш</strong><small>Вы выйдете из аккаунтов сайтов</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="new-private-window"><span><strong>Открыть приватное окно</strong><small>Отдельная временная сессия</small></span><span data-icon="chevron"></span></button><p>Для отключения записи истории откройте раздел «Запуск и вкладки».</p></article><article data-category="privacy"><h3>Фильтрация рекламы</h3><button data-menu="toggle-network-blocking">Сетевой фильтр</button><button data-menu="toggle-cosmetic-filter">Косметический фильтр</button><small>Экспериментальные функции. Могут влиять на работу некоторых сайтов.</small></article><article data-category="performance"><h3>Управление памятью</h3><button data-menu="cycle-memory-mode">Бюджет памяти</button><button data-menu="toggle-auto-discard">Автовыгрузка вкладок</button><button data-menu="discard-background">Освободить память</button><p>Автовыгрузка отключена по умолчанию. Выгруженные страницы могут потерять несохранённые формы и воспроизведение.</p><p id="settings-performance-state" role="status"></p></article><article data-category="network"><h3>Подключение через VPN</h3><p>Управляйте серверами и областью подключения в VPN-хабе.</p><button id="settings-vpn">Открыть VPN-хаб</button></article><article data-category="network"><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="tls-ca">Национальный удостоверяющий центр</button><button id="tls-store">Открыть сертификаты Windows</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article><article data-category="appearance"><h3>Боковая панель</h3><label for="sidebar-mode">Как открывать</label><select id="sidebar-mode"><option value="click">По нажатию (с подсказками слева)</option><option value="hover">При наведении</option><option value="pinned">Закрепить</option></select><label for="sidebar-width">Ширина раскрытой панели</label><input id="sidebar-width" type="range" min="220" max="320" step="4"><output id="sidebar-width-value"></output><p>Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.</p><div id="sidebar-items"></div><button id="sidebar-reset">Сбросить панель</button></article><article data-category="icons"><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article data-category="shortcuts"><h3>Ваши сочетания клавиш</h3><p>Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.</p><label for="shortcut-search">Найти команду</label><input id="shortcut-search" type="search" placeholder="Например: вкладка или Ctrl+T"><p id="shortcut-status" role="status" aria-live="polite">Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.</p><div id="shortcut-list"></div><button id="shortcut-reset-all">Восстановить стандартные сочетания</button></article><article data-category="about"><h3>LiteRust 0.16.0-alpha.5</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
+<p><button id="save-browser-settings">Сохранить настройки браузера</button><button id="reset-browser-settings">Сбросить настройки браузера</button></p><small id="browser-settings-status" role="status"></small></article><article data-category="search"><h3>Поиск из адресной строки</h3><p>Выберите сервис для запросов из адресной строки и новой вкладки.</p><label for="search-engine">Поисковая система</label><select id="search-engine" style="padding:10px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--line)"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select><small>Поисковик не меняет движок WebView2 и доверие TLS-сертификатам.</small></article><article data-category="privacy"><h3>История и данные сайтов</h3><button class="settings-action-row" data-menu="clear-history"><span><strong>Очистить историю</strong><small>Удаление записей после подтверждения</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="clear-site-data"><span><strong>Очистить cookies и кэш</strong><small>Вы выйдете из аккаунтов сайтов</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="new-private-window"><span><strong>Открыть приватное окно</strong><small>Отдельная временная сессия</small></span><span data-icon="chevron"></span></button><p>Для отключения записи истории откройте раздел «Запуск и вкладки».</p></article><article data-category="privacy"><h3>Фильтрация рекламы</h3><button data-menu="toggle-network-blocking">Сетевой фильтр</button><button data-menu="toggle-cosmetic-filter">Косметический фильтр</button><small>Экспериментальные функции. Могут влиять на работу некоторых сайтов.</small></article><article data-category="performance"><h3>Управление памятью</h3><button data-menu="cycle-memory-mode">Бюджет памяти</button><button data-menu="toggle-auto-discard">Автовыгрузка вкладок</button><button data-menu="discard-background">Освободить память</button><p>Автовыгрузка отключена по умолчанию. Выгруженные страницы могут потерять несохранённые формы и воспроизведение.</p><p id="settings-performance-state" role="status"></p></article><article data-category="network"><h3>Подключение через VPN</h3><p>Управляйте серверами и областью подключения в VPN-хабе.</p><button id="settings-vpn">Открыть VPN-хаб</button></article><article data-category="network"><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="tls-ca">Национальный удостоверяющий центр</button><button id="tls-store">Открыть сертификаты Windows</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article><article data-category="appearance"><h3>Боковая панель</h3><label for="sidebar-mode">Как открывать</label><select id="sidebar-mode"><option value="click">По нажатию (с подсказками слева)</option><option value="hover">При наведении</option><option value="pinned">Закрепить</option></select><label for="sidebar-width">Ширина раскрытой панели</label><input id="sidebar-width" type="range" min="220" max="320" step="4"><output id="sidebar-width-value"></output><p>Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.</p><div id="sidebar-items"></div><button id="sidebar-reset">Сбросить панель</button></article><article data-category="icons"><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article data-category="shortcuts"><h3>Ваши сочетания клавиш</h3><p>Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.</p><label for="shortcut-search">Найти команду</label><input id="shortcut-search" type="search" placeholder="Например: вкладка или Ctrl+T"><p id="shortcut-status" role="status" aria-live="polite">Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.</p><div id="shortcut-list"></div><button id="shortcut-reset-all">Восстановить стандартные сочетания</button></article><article data-category="about"><h3>LiteRust 0.17.0-alpha.1</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
 <section id="vpn" class="hub-panel vpn-workspace" hidden aria-label="VPN-хаб">
 <div class="vpn-servers">
   <div class="vpn-title"><div><span class="eyebrow">LITERUST / VPN</span><h2>Серверы</h2></div><button id="vpn-open-import" title="Добавить ключ или подписку" aria-label="Добавить серверы">＋</button></div>
@@ -266,6 +294,34 @@ html,body{height:100%;width:100%;margin:0;overflow:hidden;background:var(--bg);c
     <p class="library-empty" id="bookmark-empty" role="status">Закладки не найдены.</p>
   </div>
 </section>
+<section id="tab-group-menu" hidden role="dialog" aria-labelledby="group-menu-heading">
+  <div class="group-menu-title">
+    <h2 id="group-menu-heading">Группы вкладок</h2>
+    <button id="group-menu-close" type="button" aria-label="Закрыть">×</button>
+  </div>
+  <div id="group-tab-actions">
+    <div class="group-menu-actions"><button type="button" id="group-create">Создать группу</button></div>
+    <label for="group-target">Переместить вкладки</label>
+    <select id="group-target"><option value="">Общий список вкладок</option></select>
+    <div class="group-menu-actions"><button type="button" id="group-assign">Переместить</button></div>
+  </div>
+  <form id="group-editor" hidden>
+    <label for="group-title">Имя группы</label>
+    <input id="group-title" maxlength="40" required>
+    <label for="group-color">Цвет группы</label>
+    <select id="group-color">
+      <option value="blue">Синий</option><option value="teal">Бирюзовый</option>
+      <option value="green">Зелёный</option><option value="amber">Янтарный</option>
+      <option value="red">Красный</option><option value="violet">Фиолетовый</option>
+      <option value="gray">Серый</option>
+    </select>
+    <div class="group-menu-actions"><button type="submit">Сохранить</button></div>
+  </form>
+  <div id="group-management" class="group-menu-actions" hidden>
+    <button id="group-pin" type="button">Закрепить группу</button>
+    <button id="group-dissolve" type="button">Разгруппировать</button>
+  </div>
+</section>
 <script>
 'use strict';
 /* APPEARANCE_SCRIPT */
@@ -282,14 +338,106 @@ const menu=document.getElementById('menu');
 let state={live_ids:[],private_mode:false,cosmetic_filter:false,network_blocking:false,site_host:null,site_adblock_exception:false,live_tab_budget:3,url_warning:null,tabs:[{title:'Новая вкладка',url:''}],active:0,url:'',loading:false,bookmarked:false,bookmarks:0,history:0,downloads:0,can_back:false,can_forward:false};
 function send(action,extra={}){window.ipc?.postMessage(JSON.stringify({action,...extra}));}
 let tabDrag=null;
+let groupDrag=null;
+const selectedTabIds=new Set();
+const groupMenu=document.getElementById('tab-group-menu');
+let groupMenuAnchor=null;
+let groupContext=null;
+const groupTabActions=document.getElementById('group-tab-actions');
+const groupEditor=document.getElementById('group-editor');
+const groupManagement=document.getElementById('group-management');
+const groupTitle=document.getElementById('group-title');
+const groupColor=document.getElementById('group-color');
+const groupTarget=document.getElementById('group-target');
+
+function sendGroup(kind,fields={}){
+  send('tab_group',{operation:{kind,...fields}});
+}
+function showTabGroupMenu(event,anchor,tabId,group){
+  event.preventDefault();
+  clearSuggestions();
+  groupMenuAnchor=anchor;
+  const ids=selectedTabIds.has(tabId)?Array.from(selectedTabIds):[tabId];
+  groupContext={group,ids};
+  const heading=document.getElementById('group-menu-heading');
+  heading.textContent=group?group.title:ids.length>1?'Выбранные вкладки ('+ids.length+')':'Группы вкладок';
+  groupTabActions.hidden=Boolean(group);
+  groupEditor.hidden=!group;
+  groupManagement.hidden=!group;
+  if(group){
+    groupTitle.value=group.title;groupColor.value=group.color;
+    document.getElementById('group-pin').textContent=group.pinned?'Открепить группу':'Закрепить группу';
+  }else{
+    groupTarget.replaceChildren(new Option('Общий список вкладок',''),
+      ...(state.tab_groups||[]).map(entry=>new Option(entry.title,String(entry.id))));
+  }
+  const box=anchor.getBoundingClientRect();
+  groupMenu.style.left=Math.max(8,Math.min(event.clientX||box.left,innerWidth-310))+'px';
+  groupMenu.style.top=Math.max(36,box.bottom+6)+'px';
+  groupMenu.hidden=false;
+  send('suggestion_panel',{rows:6});
+  (group?groupTitle:document.getElementById('group-create')).focus();
+}
+function closeTabGroupMenu(restoreFocus=false){
+  if(groupMenu.hidden)return;
+  groupMenu.hidden=true;
+  send('suggestion_panel',{rows:0});
+  if(restoreFocus)groupMenuAnchor?.focus();
+  groupContext=null;groupMenuAnchor=null;
+}
+function finishTabGroupOperation(kind,fields){
+  closeTabGroupMenu(true);
+  selectedTabIds.clear();
+  showSelectedTabs();
+  sendGroup(kind,fields);
+}
+function showSelectedTabs(){
+  for(const tab of tabsEl.querySelectorAll('[data-tab-id]')){
+    tab.classList.toggle('group-selected',selectedTabIds.has(Number(tab.dataset.tabId)));
+  }
+}
+document.getElementById('group-menu-close').onclick=()=>closeTabGroupMenu(true);
+document.getElementById('group-create').onclick=()=>{
+  groupTabActions.hidden=true;groupEditor.hidden=false;
+  groupTitle.value='';groupColor.value='blue';groupTitle.focus();
+};
+groupEditor.onsubmit=event=>{
+  event.preventDefault();
+  if(!groupContext)return;
+  const fields={title:groupTitle.value,color:groupColor.value};
+  if(groupContext.group)finishTabGroupOperation('edit',{id:groupContext.group.id,...fields});
+  else finishTabGroupOperation('create',{ids:groupContext.ids,...fields});
+};
+document.getElementById('group-assign').onclick=()=>{
+  if(groupContext)finishTabGroupOperation('assign',{
+    ids:groupContext.ids,group:groupTarget.value?Number(groupTarget.value):null,
+  });
+};
+document.getElementById('group-dissolve').onclick=()=>{
+  if(groupContext?.group)finishTabGroupOperation('dissolve',{id:groupContext.group.id});
+};
+document.getElementById('group-pin').onclick=()=>{
+  if(groupContext?.group)finishTabGroupOperation('pin',{id:groupContext.group.id});
+};
+window.addEventListener('keydown',event=>{
+  if(!groupMenu.hidden&&event.key==='Escape'){
+    event.preventDefault();event.stopImmediatePropagation();closeTabGroupMenu(true);
+  }
+});
+document.addEventListener('pointerdown',event=>{
+  if(!groupMenu.contains(event.target)&&event.target!==groupMenuAnchor)closeTabGroupMenu();
+});
+window.addEventListener('blur',()=>closeTabGroupMenu());
+
 function clearTabDrag(){
-  tabDrag=null;
+  tabDrag=null;groupDrag=null;
   tabsEl.querySelectorAll('.tab-dragging,.tab-drop-before,.tab-drop-after').forEach(tab=>
     tab.classList.remove('tab-dragging','tab-drop-before','tab-drop-after'));
 }
 function enableTabDrag(tab){
   tab.draggable=true;
   tab.ondragstart=e=>{
+    closeTabGroupMenu();
     tabDrag=Number(tab.dataset.tabId);
     e.dataTransfer.effectAllowed='move';
     e.dataTransfer.setData('application/x-literust-tab',String(tabDrag));
@@ -315,7 +463,136 @@ function enableTabDrag(tab){
     send('move_tab',{source,target:Number(tab.dataset.tabId),after:after(e)});
   };
 }
+function createGroupHeader(){
+  const button=document.createElement('button');
+  button.type='button';button.className='tab-group';button.draggable=true;
+  for(const name of ['mark','name','indicator']){
+    const part=document.createElement('span');
+    part.className='tab-group-'+name;button.append(part);
+  }
+  button.ondragstart=event=>{
+    closeTabGroupMenu();
+    groupDrag=Number(button.dataset.tabGroupId);
+    event.dataTransfer.effectAllowed='move';
+    event.dataTransfer.setData('application/x-literust-group',String(groupDrag));
+    button.classList.add('tab-dragging');
+  };
+  button.ondragend=clearTabDrag;
+  const after=event=>event.clientX>button.getBoundingClientRect().left+button.offsetWidth/2;
+  function allowsDrop(){
+    const id=Number(button.dataset.tabGroupId);
+    if(tabDrag!==null)return state.tabs.find(tab=>tab.id===tabDrag)?.group!==id;
+    const source=(state.tab_groups||[]).find(group=>group.id===groupDrag);
+    return source&&source.id!==id&&String(source.pinned)===button.dataset.pinned;
+  }
+  button.ondragover=event=>{
+    if(!allowsDrop())return;
+    event.preventDefault();event.dataTransfer.dropEffect='move';
+    button.classList.toggle('tab-drop-before',!after(event));
+    button.classList.toggle('tab-drop-after',after(event));
+  };
+  button.ondragleave=()=>button.classList.remove('tab-drop-before','tab-drop-after');
+  button.ondrop=event=>{
+    if(!allowsDrop())return;
+    event.preventDefault();
+    const target=Number(button.dataset.tabGroupId);
+    if(tabDrag!==null)sendGroup('assign',{ids:[tabDrag],group:target});
+    else sendGroup('reorder',{source:groupDrag,target,after:after(event)});
+    clearTabDrag();
+  };
+  return button;
+}
+
 let lastTabsKey='';
+function renderTabStrip(){
+  const groups=state.tab_groups||[];
+  const tabsKey=JSON.stringify([state.tabs,state.active,state.live_ids.slice().sort(),groups]);
+  if(tabsKey===lastTabsKey)return;
+  lastTabsKey=tabsKey;
+  const tabs=new Map(Array.from(tabsEl.querySelectorAll('[data-tab-id]'),
+    element=>[Number(element.dataset.tabId),element]));
+  const headers=new Map(Array.from(tabsEl.querySelectorAll('[data-tab-group-id]'),
+    element=>[Number(element.dataset.tabGroupId),element]));
+  const wanted=new Set(state.tabs.map(tab=>tab.id));
+  for(const id of selectedTabIds)if(!wanted.has(id))selectedTabIds.delete(id);
+  for(const [id,element] of tabs)if(!wanted.has(id))element.remove();
+  for(const [id,element] of headers)if(!groups.some(group=>group.id===id))element.remove();
+  const ordered=[];
+  let previousGroup=null;
+  state.tabs.forEach((tab,index)=>{
+    const group=groups.find(entry=>entry.id===tab.group);
+    if(group&&previousGroup!==group.id){
+      const header=headers.get(group.id)||createGroupHeader();
+      header.dataset.tabGroupId=group.id;
+      header.dataset.pinned=String(group.pinned);
+      header.dataset.groupColor=group.color;
+      header.children[1].textContent=group.title;
+      const count=state.tabs.filter(entry=>entry.group===group.id).length;
+      header.children[2].textContent=group.collapsed?String(count):'';
+      header.title=group.pinned?group.title+' · Закреплена':group.title;
+      header.setAttribute('aria-expanded',String(!group.collapsed));
+      header.classList.toggle('active',state.tabs[state.active]?.group===group.id);
+      header.onclick=()=>sendGroup('collapse',{id:group.id});
+      header.oncontextmenu=event=>showTabGroupMenu(event,header,null,group);
+      ordered.push(header);
+    }
+    previousGroup=group?.id||null;
+    let item=tabs.get(tab.id);
+    if(!item){
+      item=document.createElement('button');item.dataset.tabId=String(tab.id);
+      item.className='tab tab-enter';enableTabDrag(item);
+      for(const cls of ['favicon','tab-title','tab-close']){
+        const part=document.createElement('span');part.className=cls;item.append(part);
+      }
+      item.addEventListener('animationend',()=>item.classList.remove('tab-enter'),{once:true});
+    }
+    item.hidden=Boolean(group?.collapsed);
+    if(group)item.dataset.groupColor=group.color;else delete item.dataset.groupColor;
+    item.classList.toggle('active',index===state.active);
+    item.setAttribute('aria-selected',String(index===state.active));
+    item.title=tab.title||'Новая вкладка';
+    item.onclick=event=>{
+      if(event.ctrlKey||event.metaKey){
+        if(selectedTabIds.has(tab.id))selectedTabIds.delete(tab.id);else selectedTabIds.add(tab.id);
+        showSelectedTabs();
+        return;
+      }
+      selectedTabIds.clear();showSelectedTabs();
+      send('select_tab',{index});
+    };
+    item.oncontextmenu=event=>showTabGroupMenu(event,item,tab.id,null);
+    item.children[0].innerHTML=window.liteIcon('globe');
+    item.children[0].style.opacity=state.live_ids.includes(tab.id)?'1':'.4';
+    item.children[1].textContent=tab.title||'Новая вкладка';
+    item.children[2].innerHTML=window.liteIcon('close');
+    item.children[2].title='Закрыть вкладку';
+    item.children[2].onclick=event=>{event.stopPropagation();send('close_tab',{index});};
+    ordered.push(item);
+  });
+  let plus=tabsEl.querySelector('.new');
+  if(!plus){
+    plus=document.createElement('button');plus.className='new';plus.title='Новая вкладка';
+    plus.onclick=()=>send('new_tab');
+    plus.ondragover=event=>{
+      if(tabDrag!==null&&state.tabs.find(tab=>tab.id===tabDrag)?.group){
+        event.preventDefault();event.dataTransfer.dropEffect='move';
+        plus.classList.add('tab-drop-after');
+      }
+    };
+    plus.ondragleave=()=>plus.classList.remove('tab-drop-after');
+    plus.ondrop=event=>{
+      if(tabDrag===null)return;
+      event.preventDefault();sendGroup('assign',{ids:[tabDrag],group:null});clearTabDrag();
+    };
+  }
+  plus.innerHTML=window.liteIcon('plus');ordered.push(plus);
+  let cursor=tabsEl.firstElementChild;
+  for(const node of ordered){
+    if(node!==cursor)tabsEl.insertBefore(node,cursor);
+    cursor=node.nextElementSibling;
+  }
+  showSelectedTabs();
+}
 function render(){
   window.refreshLiteIcons();
   const prefs={...window.customizationDefaults,...state.customization};
@@ -331,28 +608,7 @@ function render(){
   renderBrowserSettings();
   updateAppearanceSelection();
   updateHub();
-  const tabsKey=JSON.stringify([state.tabs,state.active,state.live_ids.slice().sort()]);
-  if(tabsKey!==lastTabsKey){
-  lastTabsKey=tabsKey;
-  const wanted=new Set(state.tabs.map(t=>String(t.id)));
-  tabsEl.querySelectorAll('[data-tab-id]').forEach(el=>{if(!wanted.has(el.dataset.tabId))el.remove();});
-  state.tabs.forEach((tab,index)=>{
-    let item=Array.from(tabsEl.children).find(el=>el.dataset.tabId===String(tab.id));
-    if(!item){item=document.createElement('button');item.dataset.tabId=String(tab.id);item.className='tab tab-enter';enableTabDrag(item);
-      for(const cls of ['favicon','tab-title','tab-close']){const el=document.createElement('span');el.className=cls;item.append(el);}
-      item.addEventListener('animationend',()=>item.classList.remove('tab-enter'),{once:true});}
-    item.classList.toggle('active',index===state.active);
-    item.setAttribute('aria-selected',String(index===state.active));
-    item.title=tab.title||'Новая вкладка';
-    item.onclick=()=>send('select_tab',{index});
-    item.children[0].innerHTML=window.liteIcon('globe');item.children[0].style.opacity=state.live_ids.includes(tab.id)?'1':'.4';
-    item.children[1].textContent=tab.title||'Новая вкладка';
-    item.children[2].innerHTML=window.liteIcon('close');item.children[2].title='Закрыть вкладку';
-    item.children[2].onclick=e=>{e.stopPropagation();send('close_tab',{index});};
-    const at=tabsEl.children[index];if(at!==item)tabsEl.insertBefore(item,at||null);
-  });
-  let plus=tabsEl.querySelector('.new');if(!plus){plus=document.createElement('button');plus.className='new';plus.title='Новая вкладка';plus.innerHTML=window.liteIcon('plus');plus.onclick=()=>send('new_tab');}plus.innerHTML=window.liteIcon('plus');tabsEl.append(plus);
-  }
+  renderTabStrip();
   if(document.activeElement!==address) address.value=state.url||'';
   const isHttps=(state.url||'').startsWith('https://');
   secure.innerHTML=window.liteIcon(state.url_warning?'warning':(isHttps?'lock':'info'));
@@ -368,7 +624,7 @@ function render(){
   document.getElementById('history').title=`История (${state.history})`;
   document.getElementById('downloads').title=`Загрузки (${state.downloads})`;
   const mark=document.getElementById('mode-badge');
-  mark.textContent=state.private_mode?'ПРИВАТНО':'LiteRust 0.16-alpha.5';
+  mark.textContent=state.private_mode?'ПРИВАТНО':'LiteRust 0.17-alpha.1';
   mark.classList.toggle('private',Boolean(state.private_mode));
   document.getElementById('toggle-network-blocking').textContent='Сетевой AdBlock (ограниченные правила): '+(state.network_blocking?'вкл.':'выкл.');
   document.getElementById('toggle-auto-discard').textContent='Автовыгрузка (потеря форм): '+(state.auto_discard?'вкл.':'выкл.');
@@ -432,7 +688,7 @@ document.getElementById('google-passwords').onclick=openGooglePasswords;
 document.getElementById('google-passwords-menu').onclick=openGooglePasswords;
 document.getElementById('google-passwords-info').onclick=()=>{
   menu.classList.remove('open');
-  alert('Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.16-alpha.5 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.');
+  alert('Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.17-alpha.1 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.');
 };
 document.getElementById('export-bookmarks').onclick=()=>{
   menu.classList.remove('open');
@@ -477,7 +733,7 @@ function updateSuggestionSelection(){
   else address.setAttribute('aria-activedescendant','address-suggestion-'+suggestionIndex);
 }
 window.showSuggestions=(query,items)=>{
-  if(items.length&&(document.activeElement!==address||address.value!==query||panelName))return;
+  if(items.length&&(document.activeElement!==address||address.value!==query||panelName||!groupMenu.hidden))return;
   if(query!==null&&query!==address.value)return;
   suggestionItems=items;suggestionIndex=-1;
   addressSuggestions.replaceChildren();
@@ -521,7 +777,7 @@ window.addEventListener('keydown',e=>{if(e.key==='Escape')menu.classList.remove(
 const appearance=document.getElementById('appearance');
 let panelName=null;
 window.openPanel=name=>{
-  panelName=name;clearSuggestions();
+  panelName=name;closeTabGroupMenu();clearSuggestions();
   if(typeof cancelShortcutRecording==='function')cancelShortcutRecording();
   for(const id of ['appearance','settings','vpn','accounts','tools','print','bookmarks-manager','downloads-manager'])document.getElementById(id).hidden=id!==name;
   menu.classList.remove('open');send('appearance_panel',['settings','bookmarks-manager','downloads-manager'].includes(name)?{open:true,name}:{open:Boolean(name)});

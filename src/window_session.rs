@@ -37,6 +37,7 @@ impl Placement {
 #[serde(default)]
 pub struct WindowSession {
     pub tabs: Vec<Tab>,
+    pub tab_groups: crate::tab_groups::TabGroups,
     pub active: usize,
     pub placement: Option<Placement>,
 }
@@ -44,11 +45,17 @@ pub struct WindowSession {
 impl WindowSession {
     pub fn clean(&mut self) {
         clean_tabs(&mut self.tabs, &mut self.active);
+        self.tab_groups.clean(&mut self.tabs, &mut self.active);
         self.placement = self.placement.filter(|placement| placement.valid());
     }
 }
 
 pub(crate) fn clean_tabs(tabs: &mut Vec<Tab>, active: &mut usize) {
+    *active = tabs
+        .iter()
+        .take(*active)
+        .filter(|tab| valid_tab_url(&tab.url))
+        .count();
     tabs.retain(|t| valid_tab_url(&t.url));
     tabs.truncate(MAX_TABS);
     if tabs.is_empty() {
