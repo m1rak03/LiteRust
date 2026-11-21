@@ -184,9 +184,18 @@ jobs:
                 $after = [regex]::Matches((Get-Content $log -Raw), $pattern).Count
               } while ($after -le $before -and -not $app.HasExited -and [DateTime]::UtcNow -lt $deadline)
               if ($after -ne $before + 1) { throw "Native shortcut failed: $($shortcut.Name) ($before -> $after)" }
+              Write-Output "PASS: native shortcut $($shortcut.Name)"
             }
-            [FrameTest]::SendKeys($handle, [ushort[]]@(0x1b)) # Esc
-            Write-Output 'PASS: native tab, reopen, address, switch and find shortcuts'
+            # WebView2 Find can move focus to its own popup. Only send Esc to our frame.
+            if ([FrameTest]::GetForegroundWindow() -eq $handle) {
+              [FrameTest]::SendKeys($handle, [ushort[]]@(0x1b)) # Esc
+            }
+            if (-not $shellKeys.AppActivate($app.Id)) { throw 'Cannot refocus browser after Find' }
+            $deadline = [DateTime]::UtcNow.AddSeconds(4)
+            while ([FrameTest]::GetForegroundWindow() -ne $handle -and [DateTime]::UtcNow -lt $deadline) {
+              Start-Sleep -Milliseconds 150
+            }
+            if ([FrameTest]::GetForegroundWindow() -ne $handle) { throw 'Browser is not in the foreground for the close test' }
             Click-CaptionButton 23
             if (-not $app.WaitForExit(15000)) { throw 'Custom close button failed' } 
 
