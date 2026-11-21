@@ -66,6 +66,7 @@ pub fn import_bookmarks(data: &mut BrowserData, html: &str) -> Result<ImportStat
             url: normalized,
             title: if title.is_empty() { href.into() } else { title },
             added_at: current,
+            folder: None,
         });
         stats.added += 1;
     }

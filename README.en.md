@@ -13,6 +13,7 @@ LiteRust is a Windows browser built with Rust and Microsoft WebView2. Arrange qu
 - **Language.** Choose English or Russian in Settings → Startup and tabs, save your change and restart LiteRust.
 - **Accounts.** Open the official sign-in pages for Google, Yandex, Microsoft, Yahoo, Opera or Mozilla (Firefox). Site sessions belong to the active local profile. Opera Sync and Firefox Sync continue to run in their respective browsers.
 - **Windows.** Ctrl+N opens a regular window and Next window cycles through the active profile’s windows. Restore startup reopens saved windows and tabs.
+- **Downloads and bookmarks.** Filter downloads, check progress and open the destination folder. WebView2 controls the availability of pause, resume and cancel. Search and sort bookmarks, and create folders to organise them. See the [0.16.0-alpha.5 release notes](docs/releases/0.16.0-alpha.5.md).
 - **Memory.** Background tabs use WebView2’s low-memory mode. Optional tab discard releases inactive views when the tab budget is exceeded. Discarded tabs reload when selected, so unsaved form state can be lost.
 
 Profile settings also show storage sizes and let you restore or delete archived profiles and back up settings and tabs locally. See the [0.16.0-alpha.3 release notes](docs/releases/0.16.0-alpha.3.md).

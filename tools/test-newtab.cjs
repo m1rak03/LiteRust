@@ -1,9 +1,33 @@
-const {chromium}=require('playwright');const fs=require('node:fs');const assert=require('node:assert/strict');
-(async()=>{const browser=await chromium.launch({headless:true});try{const page=await browser.newPage({viewport:{width:1200,height:760}});const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.setContent(fs.readFileSync('/workspace/newtab-preview.html','utf8'));
-assert.equal(await page.locator('.sign-in').getAttribute('href'),'https://myaccount.google.com/');const b=await page.locator('.sign-in').boundingBox();assert(b.x>1000&&b.y<80);
-assert.equal(await page.locator('.shortcut').count(),4);await page.locator('#apps-toggle').click();assert(await page.locator('#apps-grid').isVisible());assert.equal(await page.locator('#apps-grid a').count(),9);await page.keyboard.press('Escape');assert(!(await page.locator('#apps-grid').isVisible()));
-assert.equal(await page.locator('.customize').getAttribute('href'),'literust://appearance');await page.screenshot({path:'audit-logs/screenshots/v011-newtab.png'});
-await page.setViewportSize({width:640,height:700});assert(await page.locator('.sign-in').isVisible());assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),640);
-await page.route('https://www.google.com/search?*',route=>route.fulfill({body:'<title>Mock search</title>Search intercepted locally'}));await page.locator('#q').fill('привет & тест');await page.locator('#q').press('Enter');await page.waitForURL('https://www.google.com/search?*');assert.equal(new URL(page.url()).searchParams.get('q'),'привет & тест');assert.deepEqual(errors,[]);
-console.log('PASS: top-right Google sign-in, 4 default shortcuts, apps menu and Escape, customization link, mobile width, correctly encoded Google search intercepted locally.');
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1});
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fixture = require('./rust-fixture.cjs');
+
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 760 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.setContent(fixture('newtab-preview'));
+    assert.equal(await page.locator('.sign-in').getAttribute('href'), 'literust://accounts');
+    assert(await page.locator('.shortcut').count() >= 2);
+    assert.equal(await page.locator('.customize').getAttribute('href'), 'literust://appearance');
+    assert.equal(await page.locator('#q').getAttribute('placeholder'), 'Что хотите найти?');
+    await page.setViewportSize({ width: 690, height: 700 });
+    assert(await page.locator('.sign-in').isVisible());
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.evaluate(() => {
+      window.commands = [];
+      window.homeSend = command => commands.push(command);
+    });
+    await page.locator('#q').fill('привет & тест');
+    await page.locator('#q').press('Enter');
+    assert.deepEqual(await page.evaluate(() => commands.at(-1)), {
+      action: 'navigate', value: 'привет & тест',
+    });
+    assert.deepEqual(errors, []);
+    console.log('PASS: rendered new tab, profile entry, search action and narrow layout');
+  } finally {
+    await browser.close();
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });

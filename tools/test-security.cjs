@@ -1,8 +1,8 @@
 const { chromium } = require('playwright');
-const { execFileSync } = require('node:child_process');
+const fixture = require('./rust-fixture.cjs');
 const assert = require('node:assert/strict');
 (async()=>{
- const html=execFileSync(require('node:path').join(require('node:os').homedir(),'.cargo','bin',process.platform==='win32'?'cargo.exe':'cargo'),['run','--quiet','--locked','--no-default-features','--example','security_controls'],{encoding:'utf8'});
+ const html=fixture('security_controls');
  const browser=await chromium.launch({headless:true});
  try {
   const page=await browser.newPage();

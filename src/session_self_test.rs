@@ -118,3 +118,161 @@ pub fn run(phase: &str) -> Result<(), Box<dyn std::error::Error>> {
         Err("WebView2 cookie/localStorage/IndexedDB check failed".into())
     }
 }
+
+pub fn downloads() -> Result<(), Box<dyn std::error::Error>> {
+    use super::{windows_platform, AppEvent, BrowserProxy, WindowMessage};
+    use literust_browser::storage::{DownloadAction, DownloadStatus};
+    use std::{cell::RefCell, rc::Rc};
+
+    let root = std::path::PathBuf::from(
+        std::env::var_os("LITERUST_SESSION_TEST_ROOT").ok_or("Download test root missing")?,
+    );
+    if !root.is_absolute() || !root.is_dir() {
+        return Err("Download test root must be an existing absolute directory".into());
+    }
+    let port = std::env::var("LITERUST_DOWNLOAD_TEST_PORT")?.parse::<u16>()?;
+    let mut log = std::fs::File::create(root.join("results.log"))?;
+    let mut events = EventLoopBuilder::<WindowMessage>::with_user_event().build();
+    let window = WindowBuilder::new().with_visible(false).build(&events)?;
+    let proxy = BrowserProxy {
+        window: window.id(),
+        event_loop: events.create_proxy(),
+    };
+    let mut context = WebContext::new(Some(root.join("WebView2")));
+    let view = WebViewBuilder::new_with_web_context(&mut context)
+        .with_visible(false)
+        .build_as_child(&window)?;
+    // The download fixture may only write inside its own directory.
+    let download_dir = root.join("files");
+    std::fs::create_dir(&download_dir)?;
+    let downloads = windows_platform::Downloads::default();
+    let active = windows_platform::configure(
+        &view,
+        proxy,
+        Rc::new(RefCell::new(Default::default())),
+        &downloads,
+    )?;
+    unsafe {
+        use webview2_com::{
+            take_pwstr, DownloadStartingEventHandler,
+            Microsoft::Web::WebView2::Win32::ICoreWebView2_4,
+        };
+        use windows::core::{Interface, HSTRING, PWSTR};
+        let directory = download_dir.clone();
+        let core: ICoreWebView2_4 = view.webview().cast()?;
+        core.add_DownloadStarting(
+            &DownloadStartingEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else { return Ok(()) };
+                let mut uri = PWSTR::null();
+                args.DownloadOperation()?.Uri(&mut uri)?;
+                let uri = take_pwstr(uri);
+                let file = if uri.ends_with("/complete") {
+                    "complete.bin"
+                } else {
+                    "cancel.bin"
+                };
+                args.SetCancel(true)?;
+                args.SetResultFilePath(&HSTRING::from(directory.join(file).as_os_str()))?;
+                args.SetHandled(true)?;
+                args.SetCancel(false)
+            })),
+            &mut 0,
+        )?;
+    }
+    view.load_url(&format!("http://127.0.0.1:{port}/complete"))?;
+
+    let started = Instant::now();
+    let mut result = Err("Native download fixture timed out");
+    let mut phase = 0;
+    events.run_return(|event, _, flow| {
+        *flow = ControlFlow::WaitUntil(started + Duration::from_secs(30));
+        if started.elapsed() >= Duration::from_secs(30) {
+            *flow = ControlFlow::Exit;
+            return;
+        }
+        let Event::UserEvent(WindowMessage::Browser { event, .. }) = event else {
+            return;
+        };
+        if let AppEvent::DownloadState {
+            id,
+            status,
+            progress,
+            ..
+        } = &event
+        {
+            let _ = writeln!(
+                log,
+                "transition: {id} {status:?} {progress:?}, reason={:?}",
+                downloads.interrupt_reason(*id)
+            );
+        }
+        let next = match event {
+            AppEvent::DownloadStarted { id, .. } if phase == 0 => {
+                downloads.control(id, DownloadAction::Pause)
+            }
+            AppEvent::DownloadState {
+                id,
+                status: DownloadStatus::Paused,
+                progress,
+                ..
+            } if phase == 1 => progress.can_resume && downloads.control(id, DownloadAction::Resume),
+            AppEvent::DownloadState {
+                status: DownloadStatus::Running,
+                ..
+            } if phase == 2 => true,
+            AppEvent::DownloadState {
+                id,
+                file,
+                status: DownloadStatus::Completed,
+                progress,
+                ..
+            } if phase == 3 => {
+                let _ = writeln!(
+                    log,
+                    "completed: active={}, retained={}, received={}, total={:?}, file={}",
+                    active.get(),
+                    downloads.contains(id),
+                    progress.received,
+                    progress.total,
+                    file.is_file()
+                );
+                !downloads.contains(id)
+                    && active.get() == 0
+                    && progress.total == Some(progress.received)
+                    && progress.received > 0
+                    && file.starts_with(&download_dir)
+                    && file.is_file()
+                    && view
+                        .load_url(&format!("http://127.0.0.1:{port}/cancel"))
+                        .is_ok()
+            }
+            AppEvent::DownloadStarted { id, .. } if phase == 4 => {
+                downloads.control(id, DownloadAction::Cancel)
+            }
+            AppEvent::DownloadState {
+                id,
+                status: DownloadStatus::Cancelled,
+                ..
+            } if phase == 5 => {
+                if active.get() == 0 && !downloads.contains(id) {
+                    result = Ok(());
+                }
+                *flow = ControlFlow::Exit;
+                true
+            }
+            _ => false,
+        };
+        let _ = writeln!(log, "phase {phase}: {next}");
+        if !next {
+            result = Err("Unexpected native download transition");
+            *flow = ControlFlow::Exit;
+        }
+        phase += 1;
+    });
+    result?;
+    writeln!(
+        log,
+        "PASS: native pause, resume, completion, cancellation and callback cleanup"
+    )?;
+    Ok(())
+}

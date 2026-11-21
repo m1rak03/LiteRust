@@ -1,8 +1,10 @@
 //! COM integrations absent from Wry's portable API. All callbacks run on the UI STA.
 use super::{AppEvent, BrowserProxy};
+use literust_browser::storage::{DownloadAction, DownloadProgress, DownloadStatus};
 use std::{
-    cell::Cell,
-    path::PathBuf,
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -14,14 +16,133 @@ use windows::core::{Interface, PWSTR};
 use wry::WebViewExtWindows;
 static NEXT_DOWNLOAD: AtomicU64 = AtomicU64::new(1);
 
+#[derive(Clone, Default)]
+pub struct Downloads(Rc<RefCell<HashMap<u64, ICoreWebView2DownloadOperation>>>);
+
+impl Downloads {
+    pub fn reserve_ids(count: usize) {
+        NEXT_DOWNLOAD.fetch_max(count as u64 + 1, Ordering::Relaxed);
+    }
+
+    fn operation(&self, id: u64) -> Option<ICoreWebView2DownloadOperation> {
+        self.0.borrow().get(&id).cloned()
+    }
+
+    pub fn contains(&self, id: u64) -> bool {
+        self.0.borrow().contains_key(&id)
+    }
+
+    pub fn progress(&self, id: u64) -> Option<DownloadProgress> {
+        observation(&self.operation(id)?)
+            .ok()
+            .map(|(_, progress)| progress)
+    }
+
+    pub(super) fn interrupt_reason(&self, id: u64) -> Option<i32> {
+        let op = self.operation(id)?;
+        let mut reason = COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON::default();
+        unsafe { op.InterruptReason(&mut reason).ok()? };
+        Some(reason.0)
+    }
+
+    pub fn control(&self, id: u64, action: DownloadAction) -> bool {
+        let Some(op) = self.operation(id) else {
+            return false;
+        };
+        let Ok((_, progress)) = observation(&op) else {
+            return false;
+        };
+        unsafe {
+            match action {
+                DownloadAction::Pause if progress.can_pause => op.Pause().is_ok(),
+                DownloadAction::Resume if progress.can_resume => op.Resume().is_ok(),
+                DownloadAction::Cancel if progress.can_cancel => op.Cancel().is_ok(),
+                _ => false,
+            }
+        }
+    }
+}
+
+fn observation(
+    op: &ICoreWebView2DownloadOperation,
+) -> windows::core::Result<(DownloadStatus, DownloadProgress)> {
+    let mut raw_state = COREWEBVIEW2_DOWNLOAD_STATE::default();
+    let mut reason = COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON::default();
+    let mut resumable = windows::core::BOOL::default();
+    let (mut received, mut total) = (0, -1);
+    unsafe {
+        op.State(&mut raw_state)?;
+        let _ = op.BytesReceived(&mut received);
+        let _ = op.TotalBytesToReceive(&mut total);
+        if raw_state == COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED {
+            let _ = op.InterruptReason(&mut reason);
+            let _ = op.CanResume(&mut resumable);
+        }
+    }
+    let status = match raw_state {
+        COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS => DownloadStatus::Running,
+        COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED => DownloadStatus::Completed,
+        _ if reason == COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_PAUSED => DownloadStatus::Paused,
+        _ if reason == COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED => {
+            DownloadStatus::Cancelled
+        }
+        _ => DownloadStatus::Interrupted,
+    };
+    let can_pause = status == DownloadStatus::Running;
+    let can_resume = resumable.as_bool();
+    Ok((
+        status,
+        DownloadProgress {
+            received: received.max(0) as u64,
+            total: u64::try_from(total).ok(),
+            can_pause,
+            can_resume,
+            can_cancel: can_pause || can_resume || status == DownloadStatus::Paused,
+        },
+    ))
+}
+
+pub fn open_download_folder(hwnd: windows::Win32::Foundation::HWND, file: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        core::{w, PCWSTR},
+        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+    };
+    let Some(directory) = file
+        .parent()
+        .filter(|path| path.is_absolute() && path.is_dir())
+    else {
+        return false;
+    };
+    let mut path: Vec<u16> = directory.as_os_str().encode_wide().collect();
+    if path.contains(&0) {
+        return false;
+    }
+    path.push(0);
+    // Pass the path as a Shell item, never through a command interpreter.
+    let result = unsafe {
+        ShellExecuteW(
+            Some(hwnd),
+            w!("explore"),
+            PCWSTR(path.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    result.0 as isize > 32
+}
+
 pub fn configure(
     view: &wry::WebView,
     proxy: BrowserProxy,
-    shortcuts: Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
+    shortcuts: Rc<RefCell<literust_browser::shortcuts::Runtime>>,
+    downloads: &Downloads,
 ) -> windows::core::Result<Rc<Cell<usize>>> {
     install_shortcuts(view, proxy.clone(), shortcuts)?;
     let active = Rc::new(Cell::new(0usize));
     let pending = active.clone();
+    let registry = Rc::downgrade(&downloads.0);
     // Fail view creation if these settings cannot be applied. Google's vault is
     // not replaced by WebView2's separate local password/autofill store.
     unsafe {
@@ -41,7 +162,15 @@ pub fn configure(
                 let Some(args) = args else {
                     return Ok(());
                 };
-                // Let WebView2 own filename selection, conflicts, progress and cancellation.
+                let Some(operations) = registry.upgrade() else {
+                    return Ok(());
+                };
+                if operations.borrow().len() >= literust_browser::storage::MAX_DOWNLOADS {
+                    args.SetCancel(true)?;
+                    let _ = proxy.send_event(AppEvent::DownloadLimit);
+                    return Ok(());
+                }
+                // Keep WebView2's native filename selection and security checks.
                 args.SetHandled(false)?;
                 let operation = args.DownloadOperation()?;
                 let mut uri = PWSTR::null();
@@ -53,45 +182,37 @@ pub fn configure(
                 let file = take_pwstr(path);
                 let events = proxy.clone();
                 let count = pending.clone();
-                let in_progress = Cell::new(true);
+                let weak = registry.clone();
                 let token = Rc::new(Cell::new(0));
                 let callback_token = token.clone();
                 let mut registration = 0;
                 operation.add_StateChanged(
                     &StateChangedEventHandler::create(Box::new(move |op, _| {
-                        let Some(op) = op else {
-                            return Ok(());
-                        };
-                        let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
-                        op.State(&mut state)?;
-                        let running = state == COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS;
-                        if running != in_progress.replace(running) {
-                            if running {
-                                count.set(count.get() + 1);
-                            } else {
-                                count.set(count.get().saturating_sub(1));
+                        let Some(op) = op else { return Ok(()) };
+                        let (status, progress) = observation(&op)?;
+                        if !progress.can_cancel {
+                            let _ = op.remove_StateChanged(callback_token.get());
+                            if let Some(operations) = weak.upgrade() {
+                                if operations.borrow_mut().remove(&id).is_some() {
+                                    count.set(count.get().saturating_sub(1));
+                                }
                             }
                         }
-                        if !running {
-                            let mut can_resume = windows::core::BOOL::default();
-                            if op.CanResume(&mut can_resume).is_ok() && !can_resume.as_bool() {
-                                let _ = op.remove_StateChanged(callback_token.get());
-                            }
-                        }
-                        let mut actual_path = PWSTR::null();
-                        op.ResultFilePath(&mut actual_path)?;
-                        let file = PathBuf::from(take_pwstr(actual_path));
+                        let mut path = PWSTR::null();
+                        let _ = op.ResultFilePath(&mut path);
+                        let file = PathBuf::from(take_pwstr(path));
                         let _ = events.send_event(AppEvent::DownloadState {
                             id,
                             file,
-                            running,
-                            ok: state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED,
+                            status,
+                            progress,
                         });
                         Ok(())
                     })),
                     &mut registration,
                 )?;
                 token.set(registration);
+                operations.borrow_mut().insert(id, operation);
                 pending.set(pending.get() + 1);
                 let _ = proxy.send_event(AppEvent::DownloadStarted { id, url, file });
                 Ok(())

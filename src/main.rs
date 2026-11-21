@@ -1,5 +1,4 @@
-//! LiteRust Browser 0.16-alpha.4: per-site network-filter exceptions, permission prompts,
-//! URL hygiene and low-memory background views. Web rendering is Edge WebView2.
+//! LiteRust desktop browser shell. Web rendering is handled by Edge WebView2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use literust_browser::{
@@ -225,6 +224,26 @@ enum UiCommand {
     ShowBookmarks,
     ShowHistory,
     ShowDownloads,
+    DownloadRefresh,
+    DownloadControl {
+        id: u64,
+        operation: storage::DownloadAction,
+    },
+    DownloadFolder {
+        id: u64,
+    },
+    BookmarkUpdate {
+        url: String,
+        title: String,
+        folder: Option<String>,
+    },
+    BookmarkRemove {
+        url: String,
+    },
+    BookmarkFolder {
+        previous: Option<String>,
+        name: Option<String>,
+    },
     ClearHistory,
     ExportBookmarks,
     ClearDownloadHistory,
@@ -305,9 +324,11 @@ enum AppEvent {
     DownloadState {
         id: u64,
         file: PathBuf,
-        running: bool,
-        ok: bool,
+        status: storage::DownloadStatus,
+        progress: storage::DownloadProgress,
     },
+    #[cfg(windows)]
+    DownloadLimit,
 }
 
 #[derive(Debug)]
@@ -464,6 +485,8 @@ struct Browser {
     next_window_requested: bool,
     proxy: BrowserProxy,
     private_mode: bool,
+    #[cfg(windows)]
+    downloads: windows_platform::Downloads,
     next_tab_id: u64,
     next_generation: u64,
     usage_clock: u64,
@@ -484,6 +507,7 @@ impl Browser {
         proxy: BrowserProxy,
         private_mode: bool,
         local_profiles: Catalog,
+        #[cfg(windows)] downloads: windows_platform::Downloads,
     ) -> Self {
         let next_tab_id = data
             .tabs
@@ -547,6 +571,8 @@ impl Browser {
             next_window_requested: false,
             proxy,
             private_mode,
+            #[cfg(windows)]
+            downloads,
             next_tab_id,
             next_generation: 1,
             usage_clock: 0,
@@ -1018,6 +1044,50 @@ impl Browser {
                 eprintln!("Cannot update toolbar: {err}");
             }
         }
+        self.sync_manager();
+    }
+
+    fn sync_manager(&self) {
+        match self.panel.as_deref() {
+            Some("bookmarks-manager") => {
+                let bookmarks = serde_json::json!({
+                    "items": self.data.bookmarks, "folders": self.data.bookmark_folders
+                });
+                let _ = self
+                    .toolbar
+                    .evaluate_script(&format!("window.bookmarkManagerUpdate?.({bookmarks});"));
+            }
+            Some("downloads-manager") => {
+                let entries: Vec<_> = self.data.downloads.iter().rev().map(|entry| {
+                    #[cfg(windows)]
+                    let live = self.downloads.progress(entry.id);
+                    #[cfg(not(windows))]
+                    let live: Option<storage::DownloadProgress> = None;
+                    let name = entry.file.rsplit(['\\', '/']).next().unwrap_or_default();
+                    let name: String = name.chars().take(240).collect();
+                    serde_json::json!({
+                        "id": entry.id, "name": name, "source": entry.url, "status": entry.state(),
+                        "started_at": entry.started_at, "has_folder": Path::new(&entry.file).is_absolute(),
+                        "progress": live.unwrap_or(storage::DownloadProgress {
+                            received: entry.received, total: entry.total, ..Default::default()
+                        })
+                    })
+                }).collect();
+                if let Ok(json) = serde_json::to_string(&entries) {
+                    let _ = self
+                        .toolbar
+                        .evaluate_script(&format!("window.downloadManagerUpdate?.({json});"));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn open_manager(&self, panel: &'static str) {
+        debug_assert!(matches!(panel, "bookmarks-manager" | "downloads-manager"));
+        let _ = self
+            .toolbar
+            .evaluate_script(&format!("window.openPanel?.('{panel}');"));
     }
 
     fn notice_localized(&self, message: &str) {
@@ -1257,9 +1327,13 @@ impl Browser {
             }
         }
         #[cfg(windows)]
-        let downloads =
-            windows_platform::configure(&view, self.proxy.clone(), self.shortcuts.clone())
-                .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
+        let downloads = windows_platform::configure(
+            &view,
+            self.proxy.clone(),
+            self.shortcuts.clone(),
+            &self.downloads,
+        )
+        .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(not(windows))]
         let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
         Ok(LivePage {
@@ -2175,9 +2249,75 @@ impl Browser {
                     self.sync_toolbar();
                 }
             }
-            UiCommand::ShowBookmarks => self.open_library(BOOKMARKS),
+            UiCommand::ShowBookmarks => self.open_manager("bookmarks-manager"),
             UiCommand::ShowHistory => self.open_library(HISTORY),
-            UiCommand::ShowDownloads => self.open_library(DOWNLOADS),
+            UiCommand::ShowDownloads => self.open_manager("downloads-manager"),
+            UiCommand::DownloadRefresh => {
+                if self.panel.as_deref() == Some("downloads-manager") {
+                    self.sync_manager();
+                }
+            }
+            UiCommand::DownloadControl { id, operation } => {
+                #[cfg(windows)]
+                if !self.downloads.control(id, operation) {
+                    self.notice_localized("Действие для этой загрузки недоступно.");
+                    self.sync_manager();
+                }
+                #[cfg(not(windows))]
+                let _ = (id, operation);
+            }
+            UiCommand::DownloadFolder { id } => {
+                #[cfg(windows)]
+                {
+                    use tao::platform::windows::WindowExtWindows;
+                    let opened = self
+                        .data
+                        .downloads
+                        .iter()
+                        .find(|entry| entry.id == id)
+                        .is_some_and(|entry| {
+                            windows_platform::open_download_folder(
+                                windows::Win32::Foundation::HWND(self.window.hwnd() as _),
+                                Path::new(&entry.file),
+                            )
+                        });
+                    if !opened {
+                        self.notice_localized("Папка загрузки недоступна.");
+                    }
+                }
+                #[cfg(not(windows))]
+                let _ = id;
+            }
+            UiCommand::BookmarkUpdate { url, title, folder } => {
+                if !self.private_mode {
+                    if !self.data.update_bookmark(&url, &title, folder) {
+                        self.notice_localized("Закладка или папка недоступна.");
+                    }
+                    self.persist();
+                    self.sync_toolbar();
+                }
+            }
+            UiCommand::BookmarkRemove { url } => {
+                if !self.private_mode {
+                    self.data.remove_bookmark(&url);
+                    self.persist();
+                    self.sync_toolbar();
+                }
+            }
+            UiCommand::BookmarkFolder { previous, name } => {
+                if !self.private_mode {
+                    if !self
+                        .data
+                        .update_bookmark_folder(previous.as_deref(), name.as_deref())
+                    {
+                        self.notice_localized(
+                            "Проверьте имя папки. Имена папок должны быть уникальными.",
+                        );
+                    }
+                    self.persist();
+                    self.sync_toolbar();
+                }
+            }
             UiCommand::ExportBookmarks => {
                 if self.private_mode {
                     self.notice_localized("Экспорт закладок недоступен в приватном окне.");
@@ -2197,6 +2337,11 @@ impl Browser {
                 }
             }
             UiCommand::ClearDownloadHistory => {
+                #[cfg(windows)]
+                self.data
+                    .downloads
+                    .retain(|entry| self.downloads.contains(entry.id));
+                #[cfg(not(windows))]
                 self.data.downloads.clear();
                 self.persist();
                 if self.current_url() == DOWNLOADS {
@@ -2204,9 +2349,7 @@ impl Browser {
                 } else {
                     self.sync_toolbar();
                 }
-                self.notice_localized(
-                    "Список загрузок очищен. Скачанные файлы на диске НЕ удалены.",
-                );
+                self.notice_localized("История завершённых загрузок очищена.");
             }
             UiCommand::ClearHistory => {
                 self.data.history.clear();
@@ -2257,6 +2400,7 @@ impl Browser {
                     let _ = page.view.set_visible(!open && *id == self.active_id());
                 }
                 self.resize();
+                self.sync_manager();
             }
             UiCommand::SetAppearance { design, theme } => {
                 if design >= 30 || theme >= 330 {
@@ -2521,13 +2665,34 @@ impl Browser {
     }
 
     fn on_download_start(&mut self, id: u64, url: String, file: String) {
-        self.data.record_download_start(id, url, file);
+        let source = download_source(&url);
+        self.data.record_download_start(id, source, file);
+        if self.data.downloads.len() > storage::MAX_DOWNLOADS {
+            #[cfg(windows)]
+            let evict = self
+                .data
+                .downloads
+                .iter()
+                .position(|entry| !self.downloads.contains(entry.id));
+            #[cfg(not(windows))]
+            let evict = Some(0);
+            if let Some(index) = evict {
+                self.data.downloads.remove(index);
+            }
+        }
         self.persist();
         self.sync_toolbar();
     }
-    fn on_download_state(&mut self, id: u64, file: &Path, running: bool, ok: bool) {
-        self.data.record_download_state(id, file, running, ok);
-        if !running {
+    fn on_download_state(
+        &mut self,
+        id: u64,
+        file: &Path,
+        status: storage::DownloadStatus,
+        progress: storage::DownloadProgress,
+    ) {
+        let terminal = !progress.can_cancel;
+        self.data.record_download_state(id, file, status, progress);
+        if terminal {
             self.enforce_page_budget();
         }
         self.persist();
@@ -2610,6 +2775,18 @@ impl Browser {
 }
 
 /// Do not grant top-level access to file:// or executable URL schemes.
+fn download_source(input: &str) -> String {
+    if !valid_web_url(input) || input.len() > 4096 {
+        return String::new();
+    }
+    let Ok(mut url) = url::Url::parse(input) else {
+        return String::new();
+    };
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string()
+}
+
 fn permitted_page_navigation(url: &str) -> bool {
     security::safe_top_level_navigation(url) && (valid_web_url(url) || url == "about:blank")
 }
@@ -2774,7 +2951,13 @@ fn main() {
     {
         let args: Vec<String> = std::env::args().collect();
         if let Some(pair) = args.windows(2).find(|a| a[0] == "--session-self-test") {
-            if session_self_test::run(&pair[1]).is_err() {
+            let result = if pair[1] == "downloads" {
+                session_self_test::downloads()
+            } else {
+                session_self_test::run(&pair[1])
+            };
+            if let Err(error) = result {
+                eprintln!("Native self-test failed: {error}");
                 std::process::exit(1);
             }
             return;
@@ -2982,8 +3165,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let system_vpn_active = system_vpn.is_some();
     #[cfg(not(windows))]
     let system_vpn_active = false;
+    #[cfg(windows)]
+    windows_platform::Downloads::reserve_ids(data.downloads.len());
     let options = WindowOptions {
         private_mode,
+        #[cfg(windows)]
+        downloads: windows_platform::Downloads::default(),
         local_profiles: catalog,
         vpn_vault: std::rc::Rc::new(vpn_vault),
         vpn_port,
@@ -3091,6 +3278,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             windows.iter().for_each(Browser::sync_toolbar);
         }
 
+        for browser in windows.iter_mut().filter(|browser| browser.close_requested) {
+            if browser.pages.values().any(LivePage::busy) {
+                browser.close_requested = false;
+                browser.notice_localized("Завершите печать или загрузку перед закрытием окна.");
+                if browser.pages.values().any(|page| page.downloads.get() > 0) {
+                    browser.open_manager("downloads-manager");
+                }
+            }
+        }
         let mut changed = false;
         if let Some(index) = windows.iter().position(|browser| browser.close_requested) {
             changed = true;
@@ -3217,6 +3413,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[derive(Clone)]
 struct WindowOptions {
     private_mode: bool,
+    #[cfg(windows)]
+    downloads: windows_platform::Downloads,
     local_profiles: Catalog,
     vpn_vault: std::rc::Rc<vpn::Vault>,
     vpn_port: Option<u16>,
@@ -3421,6 +3619,8 @@ fn create_browser(
         proxy,
         private_mode,
         catalog,
+        #[cfg(windows)]
+        options.downloads,
     );
     #[cfg(windows)]
     {
@@ -3574,9 +3774,13 @@ fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
         AppEvent::DownloadState {
             id,
             file,
-            running,
-            ok,
-        } => browser.on_download_state(id, &file, running, ok),
+            status,
+            progress,
+        } => browser.on_download_state(id, &file, status, progress),
+        #[cfg(windows)]
+        AppEvent::DownloadLimit => {
+            browser.notice_localized("Достигнут лимит одновременных загрузок.")
+        }
     }
 }
 

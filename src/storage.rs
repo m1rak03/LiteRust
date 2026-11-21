@@ -14,7 +14,8 @@ pub const DOWNLOADS: &str = "literust://downloads";
 pub const MAX_TABS: usize = 24;
 pub const MAX_BOOKMARKS: usize = 1000;
 const MAX_HISTORY: usize = 1500;
-const MAX_DOWNLOADS: usize = 300;
+pub const MAX_DOWNLOADS: usize = 300;
+const MAX_BOOKMARK_FOLDERS: usize = 64;
 pub(crate) const MAX_BROWSER_DATA_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_URL_LEN: usize = 8192;
 const MAX_ADBLOCK_EXCEPTIONS: usize = 256;
@@ -183,6 +184,8 @@ pub struct Bookmark {
     pub url: String,
     pub title: String,
     pub added_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,6 +203,62 @@ pub struct DownloadEntry {
     pub file: String,
     pub status: String,
     pub started_at: u64,
+    #[serde(default)]
+    pub received: u64,
+    #[serde(default)]
+    pub total: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadStatus {
+    Running,
+    Paused,
+    Completed,
+    Cancelled,
+    #[default]
+    Interrupted,
+}
+
+impl DownloadStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Running => "Загрузка",
+            Self::Paused => "Приостановлено",
+            Self::Completed => "Готово",
+            Self::Cancelled => "Отменено",
+            Self::Interrupted => "Прервано",
+        }
+    }
+}
+
+impl DownloadEntry {
+    pub fn state(&self) -> DownloadStatus {
+        match self.status.as_str() {
+            "Загрузка" => DownloadStatus::Running,
+            "Приостановлено" => DownloadStatus::Paused,
+            "Готово" => DownloadStatus::Completed,
+            "Отменено" => DownloadStatus::Cancelled,
+            _ => DownloadStatus::Interrupted,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct DownloadProgress {
+    pub received: u64,
+    pub total: Option<u64>,
+    pub can_pause: bool,
+    pub can_resume: bool,
+    pub can_cancel: bool,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadAction {
+    Pause,
+    Resume,
+    Cancel,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -445,6 +504,7 @@ pub struct ProfileData {
     pub appearance: Appearance,
     pub dock_position: crate::layout::DockPosition,
     pub bookmarks: Vec<Bookmark>,
+    pub bookmark_folders: Vec<String>,
     pub history: Vec<HistoryEntry>,
     pub downloads: Vec<DownloadEntry>,
     pub cosmetic_filter: bool,
@@ -477,6 +537,7 @@ impl Default for ProfileData {
             appearance: Appearance::default(),
             dock_position: crate::layout::DockPosition::default(),
             bookmarks: vec![],
+            bookmark_folders: vec![],
             history: vec![],
             downloads: vec![],
             cosmetic_filter: false,
@@ -589,6 +650,14 @@ impl BrowserData {
             .filter(|host| seen_hosts.insert(host.clone()))
             .take(MAX_ADBLOCK_EXCEPTIONS)
             .collect();
+        let mut folder_names = std::collections::HashSet::new();
+        self.bookmark_folders = std::mem::take(&mut self.bookmark_folders)
+            .into_iter()
+            .filter_map(|name| bookmark_folder_name(&name))
+            .filter(|name| folder_names.insert(name.to_lowercase()))
+            .take(MAX_BOOKMARK_FOLDERS)
+            .collect();
+        let folders = self.bookmark_folders.clone();
         let mut seen_bookmarks = std::collections::HashSet::new();
         self.bookmarks.retain_mut(|b| {
             if !valid_web_url(&b.url) {
@@ -602,6 +671,10 @@ impl BrowserData {
         self.bookmarks.truncate(MAX_BOOKMARKS);
         for b in &mut self.bookmarks {
             b.title = compact_title(&b.title);
+            b.folder = b
+                .folder
+                .take()
+                .and_then(|folder| folders.iter().find(|name| name.as_str() == folder).cloned());
         }
         self.history.retain(|h| valid_web_url(&h.url));
         if self.history.len() > MAX_HISTORY {
@@ -617,9 +690,13 @@ impl BrowserData {
         }
         // A previous process can terminate mid-download. Never leave a stale
         // indefinite "Downloading" label after restarting the browser.
-        for entry in &mut self.downloads {
-            entry.id = 0;
-            if entry.status == "Загрузка" {
+        for (index, entry) in self.downloads.iter_mut().enumerate() {
+            // Downloads from older versions used IDs scoped to a process.
+            entry.id = index as u64 + 1;
+            if matches!(
+                entry.state(),
+                DownloadStatus::Running | DownloadStatus::Paused
+            ) {
                 entry.status = "Прервано".into();
             }
         }
@@ -677,16 +754,24 @@ impl BrowserData {
         // Standard Netscape format understood by Chrome and many other browsers.
         // Escape URLs and titles: even manually edited profile JSON is untrusted.
         let mut html = String::from("<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n<TITLE>LiteRust bookmarks</TITLE>\n<H1>LiteRust bookmarks</H1>\n<DL><p>\n");
-        for item in &self.bookmarks {
-            if !valid_web_url(&item.url) {
-                continue;
+        let write_items = |html: &mut String, folder: Option<&str>| {
+            for item in &self.bookmarks {
+                if item.folder.as_deref() != folder || !valid_web_url(&item.url) {
+                    continue;
+                }
+                html.push_str(&format!(
+                    "<DT><A HREF=\"{}\" ADD_DATE=\"{}\">{}</A>\n",
+                    escape_html(&item.url),
+                    item.added_at,
+                    escape_html(&item.title)
+                ));
             }
-            html.push_str(&format!(
-                "<DT><A HREF=\"{}\" ADD_DATE=\"{}\">{}</A>\n",
-                escape_html(&item.url),
-                item.added_at,
-                escape_html(&item.title)
-            ));
+        };
+        write_items(&mut html, None);
+        for folder in &self.bookmark_folders {
+            html.push_str(&format!("<DT><H3>{}</H3>\n<DL><p>\n", escape_html(folder)));
+            write_items(&mut html, Some(folder));
+            html.push_str("</DL><p>\n");
         }
         html.push_str("</DL><p>\n");
         html
@@ -744,8 +829,66 @@ impl BrowserData {
                 url: url.into(),
                 title: compact_title(title),
                 added_at: now(),
+                folder: None,
             });
         }
+    }
+
+    pub fn update_bookmark(&mut self, url: &str, title: &str, folder: Option<String>) -> bool {
+        if folder
+            .as_ref()
+            .is_some_and(|name| !self.bookmark_folders.contains(name))
+        {
+            return false;
+        }
+        let Some(item) = self.bookmarks.iter_mut().find(|item| item.url == url) else {
+            return false;
+        };
+        item.title = compact_title(title.trim());
+        item.folder = folder;
+        true
+    }
+
+    pub fn remove_bookmark(&mut self, url: &str) {
+        self.bookmarks.retain(|bookmark| bookmark.url != url);
+    }
+
+    pub fn update_bookmark_folder(&mut self, previous: Option<&str>, name: Option<&str>) -> bool {
+        let name = match name {
+            Some(name) => match bookmark_folder_name(name) {
+                Some(name) => Some(name),
+                None => return false,
+            },
+            None => None,
+        };
+        let folders = &self.bookmark_folders;
+        if let Some(name) = &name {
+            if folders.iter().any(|current| {
+                Some(current.as_str()) != previous && current.to_lowercase() == name.to_lowercase()
+            }) {
+                return false;
+            }
+        }
+        if let Some(previous) = previous {
+            let Some(index) = folders.iter().position(|folder| folder == previous) else {
+                return false;
+            };
+            if let Some(name) = &name {
+                self.bookmark_folders[index].clone_from(name);
+            } else {
+                self.bookmark_folders.remove(index);
+            }
+            for bookmark in &mut self.bookmarks {
+                if bookmark.folder.as_deref() == Some(previous) {
+                    bookmark.folder.clone_from(&name);
+                }
+            }
+        } else if let Some(name) = name.filter(|_| folders.len() < MAX_BOOKMARK_FOLDERS) {
+            self.bookmark_folders.push(name);
+        } else {
+            return false;
+        }
+        true
     }
 
     pub fn update_history_title(&mut self, url: &str, title: &str) {
@@ -785,29 +928,36 @@ impl BrowserData {
             id,
             url,
             file,
-            status: "Загрузка".into(),
+            status: DownloadStatus::Running.label().into(),
             started_at: now(),
+            received: 0,
+            total: None,
         });
-        if self.downloads.len() > MAX_DOWNLOADS {
-            self.downloads.remove(0);
-        }
     }
 
-    pub fn record_download_state(&mut self, id: u64, file: &Path, running: bool, success: bool) {
-        // IDs are per operation, not URL: concurrent identical URLs are distinct.
-        // Clearing history deliberately prevents late callbacks from recreating it.
+    pub fn record_download_state(
+        &mut self,
+        id: u64,
+        file: &Path,
+        status: DownloadStatus,
+        progress: DownloadProgress,
+    ) {
+        // The URL is not an operation identifier. Callbacks can arrive in any order.
         if let Some(entry) = self.downloads.iter_mut().rev().find(|d| d.id == id) {
-            entry.status = if running {
-                "Загрузка"
-            } else if success {
-                "Готово"
-            } else {
-                "Прервано / ошибка"
+            entry.status = status.label().into();
+            if !file.as_os_str().is_empty() {
+                entry.file = file.to_string_lossy().into_owned();
             }
-            .into();
-            entry.file = file.display().to_string();
+            entry.received = progress.received;
+            entry.total = progress.total;
         }
     }
+}
+
+fn bookmark_folder_name(name: &str) -> Option<String> {
+    let name = name.trim();
+    (!name.is_empty() && name.chars().count() <= 60 && !name.chars().any(char::is_control))
+        .then(|| name.to_owned())
 }
 
 pub fn compact_title(input: &str) -> String {
@@ -852,11 +1002,21 @@ mod tests {
         let mut data = BrowserData::default();
         data.record_download_start(1, "https://example.org/file".into(), "one".into());
         data.record_download_start(2, "https://example.org/file".into(), "two".into());
-        data.record_download_state(1, Path::new("chosen-one"), false, true);
+        data.record_download_state(
+            1,
+            Path::new("chosen-one"),
+            DownloadStatus::Completed,
+            DownloadProgress::default(),
+        );
         assert_eq!(data.downloads[0].status, "Готово");
         assert_eq!(data.downloads[1].status, "Загрузка");
         data.downloads.clear();
-        data.record_download_state(2, Path::new("two"), false, true);
+        data.record_download_state(
+            2,
+            Path::new("two"),
+            DownloadStatus::Completed,
+            DownloadProgress::default(),
+        );
         assert!(data.downloads.is_empty());
     }
     #[test]
@@ -897,17 +1057,61 @@ mod tests {
         assert_eq!(d.clean().tabs[0].url, NEW_TAB);
     }
     #[test]
+    fn old_bookmarks_gain_folders_without_losing_titles_or_addresses() {
+        let mut data: BrowserData = serde_json::from_str(
+            r#"{"bookmarks":[{"url":"https://example.com/","title":"Original","added_at":1}]}"#,
+        )
+        .unwrap();
+        assert!(data.bookmark_folders.is_empty());
+        assert_eq!(data.bookmarks[0].folder, None);
+        assert!(data.update_bookmark_folder(None, Some("Work & Study")));
+        assert!(!data.update_bookmark_folder(None, Some("Work & study")));
+        let invalid_name = format!("line{}break", char::from(10));
+        assert!(!data.update_bookmark_folder(None, Some(&invalid_name)));
+        assert!(data.update_bookmark(
+            "https://example.com/",
+            "Edited",
+            Some("Work & Study".into())
+        ));
+        let html = data.bookmarks_as_html();
+        assert!(html.contains("<H3>Work &amp; Study</H3>"));
+        let mut data = serde_json::from_value::<BrowserData>(serde_json::to_value(data).unwrap())
+            .unwrap()
+            .clean();
+        assert!(data.update_bookmark_folder(Some("Work & Study"), Some("Personal")));
+        assert_eq!(data.bookmarks[0].folder.as_deref(), Some("Personal"));
+        assert!(data.update_bookmark_folder(Some("Personal"), None));
+        assert_eq!(data.bookmarks[0].folder, None);
+        assert_eq!(data.bookmarks[0].title, "Edited");
+    }
+
+    #[test]
+    fn old_download_history_is_actionable_without_duplicate_ids() {
+        let data: BrowserData = serde_json::from_str(r#"{"downloads":[
+            {"id":1,"url":"https://example.com/a","file":"a","status":"Готово","started_at":1},
+            {"id":1,"url":"https://example.com/b","file":"b","status":"Приостановлено","started_at":2}
+        ]}"#).unwrap();
+        let data = data.clean();
+        assert_eq!(data.downloads[0].id, 1);
+        assert_eq!(data.downloads[0].state(), DownloadStatus::Completed);
+        assert_eq!(data.downloads[1].id, 2);
+        assert_eq!(data.downloads[1].state(), DownloadStatus::Interrupted);
+    }
+
+    #[test]
     fn bookmark_export_escapes_html_and_omits_unsafe_urls() {
         let mut data = BrowserData::default();
         data.bookmarks.push(Bookmark {
             url: "https://example.org/?q=\"<x>".into(),
             title: "A <tag> & B".into(),
             added_at: 123,
+            folder: None,
         });
         data.bookmarks.push(Bookmark {
             url: "javascript:alert(1)".into(),
             title: "Bad".into(),
             added_at: 0,
+            folder: None,
         });
         let html = data.bookmarks_as_html();
         assert!(html.contains("&lt;tag&gt; &amp; B"));

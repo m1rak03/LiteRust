@@ -1,5 +1,5 @@
-const {chromium}=require('playwright'),assert=require('node:assert/strict'),{execFileSync}=require('node:child_process');
-const fixture=(name,...args)=>execFileSync(require('node:path').join(require('node:os').homedir(),'.cargo','bin',process.platform==='win32'?'cargo.exe':'cargo'),['run','--quiet','--locked','--no-default-features','--example',name,'--',...args],{encoding:'utf8'});
+const {chromium}=require('playwright'),assert=require('node:assert/strict');
+const fixture=require('./rust-fixture.cjs');
 (async()=>{const browser=await chromium.launch({headless:true});try{
 const page=await browser.newPage({viewport:{width:1280,height:800}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.setContent(fixture('security_controls'));await page.evaluate(()=>{window.sent=[];window.ipc={postMessage:m=>sent.push(JSON.parse(m))};window.openPanel('settings');});await page.locator('[data-settings-category=all]').click();

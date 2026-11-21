@@ -626,7 +626,7 @@ VPN выключен	VPN is off
 LiteRust в Windows	LiteRust app icon
 AdBlock для	AdBlock for
 Работа	Work
-Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.16-alpha.4 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.	Google Password Manager opens in your external browser. Google manages the passwords there. LiteRust and its WebView2 profile cannot read the Chrome vault or autofill passwords from your Google account.
+Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.16-alpha.5 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.	Google Password Manager opens in your external browser. Google manages the passwords there. LiteRust and its WebView2 profile cannot read the Chrome vault or autofill passwords from your Google account.
 Поиск требует обновления Microsoft WebView2 Runtime.	Update Microsoft WebView2 Runtime to use Find on page.
 Не удалось сохранить профиль. Проверьте свободное место и права доступа.	Unable to save the profile. Check disk space and permissions.
 Дождитесь завершения текущей операции.	Wait for the current operation to finish.
@@ -708,4 +708,41 @@ VPN-хаб доступен в Windows-сборке	The VPN hub is available in 
 Имя: от 1 до 60 символов	Enter a name with 1–60 characters
 Новое окно	New window
 Следующее окно	Next window
-Достигнут предел открытых окон.	The open window limit has been reached.
+Достигнут предел открытых окон.	The open window limit has been reached.\nПоиск загрузок	Search downloads
+Статус загрузки	Download status
+Все загрузки	All downloads
+Активные	Active
+Прерванные и отменённые	Interrupted and cancelled
+Очистить историю загрузок	Clear download history
+История завершённых загрузок очищена.	Finished download history cleared.
+Загрузки не найдены.	No downloads found.
+Папка загрузки недоступна.	The download folder is unavailable.
+Действие для этой загрузки недоступно.	This action is unavailable for the download.
+Достигнут лимит одновременных загрузок.	Too many downloads are active.
+Завершите печать или загрузку перед закрытием окна.	Finish printing or downloading before closing this window.
+Приостановлено	Paused
+Отменено	Cancelled
+Прогресс загрузки	Download progress
+Пауза	Pause
+Возобновить	Resume
+Отменить загрузку	Cancel download
+Открыть папку	Open folder
+Очистить историю завершённых загрузок? Файлы останутся на диске.	Clear entries for finished downloads? Files will remain on disk.
+Поиск закладок	Search bookmarks
+Папка закладок	Bookmark folder
+Сортировка закладок	Sort bookmarks
+Сначала новые	Newest first
+По названию	By title
+По адресу	By address
+Имя папки	Folder name
+Создать папку	Create folder
+Переименовать папку	Rename folder
+Удалить папку	Delete folder
+Все папки	All folders
+Без папки	No folder
+Переместить в папку	Move to folder
+Удалить папку и переместить её закладки в общий список?	Delete the folder and move its bookmarks to the main list?
+Удалить закладку	Remove bookmark
+Закладки не найдены.	No bookmarks found.
+Закладка или папка недоступна.	The bookmark or folder is unavailable.
+Проверьте имя папки. Имена папок должны быть уникальными.	Check the folder name. Folder names must be unique.\n
