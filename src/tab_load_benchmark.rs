@@ -25,6 +25,17 @@ struct Report {
     runtime: String,
     tabs: usize,
     live_tabs: usize,
+    cycles: usize,
+    elapsed_ms: u128,
+    sample: webview_resources::Sample,
+    checkpoints: Vec<Checkpoint>,
+}
+
+#[derive(Serialize)]
+struct Checkpoint {
+    cycles: usize,
+    elapsed_ms: u128,
+    live_tabs: usize,
     sample: webview_resources::Sample,
 }
 
@@ -43,6 +54,15 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
+    let cycles = std::env::var("LITERUST_BENCHMARK_CYCLES")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()?
+        .unwrap_or(0);
+    if cycles > 400 || (cycles > 0 && count < 2) {
+        return Err("The churn fixture requires at least two tabs and at most 400 cycles".into());
+    }
+    let started = Instant::now();
     let mut events = EventLoopBuilder::<WindowMessage>::with_user_event().build();
     let options = WindowOptions {
         private_mode: true,
@@ -66,7 +86,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = wry::webview_version()?;
     let mut ready = Arc::new(AtomicU8::new(0));
     let mut last_attempt = Instant::now();
-    let deadline = Instant::now() + Duration::from_secs(40);
+    let deadline = started + Duration::from_secs(45 + cycles as u64 * 2);
+    let mut closed_cycles = 0;
+    let mut checkpoints = Vec::<Checkpoint>::new();
+    let mut fixture_error = None;
     let mut settle_at = None;
     let mut receiver = None;
     let mut sample = None;
@@ -80,16 +103,39 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         *flow = ControlFlow::WaitUntil(now + Duration::from_millis(50));
         if let Event::UserEvent(WindowMessage::Browser { event, .. }) = event {
             let opening_tab = matches!(event, AppEvent::Ui(UiCommand::NewTab));
+            let closed = match &event {
+                AppEvent::Ui(UiCommand::CloseTab { tab_id, .. }) => *tab_id,
+                _ => None,
+            };
             dispatch_browser_event(&mut browser, event);
-            if opening_tab {
+            if let Some(id) = closed {
+                if browser.pages.contains_key(&id) || browser.data.tabs.len() + 1 != count {
+                    fixture_error = Some("A closed tab retained its live WebView or session entry");
+                    *flow = ControlFlow::Exit;
+                    return;
+                }
+                closed_cycles += 1;
+            }
+            if opening_tab || closed.is_some() {
                 ready.store(0, Ordering::Relaxed);
             }
         }
         if let Some(pending) = receiver.as_ref() {
             let pending: &mpsc::Receiver<webview_resources::Sample> = pending;
             if let Ok(measured) = pending.try_recv() {
-                sample = Some(measured);
-                *flow = ControlFlow::Exit;
+                if closed_cycles >= cycles {
+                    sample = Some(measured);
+                    *flow = ControlFlow::Exit;
+                } else {
+                    checkpoints.push(Checkpoint {
+                        cycles: closed_cycles,
+                        elapsed_ms: started.elapsed().as_millis(),
+                        live_tabs: browser.pages.len(),
+                        sample: measured,
+                    });
+                    receiver = None;
+                    settle_at = None;
+                }
             } else {
                 *flow = ControlFlow::WaitUntil(now + Duration::from_millis(200));
             }
@@ -133,7 +179,20 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             2 if browser.data.tabs.len() == count => {
-                settle_at = Some(now + Duration::from_secs(2));
+                let sample_due = [0, cycles / 2, cycles].contains(&closed_cycles)
+                    && checkpoints.last().is_none_or(|entry| entry.cycles != closed_cycles);
+                if sample_due {
+                    settle_at = Some(now + Duration::from_secs(2));
+                } else {
+                    ready.store(3, Ordering::Relaxed);
+                    let _ = proxy.send_event(WindowMessage::Browser {
+                        window: browser.window.id(),
+                        event: AppEvent::Ui(UiCommand::CloseTab {
+                            index: browser.data.active,
+                            tab_id: Some(browser.active_id()),
+                        }),
+                    });
+                }
             }
             2 => {
                 // Use the production event path for tab creation. Creating a controller
@@ -147,6 +206,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         }
     });
+    if let Some(error) = fixture_error {
+        return Err(error.into());
+    }
     let sample = sample.ok_or_else(|| {
         format!(
             "Benchmark timed out at {} tabs, {} live, readiness {}",
@@ -167,7 +229,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         runtime,
         tabs: count,
         live_tabs: browser.pages.len(),
+        cycles,
+        elapsed_ms: started.elapsed().as_millis(),
         sample,
+        checkpoints,
     };
     std::fs::write(root.join("tab-load.json"), serde_json::to_vec(&report)?)?;
     Ok(())

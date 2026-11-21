@@ -311,6 +311,14 @@ pub fn install_shortcuts(
     Ok(())
 }
 
+pub fn is_foreground_window(window: &tao::window::Window) -> bool {
+    use tao::platform::windows::WindowExtWindows;
+    use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::GetForegroundWindow};
+
+    // A WebView2 child can own keyboard focus while the Tao frame stays foreground.
+    unsafe { GetForegroundWindow() == HWND(window.hwnd() as _) }
+}
+
 pub fn has_page_focus(view: &wry::WebView) -> bool {
     use windows::Win32::{
         Foundation::HWND,

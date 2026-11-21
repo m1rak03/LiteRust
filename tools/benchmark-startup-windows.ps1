@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$Baseline,
     [Parameter(Mandatory=$true)][string]$Candidate,
+    [string[]]$Additional = @(),
     [ValidateRange(5,25)][int]$Repeats = 5
 )
 $ErrorActionPreference = 'Stop'
@@ -11,6 +12,10 @@ $builds = @(
     @{ Role = 'baseline'; Exe = (Resolve-Path -LiteralPath $Baseline).Path },
     @{ Role = 'candidate'; Exe = (Resolve-Path -LiteralPath $Candidate).Path }
 )
+for ($i = 0; $i -lt $Additional.Count; $i++) {
+    $builds += @{ Role = ('comparison-' + ($i + 1)); Exe = (Resolve-Path -LiteralPath $Additional[$i]).Path }
+}
+
 
 function Measure-Startup([hashtable]$Build, [int]$Run) {
     $fixture = Join-Path $root $Build.Role

@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$Baseline,
     [Parameter(Mandatory=$true)][string]$Candidate,
+    [string[]]$Additional = @(),
     [ValidateRange(1,10)][int]$Repeats = 2,
     [int[]]$Tabs = @(4,12)
 )
@@ -11,6 +12,10 @@ $versions = @(
     @{ Executable = (Resolve-Path -LiteralPath $Baseline).Path; Role = 'baseline' },
     @{ Executable = (Resolve-Path -LiteralPath $Candidate).Path; Role = 'candidate' }
 )
+for ($i = 0; $i -lt $Additional.Count; $i++) {
+    $versions += @{ Role = ('comparison-' + ($i + 1)); Executable = (Resolve-Path -LiteralPath $Additional[$i]).Path }
+}
+
 
 foreach ($tabCount in $Tabs) {
     for ($run = 1; $run -le $Repeats; $run++) {

@@ -21,6 +21,14 @@ small{color:#9cabb9;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;fo
 <input id="filter" type="search" autocomplete="off" placeholder="Поиск по списку..." aria-label="Фильтр списка">
 <section id="list"><!-- ENTRIES --></section>
 </main><script>
-'use strict';const filter=document.getElementById('filter');
-filter.oninput=()=>{let query=filter.value.toLocaleLowerCase();for(const item of document.querySelectorAll('.entry'))item.hidden=!item.textContent.toLocaleLowerCase().includes(query);};
+'use strict';
+const filter=document.getElementById('filter');
+const entries=Array.from(document.querySelectorAll('.entry'),item=>[item,item.textContent.toLocaleLowerCase()]);
+filter.oninput=()=>{
+  const query=filter.value.trim().toLocaleLowerCase();
+  for(const [item,text] of entries){
+    const hidden=!text.includes(query);
+    if(item.hidden!==hidden)item.hidden=hidden;
+  }
+};
 </script></body></html>

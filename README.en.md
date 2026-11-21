@@ -27,6 +27,8 @@ Startup timings are available in the local log. [Startup phases and measurements
 
 Settings → Diagnostics shows component status and lets you review and save a local report. [Diagnostics](docs/releases/0.18.0-alpha.4.md)
 
+[Interface checks and comparison across 0.16–0.18](docs/releases/0.18.0-alpha.5.md)
+
 - **Tab groups.** Right-click a tab to create a group, or Ctrl-click several tabs first to group the selection. Click a group header to collapse it. Right-click the header to edit, pin or ungroup. See the [0.17.0-alpha.1 release notes](docs/releases/0.17.0-alpha.1.md).
 - **Downloads and bookmarks.** Filter downloads, check progress and open the destination folder. WebView2 controls the availability of pause, resume and cancel. Search and sort bookmarks, and create folders to organise them. See the [0.16.0-alpha.5 release notes](docs/releases/0.16.0-alpha.5.md).
 - **Memory.** Background tabs use WebView2’s low-memory mode. Optional tab discard releases inactive views when the tab budget is exceeded. Discarded tabs reload when selected, so unsaved form state can be lost.

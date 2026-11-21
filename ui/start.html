@@ -9,4 +9,29 @@ __EXTRA_STYLE__#home-suggestions{display:grid;gap:4px;margin-top:8px;padding:4px
 <main><section><div class="eyebrow">Пространство для ваших идей</div><div class="clock" id="clock">—:—</div><div class="date" id="date"></div><h1 id="greeting">Куда отправимся?</h1><p class="lead">Начните с вопроса. Продолжите открытием.</p><label class="search-label" for="q">Поиск · __SEARCH_NAME__</label><form id="search"><input id="q" placeholder="Что хотите найти?" aria-label="Поисковый запрос" role="combobox" aria-autocomplete="list" aria-controls="home-suggestions" aria-expanded="false" autocomplete="off" autofocus><button class="search-submit" type="submit" aria-label="Найти"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button></form><div id="home-suggestions" role="listbox" hidden></div></section>
 <section class="workspace"><div class="section-heading"><h2>Под рукой</h2><span>ВАШИ ЗАКЛАДКИ</span></div><nav class="shortcuts" aria-label="Быстрые ссылки"><!-- SHORTCUTS --></nav><p class="shortcut-hint">Нажмите ☆ в адресной строке, чтобы добавить сюда любимый сайт.</p><div class="note">Ваш ритм. Ваши цвета. Ваш LiteRust.<br>Выберите фон и оформление под настроение.</div></section></main>
 <footer><span>__PROFILE_NOTE__</span><a href="literust://appearance" class="customize">Фон и темы</a></footer>
-<script>const query=document.getElementById('q');document.getElementById('search').onsubmit=e=>{e.preventDefault();const q=query.value.trim();if(q)window.homeSend({action:'navigate',value:q});};function tick(){const now=new Date();document.getElementById('clock').textContent=now.toLocaleTimeString('__LOCALE__',{hour:'2-digit',minute:'2-digit',hour12:__HOUR12__});document.getElementById('date').textContent=now.toLocaleDateString('__LOCALE__',{weekday:'long',day:'numeric',month:'long'});document.getElementById('greeting').textContent=window.homeState?.title_text|| (now.getHours()<6?'Время для тихих открытий.':now.getHours()<12?'Хорошего начала дня.':now.getHours()<18?'Место для новых идей.':'Выдохните. Вы дома.');}tick();let timer;function schedule(){clearInterval(timer);if(!document.hidden){tick();timer=setInterval(tick,60000);}}document.addEventListener('visibilitychange',schedule);schedule();</script><script>/* HOME_SCRIPT */</script></body></html>
+<script>const query=document.getElementById('q');document.getElementById('search').onsubmit=e=>{e.preventDefault();const q=query.value.trim();if(q)window.homeSend({action:'navigate',value:q});};function tick(){
+  const now=new Date();
+  const clock=document.getElementById('clock'),date=document.getElementById('date'),greeting=document.getElementById('greeting');
+  const time=now.toLocaleTimeString('__LOCALE__',{hour:'2-digit',minute:'2-digit',hour12:__HOUR12__});
+  const day=now.toLocaleDateString('__LOCALE__',{weekday:'long',day:'numeric',month:'long'});
+  const title=window.homeState?.title_text||(now.getHours()<6?'Время для тихих открытий.':now.getHours()<12?'Хорошего начала дня.':now.getHours()<18?'Место для новых идей.':'Выдохните. Вы дома.');
+  if(clock.textContent!==time)clock.textContent=time;
+  if(date.textContent!==day)date.textContent=day;
+  if(greeting.textContent!==title)greeting.textContent=title;
+}
+let clockTimer;
+window.scheduleHomeClock=()=>{
+  clearTimeout(clockTimer);
+  if(document.hidden)return;
+  const visible=id=>{
+    const item=document.getElementById(id);
+    return !item.hidden&&!item.closest('.home-widget')?.hidden;
+  };
+  tick();
+  if(visible('clock')||visible('date')||(visible('greeting')&&!window.homeState?.title_text)){
+    clockTimer=setTimeout(window.scheduleHomeClock,60000-Date.now()%60000);
+  }
+};
+document.addEventListener('visibilitychange',window.scheduleHomeClock);
+window.scheduleHomeClock();
+</script><script>/* HOME_SCRIPT */</script></body></html>

@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['docs/releases/0.18.0-alpha.4.md']
+    paths: ['docs/releases/0.18.0-alpha.5.md']
 permissions:
   contents: write
 jobs:
@@ -89,6 +89,46 @@ jobs:
               [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h,int x,int y,int w,int height,bool repaint);
               [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
               [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int cmd);
+              [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+
+              [StructLayout(LayoutKind.Sequential)]
+              private struct Input {
+                public uint Type;
+                public InputPayload Payload;
+              }
+              [StructLayout(LayoutKind.Explicit)]
+              private struct InputPayload {
+                [FieldOffset(0)] public KeyboardInput Key;
+                [FieldOffset(0)] public MouseInput Mouse;
+              }
+              [StructLayout(LayoutKind.Sequential)]
+              private struct KeyboardInput {
+                public ushort Key, Scan;
+                public uint Flags, Time;
+                public UIntPtr Extra;
+              }
+              [StructLayout(LayoutKind.Sequential)]
+              private struct MouseInput {
+                public int X, Y;
+                public uint Data, Flags, Time;
+                public UIntPtr Extra;
+              }
+              [DllImport("user32.dll", SetLastError = true)]
+              private static extern uint SendInput(uint count, Input[] input, int size);
+
+              public static void SendKeys(IntPtr window, ushort[] keys) {
+                if (GetForegroundWindow() != window) {
+                  throw new InvalidOperationException("LiteRust fixture is not in the foreground");
+                }
+                var events = new Input[keys.Length * 2];
+                for (int i = 0; i < keys.Length; i++) {
+                  events[i] = new Input { Type = 1, Payload = new InputPayload { Key = new KeyboardInput { Key = keys[i] } } };
+                  events[events.Length - 1 - i] = new Input { Type = 1, Payload = new InputPayload { Key = new KeyboardInput { Key = keys[i], Flags = 2 } } };
+                }
+                if (SendInput((uint)events.Length, events, Marshal.SizeOf<Input>()) != events.Length) {
+                  throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                }
+              }
             }
           '@
             function Click-CaptionButton([int]$FromRight) {
@@ -118,23 +158,40 @@ jobs:
             Click-CaptionButton 115
             if (-not [FrameTest]::IsIconic($app.MainWindowHandle)) { throw 'Custom minimize button failed' }
             [void][FrameTest]::ShowWindow($app.MainWindowHandle,9)
-            [void]$shellKeys.AppActivate($app.Id)
+            if (-not $shellKeys.AppActivate($app.Id)) { throw 'Cannot focus restored browser window' }
             Start-Sleep -Seconds 1
-            $shellKeys.SendKeys('{F11}')
+            $handle = $app.MainWindowHandle
+            [FrameTest]::SendKeys($handle, [ushort[]]@(0x7a)) # F11
             Start-Sleep -Milliseconds 500
             if ((Get-Content $log -Raw) -match 'Fullscreen enabled') { throw 'Legacy fullscreen remains active' }
             Write-Output 'PASS: no system caption, custom minimize/maximize/restore, legacy fullscreen removed'
-            foreach ($entry in @(@('^t','new_tab'),@('^w','close_tab'),@('^+t','reopen_tab'),@('^l','address'),@('^t','new_tab'),@('^{TAB}','next_tab'),@('^f','find'))) {
-              $shellKeys.SendKeys($entry[0])
-              Start-Sleep -Seconds 1
-              if ((Get-Content $log -Raw) -notmatch ('Shortcut dispatched: '+$entry[1])) { throw ('Native shortcut failed: '+$entry[1]) }
+            $shortcuts = @(
+              @{ Name = 'new_tab';    Keys = [ushort[]]@(0x11, 0x54) },
+              @{ Name = 'close_tab';  Keys = [ushort[]]@(0x11, 0x57) },
+              @{ Name = 'reopen_tab'; Keys = [ushort[]]@(0x11, 0x10, 0x54) },
+              @{ Name = 'address';    Keys = [ushort[]]@(0x11, 0x4c) },
+              @{ Name = 'new_tab';    Keys = [ushort[]]@(0x11, 0x54) },
+              @{ Name = 'next_tab';   Keys = [ushort[]]@(0x11, 0x09) },
+              @{ Name = 'find';       Keys = [ushort[]]@(0x11, 0x46) }
+            )
+            foreach ($shortcut in $shortcuts) {
+              $pattern = '(?m)^' + [regex]::Escape("Shortcut dispatched: $($shortcut.Name)") + '\r?$'
+              $before = [regex]::Matches((Get-Content $log -Raw), $pattern).Count
+              [FrameTest]::SendKeys($handle, $shortcut.Keys)
+              $deadline = [DateTime]::UtcNow.AddSeconds(8)
+              do {
+                Start-Sleep -Milliseconds 200
+                $after = [regex]::Matches((Get-Content $log -Raw), $pattern).Count
+              } while ($after -le $before -and -not $app.HasExited -and [DateTime]::UtcNow -lt $deadline)
+              if ($after -ne $before + 1) { throw "Native shortcut failed: $($shortcut.Name) ($before -> $after)" }
             }
-            $shellKeys.SendKeys('{ESC}')
+            [FrameTest]::SendKeys($handle, [ushort[]]@(0x1b)) # Esc
             Write-Output 'PASS: native tab, reopen, address, switch and find shortcuts'
             Click-CaptionButton 23
             if (-not $app.WaitForExit(15000)) { throw 'Custom close button failed' } 
 
           } finally {
+            if (Test-Path $log) { Copy-Item $log target/release/native-frame-smoke.log }
             Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           }
           node tools/test-downloads-windows.cjs (Resolve-Path target/release/literust-browser.exe)
@@ -152,7 +209,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
           & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/setup.nsi
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
-          $exe = 'packaging/LiteRust-0.18.0-alpha.4-Setup-x64.exe'
+          $exe = 'packaging/LiteRust-0.18.0-alpha.5-Setup-x64.exe'
           gh release download v0.16.0-alpha.2 --repo $env:GITHUB_REPOSITORY --pattern LiteRust-0.16.0-alpha.2-Setup-x64.exe --dir previous
           if ($LASTEXITCODE -ne 0) { throw 'Previous installer download failed' }
           $oldInstall = Start-Process previous/LiteRust-0.16.0-alpha.2-Setup-x64.exe -ArgumentList '/S' -Wait -PassThru
@@ -235,7 +292,7 @@ jobs:
           if (Test-Path "$desktop/LiteRust.lnk") { throw 'Desktop shortcut not removed' }
           if (Test-Path "$folder/literust-browser.exe") { Get-ChildItem $folder; throw "Installed browser not removed, uninstall exit: $($uninstall.ExitCode)" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  LiteRust-0.18.0-alpha.4-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+          "$hash  LiteRust-0.18.0-alpha.5-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
       - name: Preserve installer under test
         if: always()
         uses: actions/upload-artifact@v4
@@ -257,5 +314,5 @@ jobs:
       - name: Publish verified prerelease
         shell: pwsh
         run: |
-          gh release create v0.18.0-alpha.4 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LiteRust 0.18.0-alpha.4 — Local diagnostics' --prerelease --notes-file docs/releases/0.18.0-alpha.4.md packaging/LiteRust-0.18.0-alpha.4-Setup-x64.exe packaging/SHA256SUMS.txt "${{ runner.temp }}/literust-source/literust-browser-0.18.0-alpha.4-source.zip"
+          gh release create v0.18.0-alpha.5 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LiteRust 0.18.0-alpha.5 — Interface rendering' --prerelease --notes-file docs/releases/0.18.0-alpha.5.md packaging/LiteRust-0.18.0-alpha.5-Setup-x64.exe packaging/SHA256SUMS.txt "${{ runner.temp }}/literust-source/literust-browser-0.18.0-alpha.5-source.zip"
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }

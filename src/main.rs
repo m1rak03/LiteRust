@@ -1915,10 +1915,16 @@ impl Browser {
             }
         }
         self.resize();
-        if self.ready && !self.appearance_open && self.window.is_focused() {
-            if let Some(page) = self.pages.get(&active) {
-                let _ = page.view.focus();
-            }
+        #[cfg(windows)]
+        let foreground = windows_platform::is_foreground_window(&self.window);
+        #[cfg(not(windows))]
+        let foreground = self.window.is_focused();
+        if self.ready && !self.appearance_open && foreground {
+            let target = self
+                .pages
+                .get(&active)
+                .map_or(&self.toolbar, |page| &page.view);
+            let _ = target.focus();
         }
         self.refresh_release_candidates();
         self.enforce_page_budget();

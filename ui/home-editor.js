@@ -11,14 +11,68 @@ main.dashboard{display:grid!important;grid-template-columns:repeat(12,minmax(0,1
 `;document.head.append(homeStyle);
 const main=document.querySelector('main'),oldHeader=document.querySelector('header');
 const nodes={logo:[document.querySelector('.brand')],services:[document.querySelector('.header-actions')],clock:[document.getElementById('clock')],date:[document.getElementById('date')],title:[document.querySelector('.eyebrow'),document.getElementById('greeting')],subtitle:[document.querySelector('.lead')],search:[document.querySelector('.search-label'),document.getElementById('search'),document.getElementById('home-suggestions')],sites:[document.querySelector('.workspace')]};
-const widgetNodes={};for(const [id,content]of Object.entries(nodes)){const widget=document.createElement('section');widget.className='home-widget';widget.dataset.widget=id;const tools=document.createElement('div');tools.className='widget-tools';const handle=document.createElement('button');handle.type='button';handle.textContent='↕ '+homeLabels[id];handle.draggable=true;handle.setAttribute('aria-label','Переместить: '+homeLabels[id]);handle.ondragstart=e=>{homeDrag=id;e.dataTransfer.setData('text/plain','widget:'+id);};handle.ondragend=()=>{homeDrag=null;};handle.onclick=()=>selectHomeWidget(id);tools.append(handle);widget.append(tools,...content.filter(Boolean));const resize=document.createElement('button');resize.className='widget-resize';resize.setAttribute('aria-label','Изменить ширину: '+homeLabels[id]);resize.onpointerdown=e=>{if(!homeEditing)return;e.preventDefault();selectHomeWidget(id);homeUndo.push(cloneHome(homeState));if(homeUndo.length>20)homeUndo.shift();const start=e.clientX,initial=homeState.widgets.find(w=>w.id===id).span,unit=main.clientWidth/12;resize.setPointerCapture(e.pointerId);resize.onpointermove=move=>{homeState.widgets.find(w=>w.id===id).span=Math.max(3,Math.min(12,Math.round(initial+(move.clientX-start)/unit)));applyHomeLayout();};resize.onpointerup=()=>{resize.onpointermove=null;resize.onpointerup=null;homeStatus('Ширина изменена. Нажмите «Сохранить».');};};widget.append(resize);widget.ondragover=e=>{if(homeEditing&&homeDrag)e.preventDefault();};widget.ondrop=e=>{if(!homeEditing||!homeDrag)return;e.preventDefault();const from=homeDrag;homeDrag=null;if(from===id)return;changeHome(()=>{const items=homeState.widgets,index=items.findIndex(w=>w.id===from),[item]=items.splice(index,1);items.splice(items.findIndex(w=>w.id===id),0,item);});};widgetNodes[id]=widget;}
+const widgetNodes={};for(const [id,content]of Object.entries(nodes)){const widget=document.createElement('section');widget.className='home-widget';widget.dataset.widget=id;const tools=document.createElement('div');tools.className='widget-tools';const handle=document.createElement('button');handle.type='button';handle.textContent='↕ '+homeLabels[id];handle.draggable=true;handle.setAttribute('aria-label','Переместить: '+homeLabels[id]);handle.ondragstart=e=>{homeDrag=id;e.dataTransfer.setData('text/plain','widget:'+id);};handle.ondragend=()=>{homeDrag=null;};handle.onclick=()=>selectHomeWidget(id);tools.append(handle);widget.append(tools,...content.filter(Boolean));const resize=document.createElement('button');resize.className='widget-resize';resize.setAttribute('aria-label','Изменить ширину: '+homeLabels[id]);resize.onpointerdown=e=>{if(!homeEditing)return;e.preventDefault();selectHomeWidget(id);homeUndo.push(cloneHome(homeState));if(homeUndo.length>20)homeUndo.shift();const start=e.clientX,widget=homeState.widgets.find(w=>w.id===id),initial=widget.span,unit=main.clientWidth/12;resize.setPointerCapture(e.pointerId);resize.onpointermove=move=>{const span=Math.max(3,Math.min(12,Math.round(initial+(move.clientX-start)/Math.max(1,unit))));if(span!==widget.span){widget.span=span;applyHomeLayout();}};resize.onlostpointercapture=()=>{resize.onpointermove=null;resize.onlostpointercapture=null;homeStatus('Ширина изменена. Нажмите «Сохранить».');};};widget.append(resize);widget.ondragover=e=>{if(homeEditing&&homeDrag)e.preventDefault();};widget.ondrop=e=>{if(!homeEditing||!homeDrag)return;e.preventDefault();const from=homeDrag;homeDrag=null;if(from===id)return;changeHome(()=>{const items=homeState.widgets,index=items.findIndex(w=>w.id===from),[item]=items.splice(index,1);items.splice(items.findIndex(w=>w.id===id),0,item);});};widgetNodes[id]=widget;}
 main.replaceChildren();main.classList.add('dashboard');oldHeader?.remove();
 const editToggle=document.createElement('button');editToggle.id='home-edit-toggle';editToggle.textContent='Настроить страницу';document.querySelector('footer').append(editToggle);
 const editor=document.createElement('aside');editor.id='home-editor';editor.hidden=true;editor.setAttribute('aria-label','Редактор главной страницы');editor.innerHTML=`<div class="home-editor-row"><strong>Ваше пространство</strong><button id="home-undo">Отменить изменение</button><button id="home-reset">Стандартная сетка</button><button id="home-save">Сохранить</button><button id="home-edit-close">Готово</button></div><div id="home-widgets" class="home-editor-row"></div><div class="home-editor-row"><label>Выбранный блок <select id="home-selected"></select></label><label>Ширина <input id="home-span" type="range" min="3" max="12" step="1"></label><button id="home-move-up">Раньше</button><button id="home-move-down">Позже</button><label>Заголовок <input id="home-title" type="text" maxlength="120" placeholder="Автоматическое приветствие"></label><label>Подпись <input id="home-subtitle" type="text" maxlength="240"></label></div><p id="home-status" role="status">Перетаскивайте блоки за заголовок ↕. Сетка не допускает перекрытий.</p>`;document.body.append(editor);
 const tileDialog=document.createElement('section');tileDialog.id='tile-dialog';tileDialog.hidden=true;tileDialog.setAttribute('role','dialog');tileDialog.setAttribute('aria-modal','true');tileDialog.setAttribute('aria-labelledby','tile-dialog-title');tileDialog.innerHTML=`<h2 id="tile-dialog-title">Быстрый сайт</h2><label for="tile-bookmark">Выбрать из закладок</label><select id="tile-bookmark"><option value="">Ввести вручную</option></select><label for="tile-title">Название</label><input id="tile-title" maxlength="80"><label for="tile-url">Адрес сайта</label><input id="tile-url" type="url" maxlength="2048" placeholder="https://example.com"><p id="tile-error" role="alert"></p><div class="tile-dialog-actions"><button id="tile-save">Сохранить</button><button id="tile-delete">Удалить</button><button id="tile-cancel">Отмена</button></div>`;document.body.append(tileDialog);
 for(const [i,b]of homeBookmarks.entries()){const option=document.createElement('option');option.value=String(i);option.textContent=b.title||b.url;document.getElementById('tile-bookmark').append(option);}
-function applyHomeLayout(){let next=main.firstElementChild;for(const item of homeState.widgets){const widget=widgetNodes[item.id];if(!widget)continue;widget.hidden=item.hidden;widget.style.setProperty('--span',item.span);widget.classList.toggle('selected',item.id===homeSelected&&homeEditing);if(widget!==next)main.insertBefore(widget,next);next=widget.nextElementSibling;}document.getElementById('greeting').textContent=homeState.title_text||document.getElementById('greeting').textContent;document.querySelector('.lead').textContent=homeState.subtitle_text;document.getElementById('home-span').value=homeState.widgets.find(w=>w.id===homeSelected)?.span||12;document.getElementById('home-undo').disabled=!homeUndo.length;}
-function renderHomeControls(){const visibility=document.getElementById('home-widgets'),select=document.getElementById('home-selected');visibility.replaceChildren();select.replaceChildren();for(const widget of homeState.widgets){const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=!widget.hidden;check.onchange=()=>changeHome(()=>widget.hidden=!check.checked);label.append(check,document.createTextNode(homeLabels[widget.id]));visibility.append(label);const option=document.createElement('option');option.value=widget.id;option.textContent=homeLabels[widget.id];select.append(option);}select.value=homeSelected;document.getElementById('home-title').value=homeState.title_text;document.getElementById('home-subtitle').value=homeState.subtitle_text;}
+function applyHomeLayout(){
+  let next=main.firstElementChild;
+  for(const item of homeState.widgets){
+    const widget=widgetNodes[item.id];
+    if(!widget)continue;
+    widget.hidden=item.hidden;
+    if(widget.style.getPropertyValue('--span')!==String(item.span))widget.style.setProperty('--span',item.span);
+    widget.classList.toggle('selected',item.id===homeSelected&&homeEditing);
+    if(widget!==next)main.insertBefore(widget,next);
+    next=widget.nextElementSibling;
+  }
+  const subtitle=document.querySelector('.lead');
+  if(subtitle.textContent!==homeState.subtitle_text)subtitle.textContent=homeState.subtitle_text;
+  document.getElementById('home-span').value=homeState.widgets.find(w=>w.id===homeSelected)?.span||12;
+  document.getElementById('home-undo').disabled=!homeUndo.length;
+  const clockMode=homeState.widgets.filter(item=>['clock','date','title'].includes(item.id)&&!item.hidden)
+    .map(item=>item.id).sort().join(',')+'\n'+homeState.title_text;
+  if(clockMode!==lastClockMode){
+    lastClockMode=clockMode;
+    window.scheduleHomeClock?.();
+  }
+}
+let lastClockMode='';
+const widgetControls=new Map();
+function renderHomeControls(){
+  const visibility=document.getElementById('home-widgets');
+  const select=document.getElementById('home-selected');
+  let nextLabel=visibility.firstElementChild;
+  let nextOption=select.firstElementChild;
+  for(const widget of homeState.widgets){
+    let control=widgetControls.get(widget.id);
+    if(!control){
+      const label=document.createElement('label');
+      const check=document.createElement('input');
+      check.type='checkbox';
+      check.onchange=()=>changeHome(()=>{
+        const live=homeState.widgets.find(item=>item.id===widget.id);
+        if(live)live.hidden=!check.checked;
+      });
+      label.append(check,document.createTextNode(homeLabels[widget.id]));
+      const option=new Option(homeLabels[widget.id],widget.id);
+      control={label,check,option};
+      widgetControls.set(widget.id,control);
+    }
+    control.check.checked=!widget.hidden;
+    if(control.label!==nextLabel)visibility.insertBefore(control.label,nextLabel);
+    if(control.option!==nextOption)select.insertBefore(control.option,nextOption);
+    nextLabel=control.label.nextElementSibling;
+    nextOption=control.option.nextElementSibling;
+  }
+  select.value=homeSelected;
+  for(const [id,value] of [['home-title',homeState.title_text],['home-subtitle',homeState.subtitle_text]]){
+    const input=document.getElementById(id);
+    if(document.activeElement!==input&&input.value!==value)input.value=value;
+  }
+}
 function selectHomeWidget(id){homeSelected=id;document.getElementById('home-selected').value=id;applyHomeLayout();}
 function changeHome(fn){homeUndo.push(cloneHome(homeState));if(homeUndo.length>20)homeUndo.shift();fn();applyHomeLayout();renderHomeControls();homeStatus('Есть изменения. Нажмите «Сохранить».');}
 function saveHome(){window.homeSend({action:'save_home',value:homeState});homeStatus('Изменения отправлены на сохранение.');}
@@ -30,90 +84,114 @@ window.homeSync=(value,persisted=false)=>{
   }
   homeStatus(persisted?'Сохранено в локальном профиле.':'Применено в текущем окне.');
 };
+function createTileRow(tile,nav){
+  const wrap=document.createElement('div');
+  wrap.className='tile-wrap';
+  wrap.draggable=true;
+  wrap.ondragstart=event=>{
+    tileDrag=wrap.tile;
+    event.dataTransfer.effectAllowed='move';
+    event.dataTransfer.setData('application/x-literust-tile',String(wrap.tileIndex));
+  };
+  wrap.ondragend=()=>{tileDrag=null;wrap.classList.remove('drag-target');};
+  wrap.ondragover=event=>{
+    if(!tileDrag||tileDrag===wrap.tile)return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect='move';
+    wrap.classList.add('drag-target');
+  };
+  wrap.ondragleave=event=>{
+    if(!wrap.contains(event.relatedTarget))wrap.classList.remove('drag-target');
+  };
+  wrap.ondrop=event=>{
+    if(!tileDrag)return;
+    event.preventDefault();
+    event.stopPropagation();
+    wrap.classList.remove('drag-target');
+    const from=homeState.tiles.indexOf(tileDrag);
+    tileDrag=null;
+    if(from>=0&&from!==wrap.tileIndex)moveTile(from,wrap.tileIndex);
+  };
+  const link=document.createElement('a');
+  link.className='shortcut';
+  link.draggable=false;
+  link.href=tile.url;
+  link.title=tile.title;
+  link.setAttribute('aria-keyshortcuts','Shift+ArrowLeft Shift+ArrowRight');
+  link.onkeydown=event=>{
+    if(!event.shiftKey||!['ArrowLeft','ArrowRight'].includes(event.key))return;
+    const from=wrap.tileIndex;
+    const to=from+(event.key==='ArrowLeft'?-1:1);
+    if(to<0||to>=homeState.tiles.length)return;
+    event.preventDefault();
+    moveTile(from,to);
+    nav.children[to]?.querySelector('a').focus();
+  };
+  const icon=document.createElement('span');
+  icon.className='shortcut-icon';
+  icon.textContent=Array.from(tile.title)[0]||'L';
+  let image=homeIcons['site:'+tile.url];
+  if(!image){
+    try{
+      const url=new URL(tile.url);
+      if(url.protocol==='https:')image=url.origin+'/favicon.ico';
+    }catch{}
+  }
+  if(image){
+    const img=document.createElement('img');
+    img.alt='';
+    img.draggable=false;
+    img.loading='lazy';
+    img.referrerPolicy='no-referrer';
+    img.onerror=()=>img.remove();
+    img.onload=()=>icon.replaceChildren(img);
+    img.src=image;
+    icon.append(img);
+  }
+  const label=document.createElement('span');
+  label.className='shortcut-label';
+  label.textContent=tile.title;
+  link.append(icon,label);
+  const edit=document.createElement('button');
+  edit.className='tile-edit';
+  edit.textContent='⋯';
+  edit.setAttribute('aria-label','Изменить '+tile.title);
+  edit.onclick=()=>openTile(wrap.tileIndex);
+  wrap.append(link,edit);
+  return wrap;
+}
+let tilesInitialized=false;
 function renderHomeTiles(){
   const nav=document.querySelector('.shortcuts');
-  nav.replaceChildren();
+  if(!tilesInitialized){tilesInitialized=true;nav.replaceChildren();}
+  const previous=new Map(Array.from(nav.querySelectorAll('.tile-wrap'),row=>[row.tileKey,row]));
+  const occurrences=new Map();
+  let next=nav.firstElementChild;
   for(const [index,tile] of homeState.tiles.entries()){
-    const wrap=document.createElement('div');
-    wrap.className='tile-wrap';
-    wrap.draggable=true;
-    wrap.ondragstart=e=>{
-      tileDrag=tile;
-      e.dataTransfer.effectAllowed='move';
-      e.dataTransfer.setData('application/x-literust-tile',String(index));
-    };
-    wrap.ondragend=()=>{tileDrag=null;wrap.classList.remove('drag-target');};
-    wrap.ondragover=e=>{
-      if(!tileDrag||tileDrag===tile)return;
-      e.preventDefault();e.stopPropagation();
-      e.dataTransfer.dropEffect='move';
-      wrap.classList.add('drag-target');
-    };
-    wrap.ondragleave=e=>{if(!wrap.contains(e.relatedTarget))wrap.classList.remove('drag-target');};
-    wrap.ondrop=e=>{
-      if(!tileDrag)return;
-      e.preventDefault();e.stopPropagation();
-      wrap.classList.remove('drag-target');
-      const from=homeState.tiles.indexOf(tileDrag);
-      tileDrag=null;
-      if(from<0||from===index)return;
-      moveTile(from,index);
-    };
-    const link=document.createElement('a');
-    link.className='shortcut';
-    link.draggable=false;
-    link.href=tile.url;
-    link.title=tile.title;
-    link.setAttribute('aria-keyshortcuts','Shift+ArrowLeft Shift+ArrowRight');
-    link.onkeydown=e=>{
-      if(!e.shiftKey||!['ArrowLeft','ArrowRight'].includes(e.key))return;
-      const to=index+(e.key==='ArrowLeft'?-1:1);
-      if(to<0||to>=homeState.tiles.length)return;
-      e.preventDefault();
-      moveTile(index,to);
-      nav.children[to]?.querySelector('a').focus();
-    };
-    const icon=document.createElement('span');
-    icon.className='shortcut-icon';
-    icon.textContent=Array.from(tile.title)[0]||'L';
-    let image=homeIcons['site:'+tile.url];
-    if(!image){
-      try{
-        const url=new URL(tile.url);
-        if(url.protocol==='https:')image=url.origin+'/favicon.ico';
-      }catch{}
-    }
-    if(image){
-      const img=document.createElement('img');
-      img.src=image;
-      img.alt='';
-      img.draggable=false;
-      img.loading='lazy';
-      img.referrerPolicy='no-referrer';
-      img.onerror=()=>img.remove();
-      img.onload=()=>icon.replaceChildren(img);
-      icon.append(img);
-    }
-    const label=document.createElement('span');
-    label.className='shortcut-label';
-    label.textContent=tile.title;
-    link.append(icon,label);
-    const edit=document.createElement('button');
-    edit.className='tile-edit';
-    edit.textContent='⋯';
-    edit.setAttribute('aria-label','Изменить '+tile.title);
-    edit.onclick=()=>openTile(index);
-    wrap.append(link,edit);
-    nav.append(wrap);
+    const base=JSON.stringify([tile.url,tile.title]);
+    const occurrence=occurrences.get(base)||0;
+    occurrences.set(base,occurrence+1);
+    const key=base+':'+occurrence;
+    const row=previous.get(key)||createTileRow(tile,nav);
+    previous.delete(key);
+    row.tileKey=key;
+    row.tileIndex=index;
+    row.tile=tile;
+    if(row!==next)nav.insertBefore(row,next);
+    next=row.nextElementSibling;
   }
-  const plus=document.createElement('button');
-  plus.className='add-tile';
-  plus.id='add-quick-site';
-  plus.textContent='+ Добавить сайт';
-  plus.onclick=()=>openTile(-1);
+  for(const row of previous.values())row.remove();
+  let plus=document.getElementById('add-quick-site');
+  if(!plus){
+    plus=document.createElement('button');
+    plus.className='add-tile';
+    plus.id='add-quick-site';
+    plus.textContent='+ Добавить сайт';
+    plus.onclick=()=>openTile(-1);
+    nav.append(plus);
+  }
   plus.disabled=homeState.tiles.length>=24;
-  nav.append(plus);
-  document.querySelector('.section-heading span').textContent='БЫСТРЫЙ ДОСТУП';
 }
 function moveTile(from,to){
   changeHome(()=>{
