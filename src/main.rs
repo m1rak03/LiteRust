@@ -4,7 +4,8 @@
 use literust_browser::{
     google_passwords, import, layout,
     local_profiles::{self, Catalog, ProfileDetails},
-    network_block, security, split_view, storage, tab_groups, vpn, window_session, workspaces,
+    network_block, omnibox, security, split_view, storage, tab_groups, vpn, window_session,
+    workspaces,
 };
 #[cfg(windows)]
 mod session_self_test;
@@ -187,6 +188,13 @@ enum UiCommand {
     },
     Suggest {
         query: String,
+        request: u32,
+        workspace: workspaces::Id,
+    },
+    OmniboxPick {
+        target: omnibox::Action,
+        workspace: workspaces::Id,
+        pane: Option<split_view::Pane>,
     },
     SuggestionPanel {
         rows: u8,
@@ -1849,6 +1857,51 @@ impl Browser {
         self.navigate_internal(&url);
     }
 
+    fn pick_omnibox(&mut self, target: omnibox::Action, pane: Option<split_view::Pane>) {
+        if let Some(pane) = pane {
+            if self.data.split.is_none() {
+                return;
+            }
+            self.focus_split_pane(pane);
+        }
+        match target {
+            omnibox::Action::Visit { url } => {
+                if valid_web_url(&url) {
+                    self.navigate_internal(&url);
+                }
+            }
+            omnibox::Action::Search { query } => {
+                let query = query.trim();
+                if !query.is_empty() && query.len() <= 512 && !security::reject_address_input(query)
+                {
+                    let url = self
+                        .data
+                        .search_engine
+                        .search(query, Some(self.dark_theme()));
+                    self.navigate_internal(&url);
+                }
+            }
+            omnibox::Action::Tab { id } => {
+                if let Some(index) = self.data.tabs.iter().position(|tab| tab.id == id) {
+                    self.handle(UiCommand::SelectTab {
+                        index,
+                        tab_id: Some(id),
+                    });
+                }
+            }
+            omnibox::Action::Command { command } => {
+                let command = match command {
+                    omnibox::Command::Settings => UiCommand::ShowSettings,
+                    omnibox::Command::Downloads => UiCommand::ShowDownloads,
+                    omnibox::Command::History => UiCommand::ShowHistory,
+                    omnibox::Command::NewTab => UiCommand::NewTab,
+                    omnibox::Command::Profiles => UiCommand::ShowAccounts,
+                };
+                self.handle(command);
+            }
+        }
+    }
+
     fn navigate_internal(&mut self, url: &str) {
         if !storage::valid_tab_url(url) {
             return;
@@ -2514,17 +2567,30 @@ impl Browser {
             } => {
                 self.print_pdf(&header, &footer, captions, backgrounds);
             }
-            UiCommand::Suggest { query } => {
-                let matches = if self.private_mode {
-                    Vec::new()
-                } else {
-                    literust_browser::navigation::suggestions(&self.data, &query)
-                };
+            UiCommand::Suggest {
+                query,
+                request,
+                workspace,
+            } => {
+                if workspace != self.workspace_id() {
+                    return;
+                }
+                let matches =
+                    omnibox::suggestions(&self.data, &query, self.ui_language, self.private_mode);
                 let query = literust_browser::home::script_json(&query);
                 let matches = literust_browser::home::script_json(&matches);
-                let _ = self
-                    .toolbar
-                    .evaluate_script(&format!("window.showSuggestions?.({query},{matches});"));
+                let _ = self.toolbar.evaluate_script(&format!(
+                    "window.showSuggestions?.({query},{matches},{request});"
+                ));
+            }
+            UiCommand::OmniboxPick {
+                target,
+                workspace,
+                pane,
+            } => {
+                if workspace == self.workspace_id() {
+                    self.pick_omnibox(target, pane);
+                }
             }
             UiCommand::SuggestionPanel { rows } => {
                 let rows = if self.appearance_open { 0 } else { rows.min(6) };

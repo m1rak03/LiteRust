@@ -5,6 +5,7 @@ pub mod layout;
 pub mod navigation;
 pub mod network_block;
 pub mod newtab;
+pub mod omnibox;
 pub mod profile;
 pub mod security;
 pub mod storage;

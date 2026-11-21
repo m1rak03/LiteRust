@@ -31,6 +31,36 @@ impl SearchEngine {
             Self::Brave => "https://search.brave.com/search?q=",
         }
     }
+
+    pub fn search(self, input: &str, dark: Option<bool>) -> String {
+        let query: String = url::form_urlencoded::byte_serialize(input.as_bytes()).collect();
+        let mut address = format!("{}{query}", self.prefix());
+        if let (Self::Duckduckgo, Some(dark)) = (self, dark) {
+            address.push_str(if dark { "&kae=d" } else { "&kae=-1" });
+        }
+        address
+    }
+
+    pub fn query_from(self, url: &Url) -> Option<String> {
+        let (host, path, key) = match self {
+            Self::Google => ("www.google.com", "/search", "q"),
+            Self::Yandex => ("yandex.ru", "/search/", "text"),
+            Self::Duckduckgo => ("duckduckgo.com", "/", "q"),
+            Self::Bing => ("www.bing.com", "/search", "q"),
+            Self::Brave => ("search.brave.com", "/search", "q"),
+        };
+        if url.scheme() != "https"
+            || url.host_str() != Some(host)
+            || url.path() != path
+            || url.port().is_some()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return None;
+        }
+        url.query_pairs()
+            .find_map(|(name, value)| (name == key).then(|| value.into_owned()))
+    }
 }
 pub fn destination(input: &str) -> String {
     destination_with_engine(input, SearchEngine::default())
@@ -44,45 +74,30 @@ fn destination_for(input: &str, engine: SearchEngine, dark: Option<bool>) -> Str
     if input.is_empty() {
         return NEW_TAB.to_owned();
     }
+    typed_address(input).unwrap_or_else(|| engine.search(input, dark))
+}
+
+pub fn typed_address(input: &str) -> Option<String> {
+    let input = input.trim();
     if valid_web_url(input) {
-        return Url::parse(input).expect("validated").to_string();
+        return Url::parse(input).ok().map(|url| url.to_string());
     }
-    let unsupported_absolute = Url::parse(input)
-        .is_ok_and(|url| !matches!(url.scheme(), "http" | "https"))
-        && !input.starts_with("localhost:");
-    let numeric_port = input.rsplit_once(':').is_some_and(|(host, port)| {
-        (host.contains('.') || host == "localhost" || host.starts_with('['))
-            && port.parse::<u16>().is_ok()
-    });
-    let looks_like_host = (!unsupported_absolute || numeric_port)
-        && !input.chars().any(char::is_whitespace)
-        && !input.contains("://")
-        && (input.contains('.')
-            || input.eq_ignore_ascii_case("localhost")
-            || input.starts_with("localhost:")
-            || input.starts_with('['));
-    if looks_like_host {
-        let scheme = if input.starts_with("localhost") || input.starts_with("127.0.0.1") {
-            "http"
-        } else {
-            "https"
-        };
-        let candidate = format!("{scheme}://{input}");
-        if valid_web_url(&candidate) {
-            return Url::parse(&candidate).expect("validated").to_string();
-        }
+    if input.contains("://") || input.chars().any(char::is_whitespace) {
+        return None;
     }
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    serializer.append_pair("q", input);
-    let mut destination = format!(
-        "{}{}",
-        engine.prefix(),
-        serializer.finish().strip_prefix("q=").unwrap_or_default()
-    );
-    if let (SearchEngine::Duckduckgo, Some(dark)) = (engine, dark) {
-        destination.push_str(if dark { "&kae=d" } else { "&kae=-1" });
+    let authority = input.split(['/', '?', '#']).next()?;
+    let host = authority.split(':').next()?;
+    if !(host.contains('.') || host.eq_ignore_ascii_case("localhost") || authority.starts_with('['))
+    {
+        return None;
     }
-    destination
+    let scheme = if host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" {
+        "http"
+    } else {
+        "https"
+    };
+    let candidate = format!("{scheme}://{input}");
+    valid_web_url(&candidate).then(|| Url::parse(&candidate).expect("validated").to_string())
 }
 
 pub fn destination_with_theme(input: &str, engine: SearchEngine, dark: bool) -> String {
@@ -98,10 +113,15 @@ pub struct Suggestion<'a> {
 pub fn suggestion_candidates(
     data: &crate::storage::BrowserData,
 ) -> impl Iterator<Item = Suggestion<'_>> {
-    let history = data.history.iter().rev().map(|entry| Suggestion {
-        title: &entry.title,
-        url: &entry.url,
-    });
+    let history = data
+        .history
+        .iter()
+        .rev()
+        .filter(|_| data.browser_settings.history_enabled)
+        .map(|entry| Suggestion {
+            title: &entry.title,
+            url: &entry.url,
+        });
     let bookmarks = data.bookmarks.iter().rev().map(|entry| Suggestion {
         title: &entry.title,
         url: &entry.url,
@@ -109,22 +129,6 @@ pub fn suggestion_candidates(
     bookmarks
         .chain(history)
         .filter(|entry| crate::security::safe_top_level_navigation(entry.url))
-}
-
-pub fn suggestions<'a>(data: &'a crate::storage::BrowserData, query: &str) -> Vec<Suggestion<'a>> {
-    let query = query.trim();
-    if query.chars().count() < 2 || query.len() > 512 {
-        return Vec::new();
-    }
-    let query = query.to_lowercase();
-    let mut seen = std::collections::HashSet::new();
-    suggestion_candidates(data)
-        .filter(|entry| {
-            entry.title.to_lowercase().contains(&query) || entry.url.to_lowercase().contains(&query)
-        })
-        .filter(|entry| seen.insert(entry.url))
-        .take(6)
-        .collect()
 }
 
 #[cfg(test)]
@@ -166,20 +170,17 @@ mod tests {
     }
 
     #[test]
-    fn suggestions_match_case_insensitively_and_deduplicate() {
-        let mut data = crate::storage::BrowserData::default();
-        let url = "https://example.org/";
-        data.toggle_bookmark(url, "Русский сайт");
-        data.record_visit(url, "Русский сайт");
-        assert_eq!(suggestions(&data, "РУССКИЙ").len(), 1);
-        assert_eq!(suggestions(&data, "EXAMPLE")[0].url, url);
-        assert!(suggestions(&data, "e").is_empty());
-    }
-
-    #[test]
     fn addresses_ports_and_search() {
         assert_eq!(destination("example.org:8443"), "https://example.org:8443/");
         assert_eq!(destination("localhost:8080"), "http://localhost:8080/");
+        assert_eq!(
+            destination("localhost:8080/notes?tag=work"),
+            "http://localhost:8080/notes?tag=work"
+        );
+        assert_eq!(
+            destination("example.org:8443/path#faq"),
+            "https://example.org:8443/path#faq"
+        );
         assert_eq!(destination("[::1]:8080"), "https://[::1]:8080/");
         assert_eq!(destination("пример.рф"), "https://xn--e1afmkfd.xn--p1ai/");
         assert_eq!(

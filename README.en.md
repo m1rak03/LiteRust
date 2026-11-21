@@ -16,6 +16,8 @@ LiteRust is a Windows browser built with Rust and Microsoft WebView2. Arrange qu
 - **Split view.** Open two tabs, then right-click one and choose Open beside. Each pane has an address bar and independent scrolling. Use the split toolbar to select tabs, choose a layout, resize or swap the panes. See the [Split View notes](docs/releases/0.17.0-alpha.2.md).
 
 Workspaces keep separate sets of tabs, groups, and quick links in the same profile. Open the Workspaces button beside your profile to switch. For concurrent work, open another window and select a different workspace. [Workspaces](docs/releases/0.17.0-alpha.3.md)
+
+Find a tab, bookmark, quick link, or visited page in the address bar. Type “>” to search browser commands. [Address bar](docs/releases/0.17.0-alpha.4.md)
 - **Tab groups.** Right-click a tab to create a group, or Ctrl-click several tabs first to group the selection. Click a group header to collapse it. Right-click the header to edit, pin or ungroup. See the [0.17.0-alpha.1 release notes](docs/releases/0.17.0-alpha.1.md).
 - **Downloads and bookmarks.** Filter downloads, check progress and open the destination folder. WebView2 controls the availability of pause, resume and cancel. Search and sort bookmarks, and create folders to organise them. See the [0.16.0-alpha.5 release notes](docs/releases/0.16.0-alpha.5.md).
 - **Memory.** Background tabs use WebView2’s low-memory mode. Optional tab discard releases inactive views when the tab budget is exceeded. Discarded tabs reload when selected, so unsaved form state can be lost.

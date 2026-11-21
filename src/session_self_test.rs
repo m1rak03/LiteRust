@@ -434,10 +434,10 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                             "Scrolling the second pane affected the first or did not occur",
                         );
                     }
-                    browser.run_split(Operation::Navigate {
-                        pane: Pane::Second,
-                        value: urls[2].clone(),
-                    });
+                    browser.pick_omnibox(
+                        literust_browser::omnibox::Action::Visit { url: urls[2].clone() },
+                        Some(Pane::Second),
+                    );
                 }
                 4 if loaded(&browser, ids[1], &urls[2]) => {
                     if !loaded(&browser, ids[0], &urls[0]) {

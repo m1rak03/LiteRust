@@ -38,8 +38,16 @@ html,body{height:100%;width:100%;margin:0;overflow:hidden;background:var(--bg);c
 
 .address-wrap{position:relative}
 #address-suggestions{position:absolute;top:100%;left:-1px;right:-1px;z-index:5;padding:4px;background:var(--surface);border:1px solid var(--line);border-radius:0 0 10px 10px;color:var(--text);max-height:min(214px,calc(100vh - 108px));overflow:auto}
-#address-suggestions button{display:block;width:100%;height:34px;background:none;border:0;color:inherit;text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;padding:0 8px}
+#address-suggestions button{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;height:34px;margin:0;background:none;border:0;color:inherit;text-align:left;cursor:pointer;padding:0 8px}
 #address-suggestions button:hover,#address-suggestions [aria-selected=true]{background:var(--bg);color:var(--accent)}
+.search-provider,.suggestion-label{font-size:10px;color:var(--muted);white-space:nowrap}
+.search-provider{border-inline-end:1px solid var(--line);padding-inline-end:6px;max-width:84px;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.suggestion-content{display:grid;gap:1px;min-width:0}
+.suggestion-content>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.suggestion-content small{color:var(--muted);font-size:10px}
+.split-pane{position:relative}
+.split-pane #address-suggestions{z-index:15}
+@media(max-width:720px){.split-pane .search-provider{display:none}}
  #show-vpn .ui-icon,#vpn-power .power-icon .ui-icon{width:15px;height:15px}
 #print label{display:block;margin:10px 0}#print input[type=text]{display:block;width:min(100%,420px)}
 
@@ -171,6 +179,7 @@ body.split-active{--page-start:172px}
   <button class="btn" id="reload" title="Обновить" aria-label="Обновить"><span data-icon="reload"></span></button>
   <button class="btn" id="home" title="Новая вкладка" aria-label="Домой"><span data-icon="home"></span></button>
   <div class="address-wrap"><span class="secure" id="secure">&#9675;</span>
+    <span class="search-provider" data-search-provider title="Текущая поисковая система">Google</span>
     <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="Адрес сайта или поисковый запрос" aria-label="Адресная строка" role="combobox" aria-autocomplete="list" aria-controls="address-suggestions" aria-expanded="false"><div id="address-suggestions" role="listbox" hidden></div>
     <span class="loading" id="loading">Загрузка...</span>
   </div>
@@ -195,12 +204,14 @@ body.split-active{--page-start:172px}
   <div class="split-addresses">
     <form class="split-pane" data-pane="first">
       <select aria-label="Вкладка первой области"></select>
-      <input type="text" aria-label="Адрес первой области" placeholder="Адрес или поиск" spellcheck="false" autocomplete="off">
+      <span class="search-provider" data-search-provider title="Текущая поисковая система">Google</span>
+      <input type="text" aria-label="Адрес первой области" placeholder="Адрес или поиск" spellcheck="false" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="address-suggestions" aria-expanded="false">
       <button type="button" aria-label="Закрыть первую область" title="Закрыть первую область">×</button>
     </form>
     <form class="split-pane" data-pane="second">
       <select aria-label="Вкладка второй области"></select>
-      <input type="text" aria-label="Адрес второй области" placeholder="Адрес или поиск" spellcheck="false" autocomplete="off">
+      <span class="search-provider" data-search-provider title="Текущая поисковая система">Google</span>
+      <input type="text" aria-label="Адрес второй области" placeholder="Адрес или поиск" spellcheck="false" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="address-suggestions" aria-expanded="false">
       <button type="button" aria-label="Закрыть вторую область" title="Закрыть вторую область">×</button>
     </form>
   </div>
@@ -470,8 +481,7 @@ window.focusAddress=()=>{
 for(const entry of splitPanes){
   entry.form.onsubmit=event=>{
     event.preventDefault();
-    const value=entry.address.value.trim();
-    if(value)sendSplit('navigate',{pane:entry.pane,value});
+    submitAddress(entry.address);
   };
   entry.address.onfocus=()=>sendSplit('focus',{pane:entry.pane});
   entry.tabs.onchange=()=>sendSplit('choose',{pane:entry.pane,tab:Number(entry.tabs.value)});
@@ -742,7 +752,14 @@ function render(){
   document.body.classList.toggle('motion-off',!prefs.animations);document.body.classList.toggle('compact-tabs',display.compact_tabs);
   for(const key of ['animations','compact_tabs','show_clock','show_greeting','show_shortcuts','show_services','wallpaper_contain','clock_24','custom_tab_shape'])document.getElementById('pref-'+key).checked=prefs[key];
   if(document.activeElement!==document.getElementById('pref-wallpaper_dim'))document.getElementById('pref-wallpaper_dim').value=prefs.wallpaper_dim;document.getElementById('dim-value').textContent=document.getElementById('pref-wallpaper_dim').value+'%';
-  document.getElementById("search-engine").value=state.search_engine||"google";
+  const engine=document.getElementById('search-engine');
+  engine.value=state.search_engine||'google';
+  const engineName=engine.selectedOptions[0]?.textContent?.trim()||'Google';
+  if(shownSearchEngine!==engineName){
+    shownSearchEngine=engineName;
+    for(const label of engineLabels)label.textContent=engineName;
+    clearSuggestions();
+  }
   window.applyAppearance(state.appearance);
   window.applyCustomization(display);
   for(const key of ['font_size','corner_radius','shortcut_count','home_layout','wallpaper_blur']){const el=document.getElementById('pref-'+key);if(document.activeElement!==el)el.value=prefs[key];}
@@ -870,53 +887,153 @@ document.getElementById('clear-site-data').onclick=()=>{
   if(confirm('Удалить ВСЕ cookies, кеш и локальные данные сайтов в LiteRust? Вы выйдете из аккаунтов, могут исчезнуть сохранённые на сайтах данные.'))send('clear_site_data');
 };
 const addressSuggestions=document.getElementById('address-suggestions');
+const engineLabels=document.querySelectorAll('[data-search-provider]');
+const addressInputs=[address,...splitPanes.map(entry=>entry.address)];
+let shownSearchEngine;
 let suggestTimer,suggestionItems=[],suggestionIndex=-1,suggestionRows=0;
+let suggestionInput=null,suggestionRequest=0,pendingCommand=null,completion=null;
+
 function updateSuggestionSelection(){
-  addressSuggestions.querySelectorAll('[role=option]').forEach((row,i)=>row.setAttribute('aria-selected',String(i===suggestionIndex)));
-  if(suggestionIndex<0)address.removeAttribute('aria-activedescendant');
-  else address.setAttribute('aria-activedescendant','address-suggestion-'+suggestionIndex);
+  addressSuggestions.querySelectorAll('[role=option]').forEach((row,i)=>{
+    row.setAttribute('aria-selected',String(i===suggestionIndex));
+  });
+  if(!suggestionInput)return;
+  if(suggestionIndex<0)suggestionInput.removeAttribute('aria-activedescendant');
+  else suggestionInput.setAttribute('aria-activedescendant','address-suggestion-'+suggestionIndex);
 }
-window.showSuggestions=(query,items)=>{
-  if(items.length&&(document.activeElement!==address||address.value!==query||panelName||!groupMenu.hidden))return;
-  if(query!==null&&query!==address.value)return;
-  suggestionItems=items;suggestionIndex=-1;
+function updateSuggestionRows(rows){
+  if(suggestionRows===rows)return;
+  suggestionRows=rows;
+  send('suggestion_panel',{rows});
+}
+function clearSuggestions(){
+  clearTimeout(suggestTimer);
+  suggestionRequest=(suggestionRequest+1)>>>0;
+  pendingCommand=null;
+  completion=null;
+  suggestionItems=[];
+  suggestionIndex=-1;
+  suggestionInput?.setAttribute('aria-expanded','false');
+  suggestionInput?.removeAttribute('aria-activedescendant');
+  suggestionInput=null;
+  addressSuggestions.hidden=true;
   addressSuggestions.replaceChildren();
-  for(const [index,item] of items.entries()){
-    const row=document.createElement('button');
-    row.type='button';row.tabIndex=-1;row.id='address-suggestion-'+index;row.setAttribute('role','option');
-    row.textContent=item.title ? item.title+' · '+item.url : item.url;row.title=item.url;
-    row.onmousedown=e=>e.preventDefault();
-    row.onclick=()=>navigateAddress(item.url);
-    addressSuggestions.append(row);
-  }
-  addressSuggestions.hidden=!items.length;
-  address.setAttribute('aria-expanded',String(Boolean(items.length)));
-  updateSuggestionSelection();
-  if(suggestionRows!==items.length){suggestionRows=items.length;send('suggestion_panel',{rows:suggestionRows});}
-};
-function clearSuggestions(){clearTimeout(suggestTimer);window.showSuggestions(null,[]);}
-function navigateAddress(value){clearSuggestions();send('navigate',{value});address.blur();}
-address.oninput=()=>{
+  updateSuggestionRows(0);
+}
+function requestSuggestions(input,immediate=false,executeCommand=false){
   clearSuggestions();
-  const query=address.value;
-  if(query.trim().length>=2&&!panelName)suggestTimer=setTimeout(()=>send('suggest',{query}),100);
-};
-address.onblur=clearSuggestions;
-address.onkeydown=e=>{
-  if(e.isComposing)return;
-  if(suggestionItems.length&&['ArrowDown','ArrowUp'].includes(e.key)){
-    e.preventDefault();
-    const count=suggestionItems.length;
-    suggestionIndex=suggestionIndex<0?(e.key==='ArrowDown'?0:count-1):(suggestionIndex+(e.key==='ArrowDown'?1:count-1))%count;
-    updateSuggestionSelection();
-  }else if(e.key==='Enter'){
-    e.preventDefault();navigateAddress(suggestionItems[suggestionIndex]?.url||address.value);
-  }else if(e.key==='Escape'){
-    e.stopPropagation();
-    if(suggestionItems.length)clearSuggestions();
-    else {address.value=state.url||'';address.blur();}
+  const query=input.value;
+  if(!query.trim()||panelName||!groupMenu.hidden)return;
+  suggestionInput=input;
+  const request=suggestionRequest;
+  if(executeCommand)pendingCommand=request;
+  const search=()=>{
+    if(request===suggestionRequest&&document.activeElement===input&&input.value===query){
+      send('suggest',{query,request,workspace:state.current_workspace??0});
+    }
+  };
+  if(immediate)search();
+  else suggestTimer=setTimeout(search,100);
+}
+
+window.showSuggestions=(query,items,request)=>{
+  const input=suggestionInput;
+  if(!input||request!==suggestionRequest||document.activeElement!==input||input.value!==query||panelName||!groupMenu.hidden)return;
+  if(pendingCommand===request){
+    pendingCommand=null;
+    if(items[0]?.action.kind==='command'){submitAddress(input,items[0]);return;}
   }
+  suggestionItems=items;
+  suggestionIndex=-1;
+  const wrapper=input.closest('.address-wrap,.split-pane');
+  if(wrapper&&addressSuggestions.parentElement!==wrapper)wrapper.append(addressSuggestions);
+  const rows=items.map((item,i)=>{
+    const row=document.createElement('button');
+    row.type='button';row.tabIndex=-1;row.id='address-suggestion-'+i;row.setAttribute('role','option');
+    const content=document.createElement('span');
+    content.className='suggestion-content';
+    const title=document.createElement('span');
+    title.textContent=item.title;
+    content.append(title);
+    if(item.detail){
+      const detail=document.createElement('small');
+      detail.textContent=item.detail;
+      content.append(detail);
+    }
+    const label=document.createElement('span');
+    label.className='suggestion-label';label.textContent=item.label;
+    row.append(content,label);
+    row.title=item.detail||item.title;
+    row.onmousedown=event=>event.preventDefault();
+    row.onclick=()=>submitAddress(input,item);
+    return row;
+  });
+  addressSuggestions.replaceChildren(...rows);
+  addressSuggestions.hidden=!rows.length;
+  input.setAttribute('aria-expanded',String(Boolean(rows.length)));
+  updateSuggestionSelection();
+  updateSuggestionRows(rows.length);
 };
+
+function submitAddress(input,row=null){
+  const value=input.value;
+  const picked=row||(completion?.input===input&&completion.value===value?completion.item:null);
+  if(!picked&&value.trimStart().startsWith('>')){
+    requestSuggestions(input,true,true);
+    return;
+  }
+  const pane=splitPanes.find(entry=>entry.address===input)?.pane??null;
+  clearSuggestions();
+  if(picked){
+    send('omnibox_pick',{target:picked.action,workspace:state.current_workspace??0,pane});
+  }else if(pane){
+    if(value.trim())sendSplit('navigate',{pane,value:value.trim()});
+  }else{
+    send('navigate',{value});
+  }
+  input.blur();
+}
+for(const input of addressInputs){
+  input.oninput=()=>requestSuggestions(input);
+  input.onblur=clearSuggestions;
+  input.onkeydown=event=>{
+    if(event.isComposing||event.ctrlKey||event.altKey||event.metaKey)return;
+    const items=suggestionInput===input?suggestionItems:[];
+    if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+      if(!items.length){
+        if(event.key==='ArrowDown'&&input.value.trim()){
+          event.preventDefault();requestSuggestions(input,true);
+        }
+        return;
+      }
+      event.preventDefault();
+      const delta=event.key==='ArrowDown'?1:-1;
+      suggestionIndex=suggestionIndex<0?(delta>0?0:items.length-1):(suggestionIndex+items.length+delta)%items.length;
+      updateSuggestionSelection();
+      addressSuggestions.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest'});
+    }else if(event.key==='Enter'){
+      event.preventDefault();
+      const item=items[suggestionIndex]||(input.value.trimStart().startsWith('>')?items[0]:null);
+      submitAddress(input,item);
+    }else if(event.key==='Tab'&&!event.shiftKey&&items[suggestionIndex]){
+      event.preventDefault();
+      const item=items[suggestionIndex];
+      clearSuggestions();
+      input.value=item.completion;
+      input.setSelectionRange(input.value.length,input.value.length);
+      completion={input,value:input.value,item};
+    }else if(event.key==='Escape'){
+      event.preventDefault();event.stopPropagation();
+      const open=items.length||completion;
+      clearSuggestions();
+      if(!open){
+        const paneIndex=splitPanes.findIndex(entry=>entry.address===input);
+        input.value=paneIndex<0?(state.url||''):(state.split?.urls?.[paneIndex]||'');
+        input.blur();
+      }
+    }
+  };
+}
 window.addEventListener('keydown',e=>{if(e.key==='Escape')menu.classList.remove('open');});
 const appearance=document.getElementById('appearance');
 let panelName=null;
