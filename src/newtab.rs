@@ -62,10 +62,10 @@ fn render_localized(
         ));
     }
     let mut home = data
-        .home
-        .clone()
+        .active_home()
+        .cloned()
         .unwrap_or_else(|| crate::home::Dashboard::from_legacy(data));
-    if data.home.is_none() {
+    if data.active_home().is_none() {
         home.subtitle_text = language
             .pick(
                 "Начните с вопроса. Продолжите открытием.",

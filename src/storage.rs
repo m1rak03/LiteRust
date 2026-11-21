@@ -462,6 +462,8 @@ pub struct BrowserData {
     pub additional_windows: Vec<crate::window_session::WindowSession>,
     pub tab_groups: crate::tab_groups::TabGroups,
     pub split: Option<crate::split_view::SplitView>,
+    #[serde(skip_serializing_if = "crate::workspaces::WindowWorkspaces::is_empty")]
+    pub workspace: crate::workspaces::WindowWorkspaces,
     #[serde(flatten)]
     pub profile: std::rc::Rc<ProfileData>,
 }
@@ -475,6 +477,7 @@ impl Default for BrowserData {
             additional_windows: Vec::new(),
             tab_groups: Default::default(),
             split: None,
+            workspace: Default::default(),
             profile: Default::default(),
         }
     }
@@ -497,6 +500,8 @@ impl std::ops::DerefMut for BrowserData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProfileData {
+    #[serde(skip_serializing_if = "crate::workspaces::Catalog::is_empty")]
+    pub workspaces: crate::workspaces::Catalog,
     pub home: Option<crate::home::Dashboard>,
     pub sidebar: crate::layout::Sidebar,
     pub shortcuts: crate::shortcuts::Shortcuts,
@@ -530,6 +535,7 @@ pub struct ProfileData {
 impl Default for ProfileData {
     fn default() -> Self {
         Self {
+            workspaces: Default::default(),
             home: None,
             sidebar: crate::layout::Sidebar::default(),
             shortcuts: crate::shortcuts::Shortcuts::default(),
@@ -559,10 +565,79 @@ impl Default for ProfileData {
 }
 
 impl BrowserData {
+    pub fn active_workspace(&self) -> Option<&crate::workspaces::Workspace> {
+        self.workspace
+            .current
+            .and_then(|id| self.workspaces.get(id))
+    }
+
+    pub fn active_home(&self) -> Option<&crate::home::Dashboard> {
+        self.active_workspace()
+            .and_then(|workspace| workspace.home.as_deref())
+            .or(self.home.as_ref())
+    }
+
+    pub fn display_customization(&self) -> Customization {
+        let mut customization = self.customization;
+        if let Some(space) = self.active_workspace() {
+            customization.accent = space.display.accent.or(customization.accent);
+            customization.compact_tabs = space
+                .display
+                .compact_tabs
+                .unwrap_or(customization.compact_tabs);
+        }
+        customization
+    }
+
+    pub fn tab_session(&self) -> crate::workspaces::TabSession {
+        crate::workspaces::TabSession {
+            tabs: self.tabs.clone(),
+            tab_groups: self.tab_groups.clone(),
+            split: self.split,
+            active: self.active,
+        }
+    }
+
+    pub fn exchange_tab_session(
+        &mut self,
+        mut session: crate::workspaces::TabSession,
+    ) -> crate::workspaces::TabSession {
+        std::mem::swap(&mut self.tabs, &mut session.tabs);
+        std::mem::swap(&mut self.active, &mut session.active);
+        std::mem::swap(&mut self.tab_groups, &mut session.tab_groups);
+        std::mem::swap(&mut self.split, &mut session.split);
+        session
+    }
+
     pub fn apply_startup(&mut self, resume: bool) {
         if resume || self.browser_settings.startup == Startup::Restore {
             return;
         }
+        // Startup preferences reset visible windows, while named workspaces
+        // remain available through the workspace switcher.
+        let mut saved = Vec::new();
+        if let Some(id) = self.workspace.current {
+            saved.push((id, self.tab_session()));
+        }
+        for window in std::mem::take(&mut self.additional_windows) {
+            if let Some(id) = window.workspace.current {
+                saved.push((
+                    id,
+                    crate::workspaces::TabSession {
+                        tabs: window.tabs,
+                        tab_groups: window.tab_groups,
+                        split: window.split,
+                        active: window.active,
+                    },
+                ));
+            }
+        }
+        for (id, session) in saved {
+            if let Some(space) = self.workspaces.get_mut(id) {
+                space.session = Some(std::rc::Rc::new(session));
+            }
+        }
+        self.workspace = Default::default();
         let url = if self.browser_settings.startup == Startup::Home {
             self.browser_settings.home()
         } else {
@@ -574,7 +649,6 @@ impl BrowserData {
             Tab::new()
         }];
         self.active = 0;
-        self.additional_windows.clear();
         self.tab_groups = Default::default();
         self.split = None;
     }
@@ -647,16 +721,22 @@ impl BrowserData {
         if !matches!(self.live_tab_budget, 1 | 3 | 5) {
             self.live_tab_budget = DEFAULT_LIVE_TAB_BUDGET;
         }
-        crate::window_session::clean_tabs(&mut self.tabs, &mut self.active);
-        self.tab_groups.clean(&mut self.tabs, &mut self.active);
-        self.split = self
-            .split
-            .and_then(|split| split.validate(&self.tabs, &mut self.active));
+        crate::workspaces::validate_tabs(
+            &mut self.tabs,
+            &mut self.active,
+            &mut self.tab_groups,
+            &mut self.split,
+        );
+        self.workspaces.clean();
+        let catalog = &self.profile.workspaces;
+        let mut claimed = std::collections::HashSet::new();
+        self.workspace.clean(catalog, &mut claimed);
         self.placement = self.placement.filter(|placement| placement.valid());
         self.additional_windows
             .truncate(crate::window_session::MAX_WINDOWS - 1);
         for window in &mut self.additional_windows {
             window.clean();
+            window.workspace.clean(catalog, &mut claimed);
         }
         let mut seen_hosts = std::collections::HashSet::new();
         self.adblock_exceptions = std::mem::take(&mut self.adblock_exceptions)

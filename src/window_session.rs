@@ -41,15 +41,18 @@ pub struct WindowSession {
     pub split: Option<crate::split_view::SplitView>,
     pub active: usize,
     pub placement: Option<Placement>,
+    #[serde(skip_serializing_if = "crate::workspaces::WindowWorkspaces::is_empty")]
+    pub workspace: crate::workspaces::WindowWorkspaces,
 }
 
 impl WindowSession {
     pub fn clean(&mut self) {
-        clean_tabs(&mut self.tabs, &mut self.active);
-        self.tab_groups.clean(&mut self.tabs, &mut self.active);
-        self.split = self
-            .split
-            .and_then(|split| split.validate(&self.tabs, &mut self.active));
+        crate::workspaces::validate_tabs(
+            &mut self.tabs,
+            &mut self.active,
+            &mut self.tab_groups,
+            &mut self.split,
+        );
         self.placement = self.placement.filter(|placement| placement.valid());
     }
 }

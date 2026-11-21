@@ -328,6 +328,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut browser = create_browser(&events, &events.create_proxy(), data, options, None)?;
     let started = Instant::now();
     let mut stage = 0;
+    let mut original_generations = [0; 2];
     let mut since = started;
     let mut result = Err("Split test timed out");
     let scroll = [Arc::new(AtomicI32::new(-1)), Arc::new(AtomicI32::new(-1))];
@@ -401,7 +402,9 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                         .map_err(|_| "Focus second pane")?;
                     browser.pages[&ids[1]]
                         .view
-                        .evaluate_script("window.scrollTo(0,900)")
+                        .evaluate_script(
+                            "const extent=document.createElement('div');                             extent.style.height=(window.innerHeight+1800)+'px';                             document.body.append(extent);window.scrollTo(0,900);",
+                        )
                         .map_err(|_| "Scroll the second WebView")?;
                 }
                 2 if browser.active_id() == ids[1] => {
@@ -410,16 +413,23 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                         browser.pages[&id]
                             .view
                             .evaluate_script_with_callback("window.scrollY", move |json| {
-                                value.store(json.parse::<i32>().unwrap_or(-1), Ordering::Relaxed);
+                                value.store(
+                                    json.trim().parse::<i32>().unwrap_or(-2),
+                                    Ordering::Relaxed,
+                                );
                             })
                             .map_err(|_| "Read independent scroll state")?;
                     }
                     return Ok(true);
                 }
-                3 => {
-                    if scroll[0].load(Ordering::Relaxed) != 0
-                        || scroll[1].load(Ordering::Relaxed) < 600
-                    {
+                3 if scroll
+                    .iter()
+                    .all(|value| value.load(Ordering::Relaxed) != -1) =>
+                {
+                    let first = scroll[0].load(Ordering::Relaxed);
+                    let second = scroll[1].load(Ordering::Relaxed);
+                    let _ = writeln!(log, "scroll positions: first={first} second={second}");
+                    if first != 0 || second < 600 {
                         return Err(
                             "Scrolling the second pane affected the first or did not occur",
                         );
@@ -440,6 +450,78 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                     }) || snapshot.tab_groups.entries().len() != 1
                     {
                         return Err("Swap or session snapshot lost the selected tab or group");
+                    }
+                    browser.data.auto_discard = false;
+                    original_generations = ids.map(|id| browser.pages[&id].generation);
+                    let id = browser
+                        .data
+                        .workspaces
+                        .create("Workspace fixture")
+                        .ok_or("Could not create workspace")?;
+                    browser.select_workspace(id);
+                    if browser.data.workspace.current != Some(id)
+                        || browser.data.tabs.len() != 1
+                        || browser.data.split.is_some()
+                        || !browser.data.tab_groups.entries().is_empty()
+                        || browser
+                            .pages
+                            .values()
+                            .any(|page| page.workspace == 0 && page.foreground)
+                    {
+                        return Err("Switching spaces exposed ordinary tabs or their WebViews");
+                    }
+                }
+                5 => {
+                    let active = browser
+                        .data
+                        .workspace
+                        .current
+                        .ok_or("Active workspace missing")?;
+                    if !browser.data.workspaces.update(
+                        active,
+                        "Named fixture",
+                        literust_browser::workspaces::Display {
+                            accent: Some(0x336699),
+                            compact_tabs: Some(true),
+                        },
+                    ) || browser.data.display_customization().accent != Some(0x336699)
+                    {
+                        return Err("Workspace customization was not applied");
+                    }
+                    let snapshot = super::window_snapshot(
+                        std::slice::from_ref(&browser),
+                        0,
+                        &Default::default(),
+                    );
+                    let serialized = serde_json::to_vec(&snapshot)
+                        .map_err(|_| "Workspace could not be serialized")?;
+                    let restored = serde_json::from_slice::<BrowserData>(&serialized)
+                        .map_err(|_| "Workspace could not be deserialized")?
+                        .clean();
+                    let parked = restored
+                        .workspace
+                        .ordinary
+                        .as_ref()
+                        .ok_or("Original tabs missing after serialization")?;
+                    if !parked
+                        .split
+                        .is_some_and(|split| split.panes == [ids[1], ids[0]])
+                        || parked.tab_groups.entries().len() != 1
+                        || restored.active_workspace().map(|space| space.name.as_str())
+                            != Some("Named fixture")
+                    {
+                        return Err("Workspace restore lost the group, Split View or preferences");
+                    }
+                    browser.select_workspace(0);
+                    if browser.data.workspace.current.is_some()
+                        || browser.data.display_customization().accent == Some(0x336699)
+                        || browser.data.tab_groups.entries().len() != 1
+                        || browser.active_id() != ids[1]
+                        || ids.map(|id| browser.pages[&id].generation) != original_generations
+                    {
+                        return Err(
+                            "Returning to ordinary tabs reloaded a page or lost the selection",
+                        );
                     }
                     browser.run_split(Operation::Close { pane: Pane::First });
                     if browser.data.split.is_some()
@@ -462,7 +544,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = writeln!(log, "phase {stage}: true");
                 stage += 1;
                 since = Instant::now();
-                if stage == 5 {
+                if stage == 6 {
                     result = Ok(());
                     *flow = ControlFlow::Exit;
                 }
@@ -477,6 +559,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     });
     result?;
     writeln!(log,"PASS: separate native WebViews, navigation, scroll, resize, layout, swap, closure and group state")?;
+    writeln!(log, "PASS: workspace switching retained the original WebViews, selection, groups, Split View and display preferences")?;
     Ok(())
 }
 

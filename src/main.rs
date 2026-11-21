@@ -4,7 +4,7 @@
 use literust_browser::{
     google_passwords, import, layout,
     local_profiles::{self, Catalog, ProfileDetails},
-    network_block, security, split_view, storage, tab_groups, vpn, window_session,
+    network_block, security, split_view, storage, tab_groups, vpn, window_session, workspaces,
 };
 #[cfg(windows)]
 mod session_self_test;
@@ -15,7 +15,7 @@ mod windows_platform;
 use literust_browser::navigation::destination;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -114,6 +114,17 @@ enum UiCommand {
     },
     ProfileDetails,
     ProfileBackup,
+    WorkspaceCreate {
+        name: String,
+    },
+    WorkspaceSwitch {
+        id: workspaces::Id,
+    },
+    WorkspaceUpdate {
+        id: workspaces::Id,
+        name: String,
+        display: workspaces::Display,
+    },
     Shortcut {
         name: String,
     },
@@ -223,9 +234,11 @@ enum UiCommand {
     },
     SelectTab {
         index: usize,
+        tab_id: Option<u64>,
     },
     CloseTab {
         index: usize,
+        tab_id: Option<u64>,
     },
     ToggleBookmark,
     ShowBookmarks,
@@ -372,6 +385,8 @@ struct ToolbarState<'a> {
     profile_details: Option<&'a ProfileDetails>,
     profile_scan_pending: bool,
     current_profile: &'a str,
+    workspaces: Vec<WorkspaceSummary<'a>>,
+    current_workspace: workspaces::Id,
     maximized: bool,
     shortcuts: &'a literust_browser::shortcuts::Shortcuts,
     shortcut_catalog: &'a [(&'static str, String, &'static str)],
@@ -417,6 +432,13 @@ struct ToolbarState<'a> {
 }
 
 #[derive(Serialize)]
+struct WorkspaceSummary<'a> {
+    id: workspaces::Id,
+    name: &'a str,
+    display: &'a workspaces::Display,
+}
+
+#[derive(Serialize)]
 struct TabSummary<'a> {
     id: u64,
     group: Option<u32>,
@@ -431,6 +453,7 @@ struct SplitSummary<'a> {
 }
 
 struct LivePage {
+    workspace: workspaces::Id,
     allow_internal_navigation: std::rc::Rc<std::cell::Cell<bool>>,
     pending_html_navigation: std::rc::Rc<std::cell::Cell<bool>>,
     downloads: std::rc::Rc<std::cell::Cell<usize>>,
@@ -478,7 +501,9 @@ struct Browser {
     profile_revision: u64,
     profile_scan_pending: bool,
     shortcuts: std::rc::Rc<std::cell::RefCell<literust_browser::shortcuts::Runtime>>,
-    closed_tabs: Vec<String>,
+    closed_tabs: HashMap<workspaces::Id, Vec<String>>,
+    attached_workspaces: HashSet<workspaces::Id>,
+    workspace_request: Option<workspaces::Id>,
     system_vpn_active: bool,
     app_icon_applied: bool,
     // Drop child controllers before the context and native parent window.
@@ -557,7 +582,9 @@ impl Browser {
                     recording: false,
                 },
             )),
-            closed_tabs: Vec::new(),
+            closed_tabs: HashMap::new(),
+            attached_workspaces: HashSet::from([data.workspace.current.unwrap_or(0)]),
+            workspace_request: None,
             app_icon_applied: false,
             system_vpn_active: false,
             window,
@@ -618,12 +645,15 @@ impl Browser {
             "new_window" => UiCommand::NewWindow,
             "close_tab" => UiCommand::CloseTab {
                 index: self.data.active,
+                tab_id: None,
             },
             "next_tab" => UiCommand::SelectTab {
                 index: (self.data.active + 1) % self.data.tabs.len(),
+                tab_id: None,
             },
             "previous_tab" => UiCommand::SelectTab {
                 index: (self.data.active + self.data.tabs.len() - 1) % self.data.tabs.len(),
+                tab_id: None,
             },
             "reload" => UiCommand::Reload,
             "back" => UiCommand::Back,
@@ -648,12 +678,17 @@ impl Browser {
                 return;
             }
             "reopen_tab" => {
-                if let Some(url) = self.closed_tabs.pop() {
+                if let Some(url) = self
+                    .closed_tabs
+                    .get_mut(&self.workspace_id())
+                    .and_then(Vec::pop)
+                {
                     let before = self.data.tabs.len();
                     self.new_tab(Some(&url));
                     if self.data.tabs.len() > before {
                         self.handle(UiCommand::SelectTab {
                             index: self.data.tabs.len() - 1,
+                            tab_id: None,
                         });
                     }
                 }
@@ -696,7 +731,10 @@ impl Browser {
                     } else {
                         number - 1
                     };
-                    self.handle(UiCommand::SelectTab { index });
+                    self.handle(UiCommand::SelectTab {
+                        index,
+                        tab_id: None,
+                    });
                 }
                 return;
             }
@@ -899,6 +937,7 @@ impl Browser {
             split: self.data.split,
             active: self.data.active,
             placement: placement.or(self.data.placement),
+            workspace: self.data.workspace.clone(),
         }
     }
 
@@ -912,6 +951,7 @@ impl Browser {
             || profile.sidebar.width != self.data.sidebar.width
             || profile.sidebar.mode != self.data.sidebar.mode;
         let theme_changed = profile.appearance != self.data.appearance;
+        let old_customization = self.data.display_customization();
         if profile.shortcuts.0 != self.data.shortcuts.0 {
             self.shortcuts.borrow_mut().bindings = profile.shortcuts.clone();
         }
@@ -937,6 +977,12 @@ impl Browser {
                 }
             }
         }
+        let new_customization = self.data.display_customization();
+        if old_customization.accent != new_customization.accent
+            || old_customization.compact_tabs != new_customization.compact_tabs
+        {
+            self.sync_workspace_style();
+        }
         if rules_changed {
             self.update_filter_for_live_pages();
         }
@@ -953,7 +999,7 @@ impl Browser {
     }
 
     fn sync_home(&self, persisted: bool) {
-        let Some(value) = self.data.home.as_ref() else {
+        let Some(value) = self.data.active_home() else {
             return;
         };
         let json = literust_browser::home::script_json(value);
@@ -963,6 +1009,132 @@ impl Browser {
                     .view
                     .evaluate_script(&format!("window.homeSync?.({json},{persisted});"));
             }
+        }
+    }
+
+    fn tab_selection_matches(&self, index: usize, id: Option<u64>) -> bool {
+        self.data
+            .tabs
+            .get(index)
+            .is_some_and(|tab| id.is_none_or(|id| id == tab.id))
+    }
+
+    fn workspace_id(&self) -> workspaces::Id {
+        self.data.workspace.current.unwrap_or(0)
+    }
+
+    fn retained_workspace_mut(
+        &mut self,
+        id: workspaces::Id,
+    ) -> Option<&mut workspaces::TabSession> {
+        if !self.attached_workspaces.contains(&id) || id == self.workspace_id() {
+            return None;
+        }
+        if id == 0 {
+            return self.data.workspace.ordinary.as_mut();
+        }
+        self.data
+            .workspaces
+            .get_mut(id)?
+            .session
+            .as_mut()
+            .map(std::rc::Rc::make_mut)
+    }
+
+    fn select_workspace(&mut self, id: workspaces::Id) {
+        let previous = self.workspace_id();
+        if id == previous {
+            return;
+        }
+        let mut session = if id == 0 {
+            self.data.workspace.ordinary.take().unwrap_or_default()
+        } else {
+            let Some(space) = self.data.workspaces.get_mut(id) else {
+                return;
+            };
+            space
+                .session
+                .take()
+                .map(std::rc::Rc::unwrap_or_clone)
+                .unwrap_or_default()
+        };
+        if self.attached_workspaces.insert(id) || session.tabs.is_empty() {
+            session.clean();
+            session.assign_ids(&mut self.next_tab_id);
+        }
+        let outgoing = self.data.exchange_tab_session(session);
+        if previous == 0 {
+            self.data.workspace.ordinary = Some(outgoing);
+        } else if let Some(space) = self.data.workspaces.get_mut(previous) {
+            space.session = Some(std::rc::Rc::new(outgoing));
+        }
+        self.data.workspace.current = (id != 0).then_some(id);
+        self.appearance_open = false;
+        self.panel = None;
+        self.suggestion_rows = 0;
+        // A workspace change replaces the tab strip and omnibox context.
+        let _ = self.toolbar.evaluate_script("window.workspaceChanged?.();");
+        self.show_active();
+        self.sync_workspace_style();
+        self.sync_home(false);
+        self.enforce_page_budget();
+        self.sync_toolbar();
+        self.persist();
+    }
+
+    fn sync_workspace_style(&self) {
+        let settings =
+            serde_json::to_string(&self.data.display_customization()).unwrap_or_default();
+        for tab in self
+            .data
+            .tabs
+            .iter()
+            .filter(|tab| tab.url.starts_with("literust://"))
+        {
+            if let Some(page) = self.pages.get(&tab.id) {
+                let _ = page
+                    .view
+                    .evaluate_script(&format!("window.applyCustomization?.({settings});"));
+            }
+        }
+    }
+
+    fn tab_for_page_mut(&mut self, tab_id: u64) -> Option<&mut Tab> {
+        let id = self.pages.get(&tab_id)?.workspace;
+        let tabs = if id == self.workspace_id() {
+            &mut self.data.tabs
+        } else {
+            &mut self.retained_workspace_mut(id)?.tabs
+        };
+        tabs.iter_mut().find(|tab| tab.id == tab_id)
+    }
+
+    fn page_popup(&mut self, tab_id: u64, generation: u64, url: &str) {
+        let Some(page) = self
+            .pages
+            .get(&tab_id)
+            .filter(|page| page.generation == generation)
+        else {
+            return;
+        };
+        if page.workspace == self.workspace_id() {
+            self.new_tab(Some(url));
+            return;
+        }
+        let id = page.workspace;
+        let tab_id = self.next_tab_id;
+        if !valid_web_url(url) {
+            return;
+        }
+        if let Some(session) = self
+            .retained_workspace_mut(id)
+            .filter(|session| session.tabs.len() < MAX_TABS)
+        {
+            let mut tab = Tab::web(url);
+            tab.id = tab_id;
+            session.tabs.push(tab);
+            self.next_tab_id += 1;
+            self.persist();
         }
     }
 
@@ -985,6 +1157,18 @@ impl Browser {
             profile_details: self.profile_details.as_ref(),
             profile_scan_pending: self.profile_scan_pending,
             current_profile: current_profile_id(),
+            workspaces: self
+                .data
+                .workspaces
+                .items()
+                .iter()
+                .map(|space| WorkspaceSummary {
+                    id: space.id,
+                    name: &space.name,
+                    display: &space.display,
+                })
+                .collect(),
+            current_workspace: self.workspace_id(),
             maximized: self.window.is_maximized(),
             background_style: self.data.background_style,
             account_prompt_always: self.data.account_prompt_always,
@@ -1052,7 +1236,11 @@ impl Browser {
             downloads: self.data.downloads.len(),
             can_back: !self.data.tabs[self.data.active].back.is_empty(),
             can_forward: !self.data.tabs[self.data.active].forward.is_empty(),
-            live_ids: self.pages.keys().copied().collect(),
+            live_ids: self
+                .pages
+                .iter()
+                .filter_map(|(id, page)| (page.workspace == self.workspace_id()).then_some(*id))
+                .collect(),
             private_mode: self.private_mode,
             cosmetic_filter: self.data.cosmetic_filter,
             network_blocking: self.data.network_blocking,
@@ -1064,7 +1252,7 @@ impl Browser {
             auto_discard: self.data.auto_discard,
         };
         if let Ok(payload) = serde_json::to_string(&state) {
-            let dock_state = serde_json::json!({"sidebar":self.data.sidebar,"peek":self.dock_peek,"manual":self.dock_expanded,"expanded":self.dock_peek||self.dock_expanded||self.data.sidebar.mode=="pinned","appearance":self.data.appearance,"position":self.data.dock_position,"customization":self.data.customization,"animations":self.data.customization.animations,"vpn_enabled":self.vpn_vault.enabled,"vpn_running":self.vpn_running && (!self.vpn_vault.system_scope || self.system_vpn_running())});
+            let dock_state = serde_json::json!({"sidebar":self.data.sidebar,"peek":self.dock_peek,"manual":self.dock_expanded,"expanded":self.dock_peek||self.dock_expanded||self.data.sidebar.mode=="pinned","appearance":self.data.appearance,"position":self.data.dock_position,"customization":self.data.display_customization(),"animations":self.data.customization.animations,"vpn_enabled":self.vpn_vault.enabled,"vpn_running":self.vpn_running && (!self.vpn_vault.system_scope || self.system_vpn_running())});
             let dock_state = dock_state.to_string();
             let mut previous = self.dock_state_cache.borrow_mut();
             if *previous != dock_state
@@ -1147,10 +1335,8 @@ impl Browser {
     fn update_filter_for_live_pages(&self) {
         #[cfg(windows)]
         for (tab_id, page) in &self.pages {
-            if let Some(tab) = self.data.tabs.iter().find(|tab| tab.id == *tab_id) {
-                if let Err(err) =
-                    network_block::apply(&page.view, self.filter_enabled_for(&tab.url))
-                {
+            if let Ok(url) = page.view.url() {
+                if let Err(err) = network_block::apply(&page.view, self.filter_enabled_for(&url)) {
                     eprintln!("Cannot update network filtering for tab {tab_id}: {err}");
                 }
             }
@@ -1192,7 +1378,8 @@ impl Browser {
 
     fn themed_html(&self, html: String) -> String {
         let settings = serde_json::to_string(&self.data.appearance).unwrap_or_default();
-        let customization = serde_json::to_string(&self.data.customization).unwrap_or_default();
+        let customization =
+            serde_json::to_string(&self.data.display_customization()).unwrap_or_default();
         html.replace(
             "</head>",
             &format!(
@@ -1384,6 +1571,7 @@ impl Browser {
         windows_platform::page_focus(&view, self.proxy.clone(), tab_id, generation)
             .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         Ok(LivePage {
+            workspace: self.workspace_id(),
             allow_internal_navigation,
             pending_html_navigation,
             downloads,
@@ -1871,9 +2059,42 @@ impl Browser {
                     );
                     return;
                 }
-                self.data.home = Some(value);
+                if let Some(space) = self
+                    .data
+                    .workspace
+                    .current
+                    .and_then(|id| self.data.workspaces.get_mut(id))
+                {
+                    space.home = Some(std::rc::Rc::new(value));
+                } else {
+                    self.data.home = Some(value);
+                }
                 self.shared_home_changed = true;
                 self.persist();
+            }
+            UiCommand::WorkspaceCreate { name } => {
+                if let Some(id) = self.data.workspaces.create(&name) {
+                    self.workspace_request = Some(id);
+                    self.persist();
+                } else {
+                    self.notice_localized(
+                        "Введите уникальное имя пространства. Доступно до 12 пространств.",
+                    );
+                }
+            }
+            UiCommand::WorkspaceSwitch { id } => {
+                if id == 0 || self.data.workspaces.get(id).is_some() {
+                    self.workspace_request = Some(id);
+                }
+            }
+            UiCommand::WorkspaceUpdate { id, name, display } => {
+                if id == self.workspace_id() && self.data.workspaces.update(id, &name, display) {
+                    self.persist();
+                    self.sync_workspace_style();
+                    self.sync_toolbar();
+                } else {
+                    self.notice_localized("Не удалось изменить пространство. Проверьте имя.");
+                }
             }
             UiCommand::SetSidebar { value } => {
                 self.dock_animation = None;
@@ -2427,15 +2648,15 @@ impl Browser {
                     self.sync_toolbar();
                 }
             }
-            UiCommand::SelectTab { index } => {
-                if index < self.data.tabs.len() && index != self.data.active {
+            UiCommand::SelectTab { index, tab_id } => {
+                if self.tab_selection_matches(index, tab_id) && index != self.data.active {
                     self.data.active = index;
                     self.show_active();
                     self.persist();
                 }
             }
-            UiCommand::CloseTab { index } => {
-                if index >= self.data.tabs.len() {
+            UiCommand::CloseTab { index, tab_id } => {
+                if !self.tab_selection_matches(index, tab_id) {
                     return;
                 }
                 let closed_id = self.data.tabs[index].id;
@@ -2451,9 +2672,10 @@ impl Browser {
                     self.data.split = None;
                 }
                 let closed_active = index == self.data.active;
-                self.closed_tabs.push(self.data.tabs[index].url.clone());
-                if self.closed_tabs.len() > 25 {
-                    self.closed_tabs.remove(0);
+                let closed_tabs = self.closed_tabs.entry(self.workspace_id()).or_default();
+                closed_tabs.push(self.data.tabs[index].url.clone());
+                if closed_tabs.len() > 25 {
+                    closed_tabs.remove(0);
                 }
                 self.pages.remove(&closed_id);
                 self.data.tabs.remove(index);
@@ -2875,17 +3097,12 @@ impl Browser {
             let _ = enabled_for_url;
         }
         if valid_web_url(&url) {
-            let title = self
-                .data
-                .tabs
-                .iter_mut()
-                .find(|tab| tab.id == tab_id)
-                .map(|tab| {
-                    if tab.url != url {
-                        tab.navigate(&url);
-                    }
-                    tab.title.clone()
-                });
+            let title = self.tab_for_page_mut(tab_id).map(|tab| {
+                if tab.url != url {
+                    tab.navigate(&url);
+                }
+                tab.title.clone()
+            });
             if !loading && !self.private_mode {
                 if let Some(title) = title {
                     self.data.record_visit(&url, &title);
@@ -2911,10 +3128,8 @@ impl Browser {
             return;
         }
         if let Some(tab) = self
-            .data
-            .tabs
-            .iter_mut()
-            .find(|tab| tab.id == tab_id && valid_web_url(&tab.url))
+            .tab_for_page_mut(tab_id)
+            .filter(|tab| valid_web_url(&tab.url))
         {
             tab.title = title.clone();
             let url = tab.url.clone();
@@ -3513,6 +3728,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ => {}
         }
+        if let Some(sender) = handled {
+            if let Some(id) = windows[sender].workspace_request.take() {
+                let owner = workspace_owner(&windows, sender, id);
+                if id != 0 && pending_sessions.iter().any(|session| session.workspace.current == Some(id)) {
+                    windows[sender].notice_localized("Окно этого пространства ещё восстанавливается.");
+                } else {
+                    windows[owner].select_workspace(id);
+                    if owner != sender {
+                        windows[owner].window.set_minimized(false);
+                        windows[owner].window.set_focus();
+                    }
+                    focused = windows[owner].window.id();
+                    handled = Some(owner);
+                }
+            }
+        }
         let mut home_changed = false;
         if let Some(index) = handled {
             let profile = windows[index].data.profile.clone();
@@ -3555,6 +3786,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             changed = true;
             if windows.len() > 1 {
                 let closed = windows.remove(index);
+                if let Some(id) = closed.data.workspace.current {
+                    let mut profile = closed.data.profile.clone();
+                    if let Some(space) = std::rc::Rc::make_mut(&mut profile).workspaces.get_mut(id) {
+                        space.session = Some(std::rc::Rc::new(closed.data.tab_session()));
+                    }
+                    for browser in &mut windows {
+                        browser.use_shared_profile(profile.clone());
+                    }
+                }
                 // The worker events from a closed window are dropped with its controllers.
                 if closed.vpn_importing || closed.vpn_probing {
                     for browser in &mut windows {
@@ -4041,11 +4281,7 @@ fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
             tab_id,
             generation,
             url,
-        } => {
-            if browser.matching_view(tab_id, generation) {
-                browser.new_tab(Some(&url));
-            }
-        }
+        } => browser.page_popup(tab_id, generation, &url),
         AppEvent::DownloadStarted { id, url, file } => browser.on_download_start(id, url, file),
         AppEvent::DownloadState {
             id,
@@ -4070,6 +4306,16 @@ fn window_options(source: &Browser, initial: &WindowOptions) -> WindowOptions {
     }
 }
 
+fn workspace_owner(windows: &[Browser], sender: usize, id: workspaces::Id) -> usize {
+    if id == 0 {
+        return sender;
+    }
+    windows
+        .iter()
+        .position(|browser| browser.attached_workspaces.contains(&id))
+        .unwrap_or(sender)
+}
+
 fn window_snapshot(
     windows: &[Browser],
     first: usize,
@@ -4082,6 +4328,7 @@ fn window_snapshot(
         split: initial.split,
         active: initial.active,
         placement: initial.placement,
+        workspace: initial.workspace,
         additional_windows: windows
             .iter()
             .enumerate()
@@ -4103,6 +4350,7 @@ fn next_window_data(
         split: session.split,
         active: session.active,
         placement: session.placement,
+        workspace: session.workspace,
         additional_windows: Vec::new(),
         profile,
     }

@@ -103,6 +103,28 @@ try {
         throw 'Closing the last fixture window did not exit the profile process'
     }
     Write-Output 'PASS: ordinary window opening, crash recovery, group and split restore, and independent closure'
+
+    $namedSeed = $seed.Substring(0, $seed.Length - 1) +
+        ',"workspace":{"current":1},"workspaces":[{"id":1,"name":"Research"},{"id":2,"name":"Study"}],' +
+        '"additional_windows":[{"workspace":{"current":2},"tabs":[{"id":1,"url":"literust://history","title":"Study tab"}]}]}'
+    [IO.File]::WriteAllText($stateFile, $namedSeed, [Text.UTF8Encoding]::new($false))
+    Remove-Item -LiteralPath $logFile
+    $parallel = Start-FixtureBrowser
+    Wait-Condition {
+        $saved = Read-FixtureState
+        $ids = @($saved.workspace.current) + @($saved.additional_windows.workspace.current)
+        (Test-ReadyWindows 2) -and (1 -in $ids) -and (2 -in $ids) -and (Test-SavedGroup)
+    } 'Two separate workspaces were not restored together'
+    $parallel.Refresh()
+    if (-not $parallel.CloseMainWindow()) { throw 'Could not close workspace window' }
+    Wait-Condition {
+        $saved = Read-FixtureState
+        $closed = $saved.workspaces | Where-Object { $_.id -ne $saved.workspace.current }
+        $null -ne $saved -and $saved.additional_windows.Count -eq 0 -and $closed.session.tabs.Count -gt 0 -and -not $parallel.HasExited
+    } 'Closing one workspace lost its saved tabs or affected the other window'
+    $parallel.Refresh()
+    if (-not $parallel.CloseMainWindow() -or -not $parallel.WaitForExit(10000)) { throw 'The last workspace window did not close' }
+    Write-Output 'PASS: two workspaces restored together and a closed workspace retained its session'
 } finally {
     foreach ($process in $processes) {
         if (-not $process.HasExited) {

@@ -152,8 +152,19 @@ body.split-active{--page-start:172px}
 .split-pane button:hover,.split-actions button:hover,.split-actions :focus-visible,.split-pane :focus-visible{border-color:var(--accent);outline:1px solid var(--accent)}
 #split-ratio{width:clamp(70px,17vw,170px);margin:0;accent-color:var(--accent)}
 @media(max-width:760px){.split-pane select{max-width:30%}.split-pane{gap:3px}}
+#workspace-switcher{display:flex;gap:7px;align-items:center;min-width:32px;max-width:142px;flex:0 1 auto;height:30px;margin:0 5px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);cursor:pointer}
+#workspace-switcher:hover,#workspace-switcher:focus-visible{border-color:var(--accent)}
+#workspace-switcher .workspace-icon{width:11px;height:11px;border:1px solid currentColor;border-radius:3px;box-shadow:3px -3px 0 -1px var(--bg),3px -3px 0 0 currentColor;flex:none}
+#workspace-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.workspace-list{display:grid;gap:6px;align-content:start}
+.workspace-list button{width:100%;margin:0!important;text-align:left;overflow-wrap:anywhere}
+.workspace-list button[aria-current=true]{color:var(--accent);border-color:var(--accent)}
+#workspace-editor label,#workspace-create label{display:block;margin-top:12px}
+#workspace-editor input:not([type=checkbox]),#workspace-editor select,#workspace-create input{max-width:100%;width:100%}
+#workspace-editor input[type=color]{padding:3px;width:70px}
+@media(max-width:700px){#workspace-switcher{max-width:105px}.workspace-list button{min-height:34px}}
 </style></head><body>
-<div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div><div id="window-drag-space" aria-hidden="true"></div><div class="window-controls"><button id="window-minimize" aria-label="Свернуть окно">−</button><button id="window-maximize" aria-label="Развернуть окно">□</button><button id="window-close" aria-label="Закрыть окно">×</button></div></div>
+<div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><button type="button" id="workspace-switcher" aria-label="Рабочие пространства" title="Рабочие пространства"><i class="workspace-icon" aria-hidden="true"></i><span id="workspace-label">Пространства</span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div><div id="window-drag-space" aria-hidden="true"></div><div class="window-controls"><button id="window-minimize" aria-label="Свернуть окно">−</button><button id="window-maximize" aria-label="Развернуть окно">□</button><button id="window-close" aria-label="Закрыть окно">×</button></div></div>
 <div class="controls">
   <button class="btn" id="back" title="Назад" aria-label="Назад"><span data-icon="back"></span></button>
   <button class="btn" id="forward" title="Вперёд" aria-label="Вперёд"><span data-icon="forward"></span></button>
@@ -192,6 +203,37 @@ body.split-active{--page-start:172px}
       <input type="text" aria-label="Адрес второй области" placeholder="Адрес или поиск" spellcheck="false" autocomplete="off">
       <button type="button" aria-label="Закрыть вторую область" title="Закрыть вторую область">×</button>
     </form>
+  </div>
+</section>
+<section id="workspaces" class="hub-panel library-manager" hidden aria-label="Рабочие пространства">
+  <div class="library-body">
+    <button class="close-panel" type="button">Закрыть</button>
+    <h2>Рабочие пространства</h2>
+    <div class="settings-cards">
+      <article>
+        <h3>Открыть пространство</h3>
+        <div class="workspace-list" id="workspace-list"></div>
+        <form id="workspace-create">
+          <label for="workspace-new-name">Имя нового пространства</label>
+          <input id="workspace-new-name" type="text" maxlength="48" required>
+          <button type="submit">Создать пространство</button>
+        </form>
+      </article>
+      <article id="workspace-preferences" hidden>
+        <h3>Настройки пространства</h3>
+        <form id="workspace-editor">
+          <label for="workspace-name">Имя пространства</label>
+          <input id="workspace-name" type="text" maxlength="48" required>
+          <label for="workspace-density">Размер вкладок</label>
+          <select id="workspace-density"><option value="">Как в профиле</option><option value="compact">Компактный</option><option value="regular">Обычный</option></select>
+          <label><input id="workspace-accent-enabled" type="checkbox"> Свой цвет акцента</label>
+          <label for="workspace-accent">Цвет акцента</label>
+          <input id="workspace-accent" type="color" value="#b5a2ff" disabled>
+          <div><button type="submit">Сохранить</button></div>
+        </form>
+        <button id="workspace-open-home" type="button">Открыть новую вкладку пространства</button>
+      </article>
+    </div>
   </div>
 </section>
 <section id="appearance" hidden aria-label="Оформление">
@@ -655,7 +697,7 @@ function renderTabStrip(){
         return;
       }
       selectedTabIds.clear();showSelectedTabs();
-      send('select_tab',{index});
+      send('select_tab',{index,tab_id:state.tabs[index]?.id});
     };
     item.oncontextmenu=event=>showTabGroupMenu(event,item,tab.id,null);
     item.children[0].innerHTML=window.liteIcon('globe');
@@ -663,7 +705,7 @@ function renderTabStrip(){
     item.children[1].textContent=tab.title||'Новая вкладка';
     item.children[2].innerHTML=window.liteIcon('close');
     item.children[2].title='Закрыть вкладку';
-    item.children[2].onclick=event=>{event.stopPropagation();send('close_tab',{index});};
+    item.children[2].onclick=event=>{event.stopPropagation();send('close_tab',{index,tab_id:tab.id});};
     ordered.push(item);
   });
   let plus=tabsEl.querySelector('.new');
@@ -693,12 +735,16 @@ function renderTabStrip(){
 function render(){
   window.refreshLiteIcons();
   const prefs={...window.customizationDefaults,...state.customization};
-  document.body.classList.toggle('motion-off',!prefs.animations);document.body.classList.toggle('compact-tabs',prefs.compact_tabs);
+  const activeSpace=workspaceFor(state.current_workspace);
+  const display={...prefs,accent:activeSpace?.display?.accent??prefs.accent,
+    compact_tabs:activeSpace?.display?.compact_tabs??prefs.compact_tabs};
+  renderWorkspaces(activeSpace);
+  document.body.classList.toggle('motion-off',!prefs.animations);document.body.classList.toggle('compact-tabs',display.compact_tabs);
   for(const key of ['animations','compact_tabs','show_clock','show_greeting','show_shortcuts','show_services','wallpaper_contain','clock_24','custom_tab_shape'])document.getElementById('pref-'+key).checked=prefs[key];
   if(document.activeElement!==document.getElementById('pref-wallpaper_dim'))document.getElementById('pref-wallpaper_dim').value=prefs.wallpaper_dim;document.getElementById('dim-value').textContent=document.getElementById('pref-wallpaper_dim').value+'%';
   document.getElementById("search-engine").value=state.search_engine||"google";
   window.applyAppearance(state.appearance);
-  window.applyCustomization(prefs);
+  window.applyCustomization(display);
   for(const key of ['font_size','corner_radius','shortcut_count','home_layout','wallpaper_blur']){const el=document.getElementById('pref-'+key);if(document.activeElement!==el)el.value=prefs[key];}
   document.getElementById('pref-custom_accent').checked=prefs.accent!==null;
   document.getElementById('pref-accent').value='#'+(prefs.accent??0xb5a2ff).toString(16).padStart(6,'0');
@@ -877,10 +923,11 @@ let panelName=null;
 window.openPanel=name=>{
   panelName=name;closeTabGroupMenu();clearSuggestions();
   if(typeof cancelShortcutRecording==='function')cancelShortcutRecording();
-  for(const id of ['appearance','settings','vpn','accounts','tools','print','bookmarks-manager','downloads-manager'])document.getElementById(id).hidden=id!==name;
-  menu.classList.remove('open');send('appearance_panel',['settings','bookmarks-manager','downloads-manager'].includes(name)?{open:true,name}:{open:Boolean(name)});
+  for(const id of ['appearance','settings','vpn','accounts','tools','print','bookmarks-manager','downloads-manager','workspaces'])document.getElementById(id).hidden=id!==name;
+  menu.classList.remove('open');send('appearance_panel',['settings','bookmarks-manager','downloads-manager','workspaces'].includes(name)?{open:true,name}:{open:Boolean(name)});
   if(name!=='downloads-manager')clearTimeout(downloadPoll);
   if(name==='tools')renderToolsTabs();
+  if(name==='workspaces')renderWorkspaces(workspaceFor(state.current_workspace));
   if(name==='accounts'&&!state.private_mode)send('profile_details');
 
   if(name==='print'){
@@ -890,6 +937,68 @@ window.openPanel=name=>{
   if(name)document.getElementById(name).querySelector('button')?.focus();else document.getElementById('more').focus();
 };
 function setAppearanceOpen(open){window.openPanel(open?'appearance':null);}
+
+const workspaceSwitcher=document.getElementById('workspace-switcher');
+const workspaceList=document.getElementById('workspace-list');
+const workspacePrefs=document.getElementById('workspace-preferences');
+const workspaceName=document.getElementById('workspace-name');
+const workspaceDensity=document.getElementById('workspace-density');
+const workspaceUseAccent=document.getElementById('workspace-accent-enabled');
+const workspaceAccent=document.getElementById('workspace-accent');
+let workspaceRenderKey='';
+function workspaceFor(id){return (state.workspaces||[]).find(space=>space.id===id);}
+function renderWorkspaces(active){
+  const label=active?.name||'Пространства';
+  document.getElementById('workspace-label').textContent=label;
+  workspaceSwitcher.title=active?label:'Рабочие пространства';
+  if(panelName!=='workspaces')return;
+  const spaces=state.workspaces||[];
+  const key=JSON.stringify([active?.id,spaces]);
+  if(workspaceRenderKey===key)return;
+  workspaceRenderKey=key;
+  const rows=[{id:0,name:'Вкладки этого окна'},...spaces].map(space=>{
+    const button=document.createElement('button');
+    button.type='button';
+    button.dataset.workspaceId=String(space.id);
+    button.textContent=space.name;
+    if((active?.id??0)===space.id)button.setAttribute('aria-current','true');
+    button.onclick=()=>{window.openPanel(null);send('workspace_switch',{id:space.id});};
+    return button;
+  });
+  workspaceList.replaceChildren(...rows);
+  workspacePrefs.hidden=!active;
+  if(!active)return;
+  workspaceName.value=active.name;
+  const prefs=active.display||{};
+  workspaceDensity.value=prefs.compact_tabs==null?'':(prefs.compact_tabs?'compact':'regular');
+  workspaceUseAccent.checked=prefs.accent!=null;
+  workspaceAccent.disabled=!workspaceUseAccent.checked;
+  workspaceAccent.value='#'+(prefs.accent??state.customization?.accent??0xb5a2ff).toString(16).padStart(6,'0');
+}
+workspaceSwitcher.onclick=()=>window.openPanel('workspaces');
+workspaceUseAccent.onchange=()=>{workspaceAccent.disabled=!workspaceUseAccent.checked;};
+document.getElementById('workspace-create').onsubmit=event=>{
+  event.preventDefault();
+  const field=document.getElementById('workspace-new-name');
+  if(!field.value.trim())return;
+  send('workspace_create',{name:field.value.trim()});
+};
+document.getElementById('workspace-editor').onsubmit=event=>{
+  event.preventDefault();
+  if(!state.current_workspace||!workspaceName.value.trim())return;
+  send('workspace_update',{id:state.current_workspace,name:workspaceName.value.trim(),display:{
+    compact_tabs:workspaceDensity.value===''?null:workspaceDensity.value==='compact',
+    accent:workspaceUseAccent.checked?parseInt(workspaceAccent.value.slice(1),16):null,
+  }});
+};
+document.getElementById('workspace-open-home').onclick=()=>{window.openPanel(null);send('new_tab');};
+window.workspaceChanged=()=>{
+  document.getElementById('workspace-new-name').value='';
+  workspaceRenderKey='';
+  selectedTabIds.clear();
+  window.openPanel(null);
+  address.blur();
+};
 
 const downloadSearch=document.getElementById('download-search');
 const downloadFilter=document.getElementById('download-filter');
@@ -1375,7 +1484,7 @@ document.getElementById('print-pdf').onclick=()=>{
   window.openPanel(null);send('print_pdf',{header,footer,captions,backgrounds});
 };
 for(const [id,url] of [['tls-help','https://www.gosuslugi.ru/tls'],['tls-ca','https://nuc.voskhod.ru/'],['medical-site','https://lkmr.egisz.rosminzdrav.ru/']])document.getElementById(id).onclick=()=>{window.openPanel(null);send('navigate',{value:url});};
-function renderToolsTabs(){const root=document.getElementById('tools-tabs');root.replaceChildren();const q=document.getElementById('tabs-search').value.toLocaleLowerCase();(state.tabs||[]).forEach((t,index)=>{if(!t.title.toLocaleLowerCase().includes(q))return;const b=document.createElement('button');b.textContent=t.title||'Вкладка';b.onclick=()=>{window.openPanel(null);send('select_tab',{index});};root.append(b);});}
+function renderToolsTabs(){const root=document.getElementById('tools-tabs');root.replaceChildren();const q=document.getElementById('tabs-search').value.toLocaleLowerCase();(state.tabs||[]).forEach((t,index)=>{if(!t.title.toLocaleLowerCase().includes(q))return;const b=document.createElement('button');b.textContent=t.title||'Вкладка';b.onclick=()=>{window.openPanel(null);send('select_tab',{index,tab_id:state.tabs[index]?.id});};root.append(b);});}
 document.getElementById('tabs-search').oninput=renderToolsTabs;
 document.getElementById('tool-duplicate').onclick=()=>{window.openPanel(null);send('duplicate_tab');};
 document.getElementById('tools-memory').onclick=()=>document.getElementById('discard-background').click();

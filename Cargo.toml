@@ -1,6 +1,6 @@
 [package]
 name = "literust-browser"
-version = "0.17.0-alpha.2"
+version = "0.17.0-alpha.3"
 rust-version = "1.89"
 edition = "2021"
 description = "Experimental memory-conscious browser shell written in Rust"

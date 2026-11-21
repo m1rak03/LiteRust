@@ -39,6 +39,7 @@ async function run() {
         const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf8') : 'No test report';
         assert.equal(exitCode, 0, report + '\n' + stderr);
         assert.match(report, /PASS: separate native WebViews/);
+        assert.match(report, /PASS: workspace switching retained the original WebViews/);
         console.log(phase + '\n' + report.trimEnd());
       } finally {
         clearTimeout(timeout);
