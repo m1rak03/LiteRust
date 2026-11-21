@@ -511,7 +511,12 @@ pub struct ProfileData {
     pub browser_settings: BrowserSettings,
     pub background: String,
     pub background_style: BackgroundStyle,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub notes: String,
+    #[serde(skip_serializing_if = "crate::notes::Notebook::is_empty")]
+    pub notebook: crate::notes::Notebook,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hidden_tools: Vec<String>,
     pub account_prompt_seen: bool,
     pub account_prompt_always: bool,
     pub search_engine: crate::navigation::SearchEngine,
@@ -546,6 +551,8 @@ impl Default for ProfileData {
             background: String::new(),
             background_style: BackgroundStyle::default(),
             notes: String::new(),
+            notebook: Default::default(),
+            hidden_tools: Vec::new(),
             account_prompt_seen: false,
             account_prompt_always: false,
             search_engine: crate::navigation::SearchEngine::default(),
@@ -709,7 +716,11 @@ impl BrowserData {
         }
 
         self.background_style = self.background_style.validated();
-        self.notes = self.notes.chars().take(20_000).collect();
+        let mut legacy_notes = std::mem::take(&mut self.notes);
+        self.notebook.clean(&mut legacy_notes);
+        self.notes = legacy_notes;
+        let hidden_tools = std::mem::take(&mut self.hidden_tools);
+        self.hidden_tools = crate::page_tools::hidden_tools(hidden_tools);
         self.customization = self.customization.validated();
         self.browser_settings = std::mem::take(&mut self.browser_settings).validated();
         self.shortcuts.0.remove("fullscreen"); // Retire legacy fullscreen without resetting other assignments.
@@ -1462,7 +1473,7 @@ mod new_preferences_tests {
             ..Default::default()
         };
         data = data.clean();
-        assert_eq!(data.notes.chars().count(), 20_000);
+        assert_eq!(data.notebook.entries()[0].body.chars().count(), 20_000);
         assert_eq!(
             data.background_style.css(),
             "background:radial-gradient(ellipse at top left,#ffffff,#000000)!important"
@@ -1471,6 +1482,6 @@ mod new_preferences_tests {
         let copy: BrowserData =
             serde_json::from_str(&serde_json::to_string(&data).unwrap()).unwrap();
         assert!(copy.account_prompt_seen && copy.account_prompt_always);
-        assert_eq!(copy.notes, data.notes);
+        assert_eq!(copy.notebook, data.notebook);
     }
 }

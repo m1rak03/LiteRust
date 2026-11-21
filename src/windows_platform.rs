@@ -440,6 +440,32 @@ pub struct PdfOptions<'a> {
     pub backgrounds: bool,
 }
 
+pub fn save_page(
+    view: &wry::WebView,
+    busy: Rc<Cell<bool>>,
+    proxy: BrowserProxy,
+) -> windows::core::Result<()> {
+    unsafe {
+        let core: ICoreWebView2_25 = view.webview().cast()?;
+        let guard = busy.clone();
+        let callback =
+            webview2_com::ShowSaveAsUICompletedHandler::create(Box::new(move |error, result| {
+                guard.set(false);
+                let _ = proxy.send_event(AppEvent::SavePageFinished {
+                    saved: error.is_ok() && result == COREWEBVIEW2_SAVE_AS_UI_RESULT_SUCCESS,
+                    cancelled: result == COREWEBVIEW2_SAVE_AS_UI_RESULT_CANCELLED,
+                });
+                Ok(())
+            }));
+        busy.set(true);
+        let result = core.ShowSaveAsUI(&callback);
+        if result.is_err() {
+            busy.set(false);
+        }
+        result
+    }
+}
+
 pub fn print_pdf(
     view: &wry::WebView,
     path: PathBuf,

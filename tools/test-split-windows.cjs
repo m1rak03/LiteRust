@@ -40,6 +40,7 @@ async function run() {
         assert.equal(exitCode, 0, report + '\n' + stderr);
         assert.match(report, /PASS: separate native WebViews/);
         assert.match(report, /PASS: workspace switching retained the original WebViews/);
+        assert.match(report, /PASS: note editing and page links, native selection capture, and native Save As HTML/);
         console.log(phase + '\n' + report.trimEnd());
       } finally {
         clearTimeout(timeout);

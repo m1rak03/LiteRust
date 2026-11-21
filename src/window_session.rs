@@ -185,7 +185,7 @@ mod tests {
             serde_json::from_slice(&serde_json::to_vec(&data).unwrap()).unwrap();
         let restored = restored.clean();
         assert_eq!(restored.tabs[0].url, "https://old.example/");
-        assert_eq!(restored.notes, "existing");
+        assert_eq!(restored.notebook.entries()[0].body, "existing");
         assert_eq!(
             restored.additional_windows[0].tabs[0].url,
             "https://second.example/"

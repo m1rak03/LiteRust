@@ -795,3 +795,37 @@ VPN-хаб доступен в Windows-сборке	The VPN hub is available in 
 Не удалось изменить пространство. Проверьте имя.	Couldn't update the workspace. Check the name.
 Окно этого пространства ещё восстанавливается.	The window for this workspace is still restoring.
 Текущая поисковая система	Current search engine
+Поиск по странице	Find in page
+Сохранить страницу	Save page
+Перевести выделение…	Translate selection…
+Действия со страницей	Page actions
+Перевод выделения	Translate selection
+При открытии переводчика этот текст будет передан Google Переводчику.	Opening the translator sends this text to Google Translate.
+Язык перевода	Target language
+Открыть Google Переводчик	Open Google Translate
+Настроить панель	Customize tools
+Поиск заметок	Search notes
+Новая заметка	New note
+Название заметки	Note title
+Текст заметки	Note text
+Связать с текущей страницей	Link to this page
+Убрать связь со страницей	Remove page link
+Открыть связанную страницу	Open linked page
+Удалить заметку	Delete note
+Удалить эту заметку?	Delete this note?
+Заметок пока нет.	No notes yet.
+Заметки не найдены.	No matching notes.
+Без названия	Untitled
+Выделите текст на открытой странице.	Select text on the open page.
+Достигнут предел заметок.	The notebook is full.
+Не удалось обновить заметку.	Could not update the note.
+Не удалось связать заметку с текущей страницей.	Could not link the note to this page.
+Сохранение заметки…	Saving note…
+Заметки сохранены.	Notes saved.
+Заметка сохранена в этом приватном окне.	Note saved for this private window.
+Не удалось сохранить заметки на диске.	Could not save notes to disk.
+Откройте сайт, чтобы сохранить страницу.	Open a website to save its page.
+Дождитесь окончания печати или сохранения.	Wait for printing or saving to finish.
+Для сохранения страницы обновите Microsoft WebView2 Runtime.	Update Microsoft WebView2 Runtime to save pages.
+Страница сохранена.	Page saved.
+WebView2 не смог сохранить страницу.	WebView2 could not save the page.

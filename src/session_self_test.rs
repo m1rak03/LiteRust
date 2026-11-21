@@ -278,7 +278,9 @@ pub fn downloads() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
-    use super::{create_browser, dispatch_browser_event, WindowMessage, WindowOptions};
+    use super::{
+        create_browser, dispatch_browser_event, AppEvent, UiCommand, WindowMessage, WindowOptions,
+    };
     use literust_browser::{
         local_profiles::Catalog,
         split_view::{Axis, Operation, Pane},
@@ -329,6 +331,9 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
     let mut stage = 0;
     let mut original_generations = [0; 2];
+    let saved_page = root.join("saved-page.html");
+    let mut page_saved = None;
+    let selection_result = Arc::new(std::sync::Mutex::new(None::<String>));
     let mut since = started;
     let mut result = Err("Split test timed out");
     let scroll = [Arc::new(AtomicI32::new(-1)), Arc::new(AtomicI32::new(-1))];
@@ -345,6 +350,18 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
             return;
         }
         if let Event::UserEvent(WindowMessage::Browser { event, .. }) = event {
+            if let AppEvent::SavePageFinished { saved, .. } = &event {
+                page_saved = Some(*saved);
+            }
+            if let AppEvent::TranslationSelected { tab_id, text, .. } = &event {
+                let _ = writeln!(
+                    log,
+                    "selection: tab={tab_id}, active={}, tools={}, expected={}",
+                    browser.active_id(),
+                    browser.panel.as_deref() == Some("tools"),
+                    text.as_deref() == Some("First"),
+                );
+            }
             dispatch_browser_event(&mut browser, event);
         }
         if !browser.ready || since.elapsed() < Duration::from_millis(500) {
@@ -533,7 +550,73 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                             "Closing a pane did not release the WebView and preserve its tab",
                         );
                     }
-                    return Ok(true);
+                }
+                6 => {
+                    browser.panel = Some("tools".into());
+                    browser.handle(UiCommand::NoteCreate);
+                    let note = browser.data.notebook.entries().first().ok_or("Note was not created")?.id;
+                    browser.handle(UiCommand::NoteEdit {
+                        id: note,
+                        edit: literust_browser::notes::Edit::Body { value: "Fixture note".into() },
+                    });
+                    browser.handle(UiCommand::NoteLink { id: note, attach: true });
+                    let entry = browser.data.notebook.get(note).ok_or("Note was not retained")?;
+                    if entry.body != "Fixture note" || entry.url.as_deref() != Some(urls[0].as_str())
+                        || browser.note_save_at.is_none() != private_mode
+                    {
+                        return Err("Note edit, page link or private persistence policy failed");
+                    }
+                    if !private_mode {
+                        let path = root.join("notes-fixture.json");
+                        browser.data.save(&path).map_err(|_| "Could not save the fixture notebook")?;
+                        let restored = BrowserData::load(&path).map_err(|_| "Could not load fixture notes")?;
+                        if restored.notebook.get(note) != Some(entry) {
+                            return Err("Note did not survive a profile round trip");
+                        }
+                    }
+                    let selected = selection_result.clone();
+                    browser.pages[&ids[0]].view.evaluate_script_with_callback(
+                        r"(() => {
+                            const text = document.querySelector('main')?.firstChild;
+                            const selection = window.getSelection();
+                            if (text && selection) {
+                                const range = document.createRange();
+                                range.selectNodeContents(text);
+                                selection.removeAllRanges();
+                                selection.addRange(range);
+                            }
+                            return { text:selection?.toString().trim(), path:location.pathname,
+                                found:!!text, height:innerHeight };
+                        })()",
+                        move |json| {
+                            *selected.lock().unwrap() = Some(json);
+                        },
+                    ).map_err(|_| "Set test page selection")?;
+                }
+                7 => {
+                    let Some(selected) = selection_result.lock().unwrap().take() else {
+                        return Ok(false);
+                    };
+                    if !serde_json::from_str::<serde_json::Value>(&selected).ok()
+                        .is_some_and(|json| json["text"] == "First")
+                    {
+                        let _ = writeln!(log, "selection fixture result: {selected}");
+                        return Err("WebView did not select the fixture text");
+                    }
+                    browser.handle(UiCommand::AppearancePanel { open: true, name: Some("tools".into()) });
+                    browser.request_translation();
+                }
+                8 if browser.translation_selection.as_ref().is_some_and(|(_,_,text)| text == "First") => {
+                    set_fixture_save_destination(&browser.pages[&ids[0]].view, &saved_page)
+                        .map_err(|_| "Prepare native Save As destination")?;
+                    browser.save_page();
+                }
+                9 if page_saved.is_some() => {
+                    if page_saved != Some(true) || browser.pages[&ids[0]].printing()
+                        || !std::fs::read_to_string(&saved_page).is_ok_and(|html| html.contains("First"))
+                    {
+                        return Err("The native WebView2 Save As callback or output file failed");
+                    }
                 }
                 _ => return Ok(false),
             }
@@ -544,7 +627,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = writeln!(log, "phase {stage}: true");
                 stage += 1;
                 since = Instant::now();
-                if stage == 6 {
+                if stage == 10 {
                     result = Ok(());
                     *flow = ControlFlow::Exit;
                 }
@@ -560,7 +643,37 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     result?;
     writeln!(log,"PASS: separate native WebViews, navigation, scroll, resize, layout, swap, closure and group state")?;
     writeln!(log, "PASS: workspace switching retained the original WebViews, selection, groups, Split View and display preferences")?;
+    writeln!(
+        log,
+        "PASS: note editing and page links, native selection capture, and native Save As HTML"
+    )?;
     Ok(())
+}
+
+fn set_fixture_save_destination(
+    view: &wry::WebView,
+    path: &std::path::Path,
+) -> windows::core::Result<()> {
+    use webview2_com::{
+        Microsoft::Web::WebView2::Win32::{ICoreWebView2_25, COREWEBVIEW2_SAVE_AS_KIND_HTML_ONLY},
+        SaveAsUIShowingEventHandler,
+    };
+    use windows::core::{Interface, HSTRING};
+
+    let name = HSTRING::from(path.as_os_str());
+    let core: ICoreWebView2_25 = view.webview().cast()?;
+    let callback = SaveAsUIShowingEventHandler::create(Box::new(move |_, event| {
+        if let Some(event) = event {
+            unsafe {
+                event.SetSuppressDefaultDialog(true)?;
+                event.SetSaveAsFilePath(&name)?;
+                event.SetKind(COREWEBVIEW2_SAVE_AS_KIND_HTML_ONLY)?;
+            }
+        }
+        Ok(())
+    }));
+    let mut token = 0;
+    unsafe { core.add_SaveAsUIShowing(&callback, &mut token) }
 }
 
 fn log_runtime_memory(view: &wry::WebView, label: &str, log: &mut std::fs::File) {

@@ -4,8 +4,8 @@
 use literust_browser::{
     google_passwords, import, layout,
     local_profiles::{self, Catalog, ProfileDetails},
-    network_block, omnibox, security, split_view, storage, tab_groups, vpn, window_session,
-    workspaces,
+    network_block, notes, omnibox, page_tools, security, split_view, storage, tab_groups, vpn,
+    window_session, workspaces,
 };
 #[cfg(windows)]
 mod session_self_test;
@@ -174,9 +174,26 @@ enum UiCommand {
     SetBackgroundStyle {
         value: storage::BackgroundStyle,
     },
-    SetNotes {
-        value: String,
+    NoteCreate,
+    NoteEdit {
+        id: u64,
+        edit: notes::Edit,
     },
+    NoteLink {
+        id: u64,
+        attach: bool,
+    },
+    NoteRemove {
+        id: u64,
+    },
+    SetHiddenTools {
+        tools: Vec<String>,
+    },
+    TranslateSelection,
+    TranslateOpen {
+        language: storage::Language,
+    },
+    SavePage,
     PrintPage,
     PrintNative,
     OpenCertificates,
@@ -318,6 +335,17 @@ enum AppEvent {
         revision: u64,
         result: std::io::Result<(Catalog, ProfileDetails)>,
     },
+    TranslationSelected {
+        tab_id: u64,
+        generation: u64,
+        request: u64,
+        text: Option<String>,
+    },
+    #[cfg(windows)]
+    SavePageFinished {
+        saved: bool,
+        cancelled: bool,
+    },
     #[cfg(windows)]
     PdfFinished {
         path: PathBuf,
@@ -400,7 +428,7 @@ struct ToolbarState<'a> {
     shortcut_catalog: &'a [(&'static str, String, &'static str)],
     background_style: storage::BackgroundStyle,
     account_prompt_always: bool,
-    notes: &'a str,
+    hidden_tools: &'a [String],
     customization: storage::Customization,
     browser_settings: storage::BrowserSettings,
     search_engine: literust_browser::navigation::SearchEngine,
@@ -534,6 +562,10 @@ struct Browser {
     ui_language: storage::Language,
     shortcut_catalog: Vec<(&'static str, String, &'static str)>,
     dirty: std::cell::Cell<bool>,
+    note_cache: std::cell::RefCell<Option<notes::Notebook>>,
+    note_save_at: Option<std::time::Instant>,
+    translation_request: u64,
+    translation_selection: Option<(u64, u64, String)>,
     backup_requested: bool,
     shared_home_changed: bool,
     new_window_requested: bool,
@@ -622,6 +654,10 @@ impl Browser {
                 .collect(),
             data,
             dirty: std::cell::Cell::new(false),
+            note_cache: Default::default(),
+            note_save_at: None,
+            translation_request: 0,
+            translation_selection: None,
             backup_requested: false,
             shared_home_changed: false,
             new_window_requested: false,
@@ -1180,7 +1216,7 @@ impl Browser {
             maximized: self.window.is_maximized(),
             background_style: self.data.background_style,
             account_prompt_always: self.data.account_prompt_always,
-            notes: &self.data.notes,
+            hidden_tools: &self.data.hidden_tools,
             tabs: self
                 .data
                 .tabs
@@ -1283,6 +1319,7 @@ impl Browser {
 
     fn sync_manager(&self) {
         match self.panel.as_deref() {
+            Some("tools") => self.sync_notes(None),
             Some("bookmarks-manager") => {
                 let bookmarks = serde_json::json!({
                     "items": self.data.bookmarks, "folders": self.data.bookmark_folders
@@ -1315,6 +1352,130 @@ impl Browser {
             }
             _ => {}
         }
+    }
+
+    fn sync_notes(&self, select: Option<u64>) {
+        if self.panel.as_deref() != Some("tools") {
+            return;
+        }
+        let mut cache = self.note_cache.borrow_mut();
+        let current = &self.data.notebook;
+        if select.is_none() && cache.as_ref() == Some(current) {
+            return;
+        }
+        let changes: Vec<_> = current
+            .entries()
+            .iter()
+            .filter(|note| cache.as_ref().and_then(|old| old.get(note.id)) != Some(note.as_ref()))
+            .collect();
+        let removed: Vec<_> = cache
+            .as_ref()
+            .into_iter()
+            .flat_map(notes::Notebook::entries)
+            .filter(|note| current.get(note.id).is_none())
+            .map(|note| note.id)
+            .collect();
+        let update = literust_browser::home::script_json(&serde_json::json!({
+            "changes":changes,"removed":removed,"select":select,"reset":cache.is_none(),
+        }));
+        if self
+            .toolbar
+            .evaluate_script(&format!("window.notesUpdate?.({update});"))
+            .is_ok()
+        {
+            *cache = Some(current.clone());
+        }
+    }
+
+    fn note_status(&self, message: &'static str) {
+        let message = literust_browser::home::script_json(&literust_browser::i18n::template(
+            message,
+            self.ui_language,
+        ));
+        let _ = self
+            .toolbar
+            .evaluate_script(&format!("window.noteStatus?.({message});"));
+    }
+
+    fn note_changed(&mut self, select: Option<u64>) {
+        self.sync_notes(select);
+        if self.private_mode {
+            self.note_status("Заметка сохранена в этом приватном окне.");
+        } else {
+            self.note_save_at =
+                Some(std::time::Instant::now() + std::time::Duration::from_millis(400));
+            self.note_status("Сохранение заметки…");
+        }
+    }
+
+    fn request_translation(&mut self) {
+        self.translation_selection = None;
+        self.translation_request = self.translation_request.wrapping_add(1);
+        let tab_id = self.active_id();
+        let Some(page) = self
+            .pages
+            .get(&tab_id)
+            .filter(|_| valid_web_url(self.current_url()))
+        else {
+            self.translation_preview(None);
+            return;
+        };
+        let generation = page.generation;
+        let request = self.translation_request;
+        let proxy = self.proxy.clone();
+        if page
+            .view
+            .evaluate_script_with_callback(
+                r"(() => {
+              let snippet = '';
+              for (const char of window.getSelection()?.toString() || '') {
+                if (snippet.length >= 1000) break;
+                snippet += char;
+              }
+              return snippet;
+            })()",
+                move |json| {
+                    let _ = proxy.send_event(AppEvent::TranslationSelected {
+                        tab_id,
+                        generation,
+                        request,
+                        text: page_tools::selected_text(&json),
+                    });
+                },
+            )
+            .is_err()
+        {
+            self.translation_preview(None);
+        }
+    }
+
+    fn translation_preview(&self, text: Option<&str>) {
+        let payload = literust_browser::home::script_json(&text);
+        let _ = self
+            .toolbar
+            .evaluate_script(&format!("window.translationPreview?.({payload});"));
+    }
+
+    fn save_page(&self) {
+        let Some(page) = self
+            .pages
+            .get(&self.active_id())
+            .filter(|_| valid_web_url(self.current_url()))
+        else {
+            self.notice_localized("Откройте сайт, чтобы сохранить страницу.");
+            return;
+        };
+        if page.printing() {
+            self.notice_localized("Дождитесь окончания печати или сохранения.");
+            return;
+        }
+        #[cfg(windows)]
+        if windows_platform::save_page(&page.view, page.printing.clone(), self.proxy.clone())
+            .is_ok()
+        {
+            return;
+        }
+        self.notice_localized("Для сохранения страницы обновите Microsoft WebView2 Runtime.");
     }
 
     fn open_manager(&self, panel: &'static str) {
@@ -2538,10 +2699,53 @@ impl Browser {
                 self.refresh_newtabs();
                 self.sync_toolbar();
             }
-            UiCommand::SetNotes { value } => {
-                self.data.notes = value.chars().take(20_000).collect();
-                self.persist();
+            UiCommand::NoteCreate => {
+                if let Some(id) = self.data.notebook.create(unix_seconds()) {
+                    self.note_changed(Some(id));
+                } else {
+                    self.note_status("Достигнут предел заметок.");
+                }
             }
+            UiCommand::NoteEdit { id, edit } => {
+                if self.data.notebook.edit(id, edit, unix_seconds()) {
+                    self.note_changed(None);
+                } else {
+                    self.note_status("Не удалось обновить заметку.");
+                }
+            }
+            UiCommand::NoteLink { id, attach } => {
+                let url = self.current_url().to_owned();
+                if self
+                    .data
+                    .notebook
+                    .set_link(id, attach.then_some(url.as_str()), unix_seconds())
+                {
+                    self.note_changed(None);
+                } else {
+                    self.note_status("Не удалось связать заметку с текущей страницей.");
+                }
+            }
+            UiCommand::NoteRemove { id } => {
+                if self.data.notebook.remove(id) {
+                    self.note_changed(None);
+                }
+            }
+            UiCommand::SetHiddenTools { tools } => {
+                self.data.hidden_tools = page_tools::hidden_tools(tools);
+                self.persist();
+                self.sync_toolbar();
+            }
+            UiCommand::TranslateSelection => self.request_translation(),
+            UiCommand::TranslateOpen { language } => {
+                if let Some((tab_id, generation, text)) = self.translation_selection.take() {
+                    if tab_id == self.active_id() && self.matching_view(tab_id, generation) {
+                        if let Some(url) = page_tools::translation_address(&text, language) {
+                            self.new_tab(Some(&url));
+                        }
+                    }
+                }
+            }
+            UiCommand::SavePage => self.save_page(),
             UiCommand::PrintPage => {
                 let _ = self.toolbar.evaluate_script("window.openPanel?.('print');");
             }
@@ -2934,6 +3138,10 @@ impl Browser {
             UiCommand::AppearancePanel { open, name } => {
                 self.appearance_open = open;
                 self.panel = if open { name } else { None };
+                if self.panel.as_deref() != Some("tools") {
+                    self.translation_selection = None;
+                    self.translation_request = self.translation_request.wrapping_add(1);
+                }
                 self.suggestion_rows = 0;
                 if !open {
                     self.shortcuts.borrow_mut().recording = false;
@@ -3480,6 +3688,12 @@ fn profile_root() -> PathBuf {
 }
 
 static STARTUP_LOG: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+
 fn startup_log(message: &str) {
     let Some(file) = STARTUP_LOG.get() else {
         return;
@@ -3931,7 +4145,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let dirty = windows.iter().fold(changed, |pending, browser| browser.dirty.replace(false) || pending);
         let placement_due = placement_save_at.is_some_and(|time| time <= now);
         if placement_due { placement_save_at = None; }
-        let save = !private_mode && (dirty || placement_due || restart);
+        let note_save_at = windows.iter().filter_map(|browser| browser.note_save_at).min();
+        let notes_due = note_save_at.is_some_and(|deadline| deadline <= now);
+        let save = !private_mode && (dirty || placement_due || notes_due || restart);
         let backup = windows.iter().position(|browser| browser.backup_requested);
         let mut persisted = false;
         if save || backup.is_some() {
@@ -3950,6 +4166,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(index) = backup {
                 windows[index].backup_requested = false;
                 windows[index].write_profile_backup(&snapshot);
+            }
+        }
+        if save {
+            for browser in &mut windows {
+                if browser.note_save_at.take().is_some() {
+                    browser.note_status(if persisted { "Заметки сохранены." } else { "Не удалось сохранить заметки на диске." });
+                }
             }
         }
         if home_changed {
@@ -3974,7 +4197,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let animation_at = windows.iter().any(|browser| browser.dock_animation.is_some())
             .then(|| now + std::time::Duration::from_millis(16));
         let vpn_at = vpn_port.is_some().then(|| now + std::time::Duration::from_secs(2));
-        *control_flow = [animation_at, placement_save_at, vpn_at].into_iter().flatten().min()
+        let note_at = windows.iter().filter_map(|browser| browser.note_save_at).min();
+        *control_flow = [animation_at, placement_save_at, vpn_at, note_at].into_iter().flatten().min()
             .map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
     });
 }
@@ -4071,7 +4295,9 @@ fn create_browser(
         .with_permission_handler(|_| PermissionResponse::Deny)
         .with_html(security::control_document(
             &literust_browser::i18n::template(
-                &TOOLBAR.replace("/* APPEARANCE_SCRIPT */", APPEARANCE_SCRIPT),
+                &TOOLBAR
+                    .replace("/* APPEARANCE_SCRIPT */", APPEARANCE_SCRIPT)
+                    .replace("{{LITERUST_VERSION}}", env!("CARGO_PKG_VERSION")),
                 language,
             ),
         )?)
@@ -4255,6 +4481,31 @@ fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
                     UiCommand::ShowSettings
                 });
             }
+        }
+        AppEvent::TranslationSelected {
+            tab_id,
+            generation,
+            request,
+            text,
+        } => {
+            if request == browser.translation_request
+                && tab_id == browser.active_id()
+                && browser.panel.as_deref() == Some("tools")
+                && browser.matching_view(tab_id, generation)
+            {
+                browser.translation_preview(text.as_deref());
+                browser.translation_selection = text.map(|text| (tab_id, generation, text));
+            }
+        }
+        #[cfg(windows)]
+        AppEvent::SavePageFinished { saved, cancelled } => {
+            if saved {
+                browser.notice_localized("Страница сохранена.");
+            } else if !cancelled {
+                browser.notice_localized("WebView2 не смог сохранить страницу.");
+            }
+            browser.enforce_page_budget();
+            browser.sync_toolbar();
         }
         #[cfg(windows)]
         AppEvent::PdfFinished { path, success } => {

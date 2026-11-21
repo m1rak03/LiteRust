@@ -171,6 +171,20 @@ body.split-active{--page-start:172px}
 #workspace-editor input:not([type=checkbox]),#workspace-editor select,#workspace-create input{max-width:100%;width:100%}
 #workspace-editor input[type=color]{padding:3px;width:70px}
 @media(max-width:700px){#workspace-switcher{max-width:105px}.workspace-list button{min-height:34px}}
+.tool-actions{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.tool-actions button{margin:0!important}
+#tool-preferences{margin:0 0 14px}
+#tool-preferences summary{cursor:pointer;color:var(--text)}
+.tool-preference-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:7px;margin-top:8px}
+#notes-list{display:grid;gap:3px;max-height:125px;overflow:auto;margin:7px 0}
+#notes-list button{margin:0;text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#notes-list [aria-current=true]{border-color:var(--accent);color:var(--accent)}
+#notes-editor label{display:block;margin:7px 0 3px}
+#notes-editor input,#notes-editor textarea,#notes-search{width:100%;max-width:100%;min-width:0}
+#notes-editor textarea{resize:vertical}
+#notes-link-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+#translation-preview{max-width:760px;margin:12px 0}
+#translation-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:130px;overflow:auto;padding:8px;background:var(--bg)}
 </style></head><body>
 <div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><button type="button" id="workspace-switcher" aria-label="Рабочие пространства" title="Рабочие пространства"><i class="workspace-icon" aria-hidden="true"></i><span id="workspace-label">Пространства</span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div><div id="window-drag-space" aria-hidden="true"></div><div class="window-controls"><button id="window-minimize" aria-label="Свернуть окно">−</button><button id="window-maximize" aria-label="Развернуть окно">□</button><button id="window-close" aria-label="Закрыть окно">×</button></div></div>
 <div class="controls">
@@ -276,7 +290,7 @@ body.split-active{--page-start:172px}
 <p><label><input id="browser-background_links" type="checkbox"> Открывать новые ссылки в фоне</label></p>
 <p><label>Масштаб страниц <select id="browser-zoom_percent"><option>50</option><option>75</option><option>90</option><option>100</option><option>110</option><option>125</option><option>150</option><option>175</option><option>200</option></select> %</label></p>
 <p><label><input id="browser-history_enabled" type="checkbox"> Записывать историю посещений</label></p><small>Выключение не удаляет старую историю и не включает приватный режим: вкладки и данные сайтов сохраняются.</small>
-<p><button id="save-browser-settings">Сохранить настройки браузера</button><button id="reset-browser-settings">Сбросить настройки браузера</button></p><small id="browser-settings-status" role="status"></small></article><article data-category="search"><h3>Поиск из адресной строки</h3><p>Выберите сервис для запросов из адресной строки и новой вкладки.</p><label for="search-engine">Поисковая система</label><select id="search-engine" style="padding:10px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--line)"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select><small>Поисковик не меняет движок WebView2 и доверие TLS-сертификатам.</small></article><article data-category="privacy"><h3>История и данные сайтов</h3><button class="settings-action-row" data-menu="clear-history"><span><strong>Очистить историю</strong><small>Удаление записей после подтверждения</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="clear-site-data"><span><strong>Очистить cookies и кэш</strong><small>Вы выйдете из аккаунтов сайтов</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="new-private-window"><span><strong>Открыть приватное окно</strong><small>Отдельная временная сессия</small></span><span data-icon="chevron"></span></button><p>Для отключения записи истории откройте раздел «Запуск и вкладки».</p></article><article data-category="privacy"><h3>Фильтрация рекламы</h3><button data-menu="toggle-network-blocking">Сетевой фильтр</button><button data-menu="toggle-cosmetic-filter">Косметический фильтр</button><small>Экспериментальные функции. Могут влиять на работу некоторых сайтов.</small></article><article data-category="performance"><h3>Управление памятью</h3><button data-menu="cycle-memory-mode">Бюджет памяти</button><button data-menu="toggle-auto-discard">Автовыгрузка вкладок</button><button data-menu="discard-background">Освободить память</button><p>Автовыгрузка отключена по умолчанию. Выгруженные страницы могут потерять несохранённые формы и воспроизведение.</p><p id="settings-performance-state" role="status"></p></article><article data-category="network"><h3>Подключение через VPN</h3><p>Управляйте серверами и областью подключения в VPN-хабе.</p><button id="settings-vpn">Открыть VPN-хаб</button></article><article data-category="network"><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="tls-ca">Национальный удостоверяющий центр</button><button id="tls-store">Открыть сертификаты Windows</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article><article data-category="appearance"><h3>Боковая панель</h3><label for="sidebar-mode">Как открывать</label><select id="sidebar-mode"><option value="click">По нажатию (с подсказками слева)</option><option value="hover">При наведении</option><option value="pinned">Закрепить</option></select><label for="sidebar-width">Ширина раскрытой панели</label><input id="sidebar-width" type="range" min="220" max="320" step="4"><output id="sidebar-width-value"></output><p>Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.</p><div id="sidebar-items"></div><button id="sidebar-reset">Сбросить панель</button></article><article data-category="icons"><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article data-category="shortcuts"><h3>Ваши сочетания клавиш</h3><p>Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.</p><label for="shortcut-search">Найти команду</label><input id="shortcut-search" type="search" placeholder="Например: вкладка или Ctrl+T"><p id="shortcut-status" role="status" aria-live="polite">Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.</p><div id="shortcut-list"></div><button id="shortcut-reset-all">Восстановить стандартные сочетания</button></article><article data-category="about"><h3>LiteRust 0.17.0-alpha.2</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
+<p><button id="save-browser-settings">Сохранить настройки браузера</button><button id="reset-browser-settings">Сбросить настройки браузера</button></p><small id="browser-settings-status" role="status"></small></article><article data-category="search"><h3>Поиск из адресной строки</h3><p>Выберите сервис для запросов из адресной строки и новой вкладки.</p><label for="search-engine">Поисковая система</label><select id="search-engine" style="padding:10px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--line)"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option><option value="brave">Brave Search</option></select><small>Поисковик не меняет движок WebView2 и доверие TLS-сертификатам.</small></article><article data-category="privacy"><h3>История и данные сайтов</h3><button class="settings-action-row" data-menu="clear-history"><span><strong>Очистить историю</strong><small>Удаление записей после подтверждения</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="clear-site-data"><span><strong>Очистить cookies и кэш</strong><small>Вы выйдете из аккаунтов сайтов</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="new-private-window"><span><strong>Открыть приватное окно</strong><small>Отдельная временная сессия</small></span><span data-icon="chevron"></span></button><p>Для отключения записи истории откройте раздел «Запуск и вкладки».</p></article><article data-category="privacy"><h3>Фильтрация рекламы</h3><button data-menu="toggle-network-blocking">Сетевой фильтр</button><button data-menu="toggle-cosmetic-filter">Косметический фильтр</button><small>Экспериментальные функции. Могут влиять на работу некоторых сайтов.</small></article><article data-category="performance"><h3>Управление памятью</h3><button data-menu="cycle-memory-mode">Бюджет памяти</button><button data-menu="toggle-auto-discard">Автовыгрузка вкладок</button><button data-menu="discard-background">Освободить память</button><p>Автовыгрузка отключена по умолчанию. Выгруженные страницы могут потерять несохранённые формы и воспроизведение.</p><p id="settings-performance-state" role="status"></p></article><article data-category="network"><h3>Подключение через VPN</h3><p>Управляйте серверами и областью подключения в VPN-хабе.</p><button id="settings-vpn">Открыть VPN-хаб</button></article><article data-category="network"><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="tls-ca">Национальный удостоверяющий центр</button><button id="tls-store">Открыть сертификаты Windows</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article><article data-category="appearance"><h3>Боковая панель</h3><label for="sidebar-mode">Как открывать</label><select id="sidebar-mode"><option value="click">По нажатию (с подсказками слева)</option><option value="hover">При наведении</option><option value="pinned">Закрепить</option></select><label for="sidebar-width">Ширина раскрытой панели</label><input id="sidebar-width" type="range" min="220" max="320" step="4"><output id="sidebar-width-value"></output><p>Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.</p><div id="sidebar-items"></div><button id="sidebar-reset">Сбросить панель</button></article><article data-category="icons"><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article data-category="shortcuts"><h3>Ваши сочетания клавиш</h3><p>Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.</p><label for="shortcut-search">Найти команду</label><input id="shortcut-search" type="search" placeholder="Например: вкладка или Ctrl+T"><p id="shortcut-status" role="status" aria-live="polite">Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.</p><div id="shortcut-list"></div><button id="shortcut-reset-all">Восстановить стандартные сочетания</button></article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
 <section id="vpn" class="hub-panel vpn-workspace" hidden aria-label="VPN-хаб">
 <div class="vpn-servers">
   <div class="vpn-title"><div><span class="eyebrow">LITERUST / VPN</span><h2>Серверы</h2></div><button id="vpn-open-import" title="Добавить ключ или подписку" aria-label="Добавить серверы">＋</button></div>
@@ -336,7 +350,77 @@ body.split-active{--page-start:172px}
 <label><input id="print-backgrounds" type="checkbox"> Печатать фон страницы</label>
 <button id="print-pdf">Сохранить PDF</button><button id="print-native">Предпросмотр и печать</button>
 <p>Чтобы напечатать страницу с вашим текстом, сохраните PDF и отправьте его на принтер.</p>
-</article></section><section id="tools" class="hub-panel" hidden><button class="close-panel">Закрыть</button><h2>Инструменты</h2><div class="settings-cards"><article><h3>Рабочие инструменты</h3><button id="tool-print">Печать / PDF текущей страницы</button><p><label>Заметки в профиле<textarea id="tool-notes" maxlength="20000" rows="6" style="width:100%"></textarea></label></p><button id="notes-save">Сохранить заметки</button><small id="notes-status" role="status"></small></article><article><h3>Вкладки</h3><input id="tabs-search" placeholder="Найти открытую вкладку" aria-label="Поиск вкладок"><div id="tools-tabs"></div><button id="tool-duplicate">Дублировать текущую вкладку</button></article><article><h3>Калькулятор</h3><input id="calc-a" type="number" value="0" aria-label="Первое число"><select id="calc-op" aria-label="Действие"><option>+</option><option>−</option><option>×</option><option>÷</option></select><input id="calc-b" type="number" value="0" aria-label="Второе число"><p><output id="calc-result">0</output></p></article><article><h3>Быстрый доступ</h3><button id="tools-memory">Освободить память…</button><p id="tools-memory-summary"></p><button data-quick="show_bookmarks">Закладки</button><button data-quick="show_history">История</button><button data-quick="show_downloads">Загрузки</button><button id="tools-settings">Настройки браузера</button></article></div></section><section id="accounts" class="hub-panel" hidden><button class="close-panel">Закрыть</button><h2>Профили и аккаунты</h2><article class="local-profile-editor"><h3 id="local-profile-title">Локальный профиль</h3><p>Каждый профиль хранит свои закладки, настройки и сессии сайтов. Регистрация LiteRust не нужна.</p><div class="profile-list-heading"><h4>Локальные профили</h4><button id="profile-scan" type="button">Обновить размеры</button></div><div id="local-profile-list"></div><section id="profile-archives"><h4>Удалённые профили</h4><p id="profile-archives-empty" hidden>Архив пуст.</p><div id="profile-archive-list"></div></section><label for="local-profile-name">Имя текущего профиля</label><input id="local-profile-name" maxlength="60"><button id="local-profile-rename">Сохранить имя</button><label for="local-profile-avatar">Фото профиля</label><input id="local-profile-avatar" type="file" accept="image/png,image/jpeg,image/webp"><button id="local-profile-avatar-reset">Стандартный аватар</button><p>Автоматическое получение фото Google, Яндекса и Microsoft без официальной авторизации недоступно. Сохраните разрешённое вам изображение и загрузите его здесь.</p><label for="local-profile-new-name">Новый профиль</label><input id="local-profile-new-name" maxlength="60" placeholder="Например: Работа"><button id="local-profile-create">Создать профиль</button><button id="local-profile-settings">Настройки</button><button id="profile-backup" type="button">Копия настроек и вкладок</button><small id="profile-backup-help">Копия хранится в папке Backups текущего профиля и защищена учётной записью Windows. Данные сайтов остаются в WebView2.</small><p id="local-profile-status" role="status"></p></article><h3>Веб-аккаунты</h3><p>Google · Яндекс · Microsoft · Yahoo · Opera · Firefox: <strong>статус неизвестен</strong>. Проверить вход можно на официальной странице сервиса.</p><p>Выберите сервис. Сохранённые аккаунты и добавление другого аккаунта доступны на его официальной странице.</p><p>Это меню не определяет, выполнен ли вход. Сессии обычного профиля сохраняются; сервис может запросить повторный вход. В приватном окне сессии временные.</p><p><button data-account="google">Google</button> <button data-account="yandex">Яндекс</button> <button data-account="microsoft">Microsoft / Bing</button> <button data-account="yahoo">Yahoo</button> <button data-account="opera">Opera</button> <button data-account="firefox">Firefox</button></p><p><label><input id="account-always" type="checkbox"> Показывать выбор при каждом запуске</label></p><button id="account-save">Сохранить и продолжить</button><p>По умолчанию меню показывается при первом запуске. Позже оно всегда доступно по кнопке «Аккаунты» слева сверху.</p></section>
+</article></section><section id="tools" class="hub-panel library-manager" hidden aria-label="Инструменты">
+  <div class="library-body">
+    <button class="close-panel" type="button">Закрыть</button>
+    <h2>Инструменты</h2>
+    <nav class="tool-actions" aria-label="Действия со страницей">
+      <button id="tool-print" data-tool="print">Печать / PDF</button>
+      <button id="tool-find" data-tool="find">Поиск по странице</button>
+      <button id="tool-save-page" data-tool="save">Сохранить страницу</button>
+      <button id="tool-translate" data-tool="translate">Перевести выделение…</button>
+      <button data-quick="show_bookmarks" data-tool="bookmarks">Закладки</button>
+      <button data-quick="show_history" data-tool="history">История</button>
+      <button data-quick="show_downloads" data-tool="downloads">Загрузки</button>
+    </nav>
+    <p id="translation-status" role="status" hidden></p>
+    <article id="translation-preview" hidden aria-label="Перевод выделения">
+      <p>При открытии переводчика этот текст будет передан Google Переводчику.</p>
+      <pre id="translation-text"></pre>
+      <label for="translation-language">Язык перевода</label>
+      <select id="translation-language"><option value="ru">Русский</option><option value="en">Английский</option></select>
+      <button id="translation-open" type="button">Открыть Google Переводчик</button>
+      <button id="translation-cancel" type="button">Отмена</button>
+    </article>
+    <details id="tool-preferences">
+      <summary>Настроить панель</summary>
+      <div id="tool-preference-options" class="tool-preference-options"></div>
+    </details>
+    <div class="settings-cards">
+      <article data-tool="notes">
+        <h3>Заметки</h3>
+        <div class="library-tools">
+          <input id="notes-search" type="search" aria-label="Поиск заметок" placeholder="Поиск заметок">
+          <button id="notes-create" type="button">Новая заметка</button>
+        </div>
+        <div id="notes-list"></div>
+        <div id="notes-editor" hidden>
+          <label for="notes-title">Название заметки</label>
+          <input id="notes-title" type="text" maxlength="160">
+          <label for="tool-notes">Текст заметки</label>
+          <textarea id="tool-notes" maxlength="20000" rows="5"></textarea>
+          <p id="notes-link-value" hidden></p>
+          <button id="notes-link" type="button">Связать с текущей страницей</button>
+          <button id="notes-unlink" type="button" hidden>Убрать связь со страницей</button>
+          <button id="notes-open-link" type="button" hidden>Открыть связанную страницу</button>
+          <button id="notes-remove" type="button">Удалить заметку</button>
+        </div>
+        <p id="notes-empty">Заметок пока нет.</p>
+        <small id="notes-status" role="status"></small>
+      </article>
+      <article>
+        <h3>Вкладки</h3>
+        <input id="tabs-search" placeholder="Найти открытую вкладку" aria-label="Поиск вкладок">
+        <div id="tools-tabs"></div>
+        <button id="tool-duplicate">Дублировать текущую вкладку</button>
+      </article>
+      <article data-tool="calculator">
+        <h3>Калькулятор</h3>
+        <input id="calc-a" type="number" value="0" aria-label="Первое число">
+        <select id="calc-op" aria-label="Действие"><option>+</option><option>−</option><option>×</option><option>÷</option></select>
+        <input id="calc-b" type="number" value="0" aria-label="Второе число">
+        <p><output id="calc-result">0</output></p>
+      </article>
+      <article>
+        <h3>Браузер</h3>
+        <button id="tools-memory">Освободить память…</button>
+        <p id="tools-memory-summary"></p>
+        <button id="tools-settings">Настройки браузера</button>
+      </article>
+    </div>
+  </div>
+</section>
+<section id="accounts" class="hub-panel" hidden><button class="close-panel">Закрыть</button><h2>Профили и аккаунты</h2><article class="local-profile-editor"><h3 id="local-profile-title">Локальный профиль</h3><p>Каждый профиль хранит свои закладки, настройки и сессии сайтов. Регистрация LiteRust не нужна.</p><div class="profile-list-heading"><h4>Локальные профили</h4><button id="profile-scan" type="button">Обновить размеры</button></div><div id="local-profile-list"></div><section id="profile-archives"><h4>Удалённые профили</h4><p id="profile-archives-empty" hidden>Архив пуст.</p><div id="profile-archive-list"></div></section><label for="local-profile-name">Имя текущего профиля</label><input id="local-profile-name" maxlength="60"><button id="local-profile-rename">Сохранить имя</button><label for="local-profile-avatar">Фото профиля</label><input id="local-profile-avatar" type="file" accept="image/png,image/jpeg,image/webp"><button id="local-profile-avatar-reset">Стандартный аватар</button><p>Автоматическое получение фото Google, Яндекса и Microsoft без официальной авторизации недоступно. Сохраните разрешённое вам изображение и загрузите его здесь.</p><label for="local-profile-new-name">Новый профиль</label><input id="local-profile-new-name" maxlength="60" placeholder="Например: Работа"><button id="local-profile-create">Создать профиль</button><button id="local-profile-settings">Настройки</button><button id="profile-backup" type="button">Копия настроек и вкладок</button><small id="profile-backup-help">Копия хранится в папке Backups текущего профиля и защищена учётной записью Windows. Данные сайтов остаются в WebView2.</small><p id="local-profile-status" role="status"></p></article><h3>Веб-аккаунты</h3><p>Google · Яндекс · Microsoft · Yahoo · Opera · Firefox: <strong>статус неизвестен</strong>. Проверить вход можно на официальной странице сервиса.</p><p>Выберите сервис. Сохранённые аккаунты и добавление другого аккаунта доступны на его официальной странице.</p><p>Это меню не определяет, выполнен ли вход. Сессии обычного профиля сохраняются; сервис может запросить повторный вход. В приватном окне сессии временные.</p><p><button data-account="google">Google</button> <button data-account="yandex">Яндекс</button> <button data-account="microsoft">Microsoft / Bing</button> <button data-account="yahoo">Yahoo</button> <button data-account="opera">Opera</button> <button data-account="firefox">Firefox</button></p><p><label><input id="account-always" type="checkbox"> Показывать выбор при каждом запуске</label></p><button id="account-save">Сохранить и продолжить</button><p>По умолчанию меню показывается при первом запуске. Позже оно всегда доступно по кнопке «Аккаунты» слева сверху.</p></section>
 <section id="downloads-manager" class="hub-panel library-manager" hidden aria-label="Загрузки">
   <button class="close-panel" type="button">Закрыть</button>
   <div class="library-body">
@@ -1041,9 +1125,10 @@ window.openPanel=name=>{
   panelName=name;closeTabGroupMenu();clearSuggestions();
   if(typeof cancelShortcutRecording==='function')cancelShortcutRecording();
   for(const id of ['appearance','settings','vpn','accounts','tools','print','bookmarks-manager','downloads-manager','workspaces'])document.getElementById(id).hidden=id!==name;
-  menu.classList.remove('open');send('appearance_panel',['settings','bookmarks-manager','downloads-manager','workspaces'].includes(name)?{open:true,name}:{open:Boolean(name)});
+  menu.classList.remove('open');send('appearance_panel',['settings','bookmarks-manager','downloads-manager','workspaces','tools'].includes(name)?{open:true,name}:{open:Boolean(name)});
   if(name!=='downloads-manager')clearTimeout(downloadPoll);
-  if(name==='tools')renderToolsTabs();
+  if(name==='tools'){renderToolsTabs();renderToolPreferences();renderNotes();}
+  else resetTranslation();
   if(name==='workspaces')renderWorkspaces(workspaceFor(state.current_workspace));
   if(name==='accounts'&&!state.private_mode)send('profile_details');
 
@@ -1054,6 +1139,131 @@ window.openPanel=name=>{
   if(name)document.getElementById(name).querySelector('button')?.focus();else document.getElementById('more').focus();
 };
 function setAppearanceOpen(open){window.openPanel(open?'appearance':null);}
+
+const toolElements=Array.from(document.querySelectorAll('#tools [data-tool]'));
+const toolOptions=document.getElementById('tool-preference-options');
+const toolChecks=toolElements.map(element=>{
+  const label=document.createElement('label');
+  const checkbox=document.createElement('input');
+  checkbox.type='checkbox';
+  checkbox.value=element.dataset.tool;
+  label.append(checkbox, ' ', (element.querySelector('h3')||element).textContent.trim());
+  toolOptions.append(label);
+  checkbox.onchange=()=>send('set_hidden_tools',{tools:toolChecks.filter(item=>!item.checked).map(item=>item.value)});
+  return checkbox;
+});
+function renderToolPreferences(){
+  const hidden=new Set(state.hidden_tools||[]);
+  toolElements.forEach((element,i)=>{
+    const visible=!hidden.has(element.dataset.tool);
+    element.hidden=!visible;
+    toolChecks[i].checked=visible;
+  });
+}
+
+const notes=new Map();
+const notesList=document.getElementById('notes-list');
+const notesSearch=document.getElementById('notes-search');
+const notesEditor=document.getElementById('notes-editor');
+const notesTitle=document.getElementById('notes-title');
+const notesBody=document.getElementById('tool-notes');
+const noteLink=document.getElementById('notes-link');
+const noteUnlink=document.getElementById('notes-unlink');
+const noteOpenLink=document.getElementById('notes-open-link');
+const noteUrl=document.getElementById('notes-link-value');
+const notesEmpty=document.getElementById('notes-empty');
+let selectedNoteId=null;
+let displayedNoteId=null;
+let noteListKey='';
+function renderNotes(){
+  if(panelName!=='tools')return;
+  const query=notesSearch.value.trim().toLocaleLowerCase();
+  const matches=Array.from(notes.values()).filter(note=>
+    [note.title,note.body,note.url].some(value=>value?.toLocaleLowerCase().includes(query))
+  ).sort((a,b)=>b.edited_at-a.edited_at||b.id-a.id);
+  if(!notes.has(selectedNoteId))selectedNoteId=matches[0]?.id??null;
+  const key=JSON.stringify([selectedNoteId,matches.map(note=>[note.id,note.title])]);
+  if(noteListKey!==key){
+    notesList.replaceChildren(...matches.map(note=>{
+      const button=document.createElement('button');
+      button.type='button';
+      button.dataset.noteId=String(note.id);
+      button.textContent=note.title||'Без названия';
+      if(note.id===selectedNoteId)button.setAttribute('aria-current','true');
+      button.onclick=()=>{selectedNoteId=note.id;renderNotes();};
+      return button;
+    }));
+    noteListKey=key;
+  }
+  notesEmpty.hidden=matches.length>0;
+  notesEmpty.textContent=query?'Заметки не найдены.':'Заметок пока нет.';
+  const note=notes.get(selectedNoteId);
+  notesEditor.hidden=!note;
+  if(!note){displayedNoteId=null;return;}
+  const newSelection=displayedNoteId!==note.id;
+  if(newSelection||document.activeElement!==notesTitle)notesTitle.value=note.title;
+  if(newSelection||document.activeElement!==notesBody)notesBody.value=note.body;
+  displayedNoteId=note.id;
+  noteLink.disabled=!/^https?:\/\//i.test(state.url||'');
+  noteLink.hidden=Boolean(note.url);
+  noteUnlink.hidden=noteOpenLink.hidden=noteUrl.hidden=!note.url;
+  noteUrl.textContent=note.url||'';
+  noteUrl.title=note.url||'';
+}
+window.notesUpdate=patch=>{
+  if(patch.reset)notes.clear();
+  for(const id of patch.removed)notes.delete(id);
+  for(const note of patch.changes)notes.set(note.id,note);
+  if(patch.select!=null){
+    selectedNoteId=patch.select;
+    notesSearch.value='';
+  }
+  renderNotes();
+  if(patch.select!=null&&panelName==='tools')notesTitle.focus();
+};
+window.noteStatus=message=>{document.getElementById('notes-status').textContent=message;};
+notesSearch.oninput=renderNotes;
+notesTitle.oninput=()=>{if(selectedNoteId)send('note_edit',{id:selectedNoteId,edit:{kind:'title',value:notesTitle.value}});};
+notesBody.oninput=()=>{if(selectedNoteId)send('note_edit',{id:selectedNoteId,edit:{kind:'body',value:notesBody.value}});};
+document.getElementById('notes-create').onclick=()=>send('note_create');
+document.getElementById('notes-remove').onclick=()=>{
+  if(selectedNoteId&&confirm('Удалить эту заметку?'))send('note_remove',{id:selectedNoteId});
+};
+noteLink.onclick=()=>{if(selectedNoteId)send('note_link',{id:selectedNoteId,attach:true});};
+noteUnlink.onclick=()=>{if(selectedNoteId)send('note_link',{id:selectedNoteId,attach:false});};
+noteOpenLink.onclick=()=>{
+  const value=notes.get(selectedNoteId)?.url;
+  if(value){window.openPanel(null);send('navigate',{value});}
+};
+
+const translationPanel=document.getElementById('translation-preview');
+const translationText=document.getElementById('translation-text');
+const translationStatus=document.getElementById('translation-status');
+function resetTranslation(){
+  translationPanel.hidden=true;
+  translationText.textContent='';
+  translationStatus.hidden=true;
+}
+window.translationPreview=text=>{
+  resetTranslation();
+  if(panelName!=='tools')return;
+  if(!text){
+    translationStatus.textContent='Выделите текст на открытой странице.';
+    translationStatus.hidden=false;
+    return;
+  }
+  translationPanel.hidden=false;
+  translationText.textContent=text;
+  document.getElementById('translation-language').value=state.browser_settings?.language==='en'?'en':'ru';
+};
+document.getElementById('tool-translate').onclick=()=>{resetTranslation();send('translate_selection');};
+document.getElementById('translation-cancel').onclick=resetTranslation;
+document.getElementById('translation-open').onclick=()=>{
+  send('translate_open',{language:document.getElementById('translation-language').value});
+  window.openPanel(null);
+};
+document.getElementById('tool-find').onclick=()=>{window.openPanel(null);send('shortcut',{name:'find'});};
+document.getElementById('tool-save-page').onclick=()=>{window.openPanel(null);send('save_page');};
 
 const workspaceSwitcher=document.getElementById('workspace-switcher');
 const workspaceList=document.getElementById('workspace-list');
@@ -1345,7 +1555,7 @@ function updateHub(){
   document.getElementById('tools-memory-summary').textContent='Живых вкладок: '+(state.live_ids?.length||0)+'. Выгрузка удаляет несохранённые формы фоновых страниц.';
   if(!document.getElementById('tools').hidden)renderToolsTabs();
   if(document.activeElement.id!=='account-always')document.getElementById('account-always').checked=!!state.account_prompt_always;
-  if(!document.getElementById('tool-notes').dataset.loaded && state.notes!==undefined){document.getElementById('tool-notes').value=state.notes;document.getElementById('tool-notes').dataset.loaded='1';}
+  if(panelName==='tools')renderToolPreferences();
   if(!document.getElementById('bg-mode').dataset.loaded && state.background_style){const b=state.background_style;document.getElementById('bg-mode').value=b.mode;document.getElementById('bg-a').value='#'+b.color_a.toString(16).padStart(6,'0');document.getElementById('bg-b').value='#'+b.color_b.toString(16).padStart(6,'0');document.getElementById('bg-angle').value=b.angle;document.getElementById('bg-mode').dataset.loaded='1';}
 
   document.getElementById('vpn-scope').value=state.vpn_system_scope?'system':'browser';
@@ -1588,7 +1798,6 @@ render();send('ready');
 document.querySelectorAll('[data-account]').forEach(b=>b.onclick=()=>{send('set_account_prompt',{always:document.getElementById('account-always').checked});window.openPanel(null);send('open_account',{provider:b.dataset.account});});
 document.getElementById('account-save').onclick=()=>{send('set_account_prompt',{always:document.getElementById('account-always').checked});window.openPanel(null);};
 document.getElementById('bg-save').onclick=()=>send('set_background_style',{value:{mode:Number(document.getElementById('bg-mode').value),color_a:parseInt(document.getElementById('bg-a').value.slice(1),16),color_b:parseInt(document.getElementById('bg-b').value.slice(1),16),angle:Number(document.getElementById('bg-angle').value)}});
-document.getElementById('notes-save').onclick=()=>{send('set_notes',{value:document.getElementById('tool-notes').value});document.getElementById('notes-status').textContent='Заметки отправлены на сохранение';};
 document.getElementById('tls-store').onclick=()=>send('open_certificates');
 document.getElementById('tool-print').onclick=()=>window.openPanel('print');
 document.getElementById('print-captions').onchange=e=>{
