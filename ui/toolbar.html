@@ -188,6 +188,11 @@ body.split-active{--page-start:172px}
 
 #resource-metrics:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 12px;margin:14px 0;}
 #resource-metrics dt{color:var(--muted);overflow-wrap:anywhere;}
+.diagnostic-facts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:7px 16px}
+.diagnostic-facts dt{color:var(--muted)}
+.diagnostic-facts dd{margin:0;text-align:right;overflow-wrap:anywhere}
+#diagnostics-log,#diagnostics-errors{padding-inline-start:19px;overflow-wrap:anywhere}
+#diagnostics-preview{max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:8px;padding:12px}
 #resource-metrics dd{margin:0;max-width:120px;text-align:right;font-variant-numeric:tabular-nums;}
 </style></head><body>
 <div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><button type="button" id="workspace-switcher" aria-label="Рабочие пространства" title="Рабочие пространства"><i class="workspace-icon" aria-hidden="true"></i><span id="workspace-label">Пространства</span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div><div id="window-drag-space" aria-hidden="true"></div><div class="window-controls"><button id="window-minimize" aria-label="Свернуть окно">−</button><button id="window-maximize" aria-label="Развернуть окно">□</button><button id="window-close" aria-label="Закрыть окно">×</button></div></div>
@@ -274,7 +279,7 @@ body.split-active{--page-start:172px}
 </section>
 <section id="settings" class="hub-panel" hidden aria-label="Настройки">
 <header class="settings-topbar"><div class="settings-wordmark"><span data-icon="settings"></span><strong>Настройки</strong></div><div class="settings-search-wrap"><span data-icon="search"></span><input id="settings-search" type="search" placeholder="Поиск по всем настройкам" aria-label="Поиск настроек"><kbd>Ctrl K</kbd></div><button class="close-panel settings-close" aria-label="Закрыть настройки"><span data-icon="close"></span></button></header>
-<div class="settings-layout"><aside class="settings-sidebar"><nav class="settings-categories" aria-label="Разделы настроек"><button data-settings-category="accounts" aria-pressed="true"><span data-icon="user"></span><span>Профиль и аккаунты</span></button><button data-settings-category="appearance" aria-pressed="false"><span data-icon="appearance"></span><span>Внешний вид</span></button><button data-settings-category="newtab" aria-pressed="false"><span data-icon="home"></span><span>Новая вкладка</span></button><button data-settings-category="browser" aria-pressed="false"><span data-icon="power"></span><span>Запуск и вкладки</span></button><button data-settings-category="search" aria-pressed="false"><span data-icon="search"></span><span>Поисковая система</span></button><button data-settings-category="privacy" aria-pressed="false"><span data-icon="shield"></span><span>Данные и безопасность</span></button><button data-settings-category="performance" aria-pressed="false"><span data-icon="globe"></span><span>Производительность</span></button><button data-settings-category="network" aria-pressed="false"><span data-icon="lock"></span><span>Сеть и сертификаты</span></button><button data-settings-category="icons" aria-pressed="false"><span data-icon="settings"></span><span>Свои иконки</span></button><button data-settings-category="shortcuts" aria-pressed="false"><span data-icon="settings"></span>Горячие клавиши</button><button data-settings-category="about" aria-pressed="false"><span data-icon="info"></span><span>О браузере</span></button><button data-settings-category="all" aria-pressed="false"><span data-icon="more"></span><span>Все настройки</span></button></nav><p class="settings-sidebar-note">LITERUST<br><span>Ваш браузер. Ваши правила.</span></p></aside>
+<div class="settings-layout"><aside class="settings-sidebar"><nav class="settings-categories" aria-label="Разделы настроек"><button data-settings-category="accounts" aria-pressed="true"><span data-icon="user"></span><span>Профиль и аккаунты</span></button><button data-settings-category="appearance" aria-pressed="false"><span data-icon="appearance"></span><span>Внешний вид</span></button><button data-settings-category="newtab" aria-pressed="false"><span data-icon="home"></span><span>Новая вкладка</span></button><button data-settings-category="browser" aria-pressed="false"><span data-icon="power"></span><span>Запуск и вкладки</span></button><button data-settings-category="search" aria-pressed="false"><span data-icon="search"></span><span>Поисковая система</span></button><button data-settings-category="privacy" aria-pressed="false"><span data-icon="shield"></span><span>Данные и безопасность</span></button><button data-settings-category="performance" aria-pressed="false"><span data-icon="globe"></span><span>Производительность</span></button><button data-settings-category="network" aria-pressed="false"><span data-icon="lock"></span><span>Сеть и сертификаты</span></button><button data-settings-category="icons" aria-pressed="false"><span data-icon="settings"></span><span>Свои иконки</span></button><button data-settings-category="shortcuts" aria-pressed="false"><span data-icon="settings"></span>Горячие клавиши</button><button data-settings-category="diagnostics" aria-pressed="false"><span data-icon="info"></span><span>Диагностика</span></button><button data-settings-category="about" aria-pressed="false"><span data-icon="info"></span><span>О браузере</span></button><button data-settings-category="all" aria-pressed="false"><span data-icon="more"></span><span>Все настройки</span></button></nav><p class="settings-sidebar-note">LITERUST<br><span>Ваш браузер. Ваши правила.</span></p></aside>
 <div class="settings-main"><div class="settings-section-heading"><span class="eyebrow">LITERUST / НАСТРОЙКИ</span><h2 id="settings-section-title">Профиль и аккаунты</h2><p id="settings-section-description">Аккаунты сервисов, пароли и перенос закладок.</p></div><p id="settings-empty" hidden role="status">Ничего не найдено. Попробуйте другое слово.</p><div class="settings-cards"><article data-category="accounts"><h3>Аккаунты и вход</h3><p>Google, Яндекс, Microsoft, Yahoo, Opera и Firefox открываются на официальных страницах. Сессии обычного профиля сохраняются; сервис может запросить повторный вход.</p><button id="settings-google">Выбрать сервис</button><button id="google-external">Внешний браузер ↗</button><small>Если Google запрещает вход во встроенном движке, используйте внешний браузер. Его сессия не переносится в LiteRust и не использует VPN LiteRust.</small></article><article data-category="accounts"><h3>Пароли и закладки</h3><button class="settings-action-row" data-menu="google-passwords-menu"><span><strong>Google Password Manager</strong><small>Официальный сайт во внешнем браузере</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="import-bookmarks"><span><strong>Импорт закладок</strong><small>Из HTML-файла другого браузера</small></span><span data-icon="chevron"></span></button><button class="settings-action-row" data-menu="export-bookmarks"><span><strong>Экспорт закладок</strong><small>Сохранить ссылки в HTML-файл</small></span><span data-icon="chevron"></span></button></article><article data-category="appearance"><h3>Оформление</h3><p>30 стилей вкладок и 330 тем. Настройте панель и внутренние страницы.</p><button id="settings-appearance">Выбрать оформление</button></article><article data-category="appearance"><h3>Положение панели</h3><p>Все функции остаются под рукой с любой стороны окна.</p><div class="dock-options">
 <button data-position="left">← Слева</button><button data-position="right">Справа →</button><button data-position="top">↑ Сверху</button><button data-position="bottom">↓ Снизу</button></div></article><article data-category="appearance"><h3>Текст и форма</h3>
 <p><label>Размер текста <select id="pref-font_size"><option value="12">Мелкий</option><option value="13">Обычный</option><option value="14">Средний</option><option value="16">Крупный</option></select></label></p>
@@ -327,7 +332,48 @@ body.split-active{--page-start:172px}
   <dt>CPU процессов WebView2</dt><dd data-metric="cpu_percent"></dd>
 </dl>
 <small id="resource-scope" hidden>Вкладки относятся к текущему пространству. Процессы могут обслуживать несколько окон профиля. CPU измеряется короткой выборкой.</small>
-</article><article data-category="network"><h3>Подключение через VPN</h3><p>Управляйте серверами и областью подключения в VPN-хабе.</p><button id="settings-vpn">Открыть VPN-хаб</button></article><article data-category="network"><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="tls-ca">Национальный удостоверяющий центр</button><button id="tls-store">Открыть сертификаты Windows</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article><article data-category="appearance"><h3>Боковая панель</h3><label for="sidebar-mode">Как открывать</label><select id="sidebar-mode"><option value="click">По нажатию (с подсказками слева)</option><option value="hover">При наведении</option><option value="pinned">Закрепить</option></select><label for="sidebar-width">Ширина раскрытой панели</label><input id="sidebar-width" type="range" min="220" max="320" step="4"><output id="sidebar-width-value"></output><p>Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.</p><div id="sidebar-items"></div><button id="sidebar-reset">Сбросить панель</button></article><article data-category="icons"><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article data-category="shortcuts"><h3>Ваши сочетания клавиш</h3><p>Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.</p><label for="shortcut-search">Найти команду</label><input id="shortcut-search" type="search" placeholder="Например: вкладка или Ctrl+T"><p id="shortcut-status" role="status" aria-live="polite">Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.</p><div id="shortcut-list"></div><button id="shortcut-reset-all">Восстановить стандартные сочетания</button></article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
+</article><article data-category="network"><h3>Подключение через VPN</h3><p>Управляйте серверами и областью подключения в VPN-хабе.</p><button id="settings-vpn">Открыть VPN-хаб</button></article><article data-category="network"><h3>Российские TLS-сертификаты</h3><p>Смена поисковика не меняет доверие сертификатам. LiteRust использует WebView2 и проверку сертификатов Windows. Для сайта медицинской аттестации может потребоваться установка официальных корневых сертификатов в Windows.</p><p>Установка корневого сертификата расширяет доверие всей системы. Используйте только официальный источник и проверьте сведения об издателе.</p><button id="tls-help">Инструкции Госуслуг</button><button id="tls-ca">Национальный удостоверяющий центр</button><button id="tls-store">Открыть сертификаты Windows</button><button id="medical-site">Открыть сайт аттестации напрямую</button><p>LiteRust не отключает проверку TLS. Если ошибка остаётся, проверьте дату Windows и обратитесь в поддержку сайта.</p></article><article data-category="appearance"><h3>Боковая панель</h3><label for="sidebar-mode">Как открывать</label><select id="sidebar-mode"><option value="click">По нажатию (с подсказками слева)</option><option value="hover">При наведении</option><option value="pinned">Закрепить</option></select><label for="sidebar-width">Ширина раскрытой панели</label><input id="sidebar-width" type="range" min="220" max="320" step="4"><output id="sidebar-width-value"></output><p>Временная шторка накладывается на страницу. Закреплённая панель занимает отдельное место. Раскрытие доступно слева и справа.</p><div id="sidebar-items"></div><button id="sidebar-reset">Сбросить панель</button></article><article data-category="icons"><h3>Свои иконки</h3><label for="icon-target">Что изменить</label><select id="icon-target" style="width:100%"><option value="app">LiteRust в Windows</option><option value="site">Сайт на новой вкладке</option></select><p><input id="icon-site" type="url" placeholder="Точный адрес закладки https://…" style="width:100%"></p><input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp"><p><img id="icon-preview" width="48" height="48" alt="Предпросмотр значка" hidden></p><button id="icon-reset">Стандартный значок</button><small id="icon-status" role="status">PNG, JPEG или WebP · до 5 МБ · до 32 значков</small></article><article data-category="shortcuts"><h3>Ваши сочетания клавиш</h3><p>Нажмите «Изменить», затем нужные клавиши. Можно использовать Ctrl, Alt, Shift и F1–F12. Esc отменяет запись. Системные сочетания Windows и команды копирования/вставки не переназначаются.</p><label for="shortcut-search">Найти команду</label><input id="shortcut-search" type="search" placeholder="Например: вкладка или Ctrl+T"><p id="shortcut-status" role="status" aria-live="polite">Изменения действуют во всех вкладках этого окна и сохраняются для следующего запуска.</p><div id="shortcut-list"></div><button id="shortcut-reset-all">Восстановить стандартные сочетания</button></article><article data-category="diagnostics">
+<h3>Состояние LiteRust</h3>
+<dl class="diagnostic-facts">
+  <dt>Версия LiteRust</dt><dd data-diag="browser_version">—</dd>
+  <dt>Компилятор Rust</dt><dd data-diag="rust_build">—</dd>
+  <dt>WebView2 Runtime</dt><dd data-diag="runtime">—</dd>
+  <dt>Вкладок в пространстве</dt><dd data-diag="workspace_tabs">—</dd>
+  <dt>Открытых WebView в окне</dt><dd data-diag="live_views">—</dd>
+  <dt>Активные обычные профили</dt><dd data-diag="active_profiles">—</dd>
+  <dt>Состояние VPN</dt><dd data-diag="vpn">—</dd>
+  <dt>Хранение журнала</dt><dd data-diag="journal">—</dd>
+</dl>
+<details>
+<summary>Текущее состояние компонентов</summary>
+<dl class="diagnostic-facts" id="diagnostics-components"></dl>
+</details>
+<button id="diagnostics-refresh">Обновить сведения</button>
+</article><article data-category="diagnostics">
+<h3>Последние ошибки</h3>
+<p id="diagnostics-error-empty">Недавних ошибок нет.</p>
+<ul id="diagnostics-errors" aria-live="polite"></ul>
+<details>
+<summary>Журнал компонентов</summary>
+<label for="diagnostics-component">Компонент</label>
+<select id="diagnostics-component">
+  <option value="">Все компоненты</option>
+  <option value="startup">Запуск</option><option value="web_view2">WebView2</option>
+  <option value="windows">Окна</option><option value="tabs">Вкладки</option>
+  <option value="network">Сеть</option><option value="vpn">VPN</option>
+  <option value="profiles">Профили</option><option value="downloads">Загрузки</option>
+</select>
+<ul id="diagnostics-log"></ul>
+</details>
+</article><article data-category="diagnostics">
+<h3>Диагностический отчёт</h3>
+<p>Проверьте содержимое перед сохранением файла. Отчёт содержит состояние компонентов, счётчики и коды событий.</p>
+<button id="diagnostics-prepare">Показать отчёт</button>
+<div id="diagnostics-review" hidden>
+<pre id="diagnostics-preview" tabindex="0"></pre>
+<button id="diagnostics-export" disabled>Сохранить отчёт</button>
+</div>
+</article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
 <section id="vpn" class="hub-panel vpn-workspace" hidden aria-label="VPN-хаб">
 <div class="vpn-servers">
   <div class="vpn-title"><div><span class="eyebrow">LITERUST / VPN</span><h2>Серверы</h2></div><button id="vpn-open-import" title="Добавить ключ или подписку" aria-label="Добавить серверы">＋</button></div>
@@ -1854,13 +1900,95 @@ document.getElementById('shortcut-search').oninput=renderShortcuts;
 document.getElementById('shortcut-reset-all').onclick=()=>{if(confirm('Восстановить все стандартные сочетания? Ваши назначения будут заменены.')){cancelShortcutRecording();saveShortcuts(shortcutDefaults());}};
 renderShortcuts();
 
-const settingsSections={shortcuts:['Горячие клавиши','Привычные сочетания и ваши команды. Изменения сохраняются сразу.'],accounts:['Профиль и аккаунты','Аккаунты сервисов, пароли и перенос закладок.'],appearance:['Внешний вид','Стиль, цвета, текст и положение панели.'],newtab:['Новая вкладка','Фон, часы и ссылки — только то, что вам нужно.'],browser:['Запуск и вкладки','Настройте начало работы. Изменения сохраняются кнопкой ниже.'],search:['Поисковая система','Ваш привычный поиск в адресной строке и новой вкладке.'],privacy:['Данные и безопасность','Управление локальными данными и приватными окнами.'],performance:['Производительность','Освобождайте память осознанно, сохраняя важные страницы.'],network:['Сеть и сертификаты','VPN и безопасная диагностика подключения.'],icons:['Свои иконки','Замените значки интерфейса и сайтов.'],about:['О браузере','Версия, исходники и установщики LiteRust.'],all:['Все настройки','Полный список доступных параметров.']};
+const settingsSections={shortcuts:['Горячие клавиши','Привычные сочетания и ваши команды. Изменения сохраняются сразу.'],accounts:['Профиль и аккаунты','Аккаунты сервисов, пароли и перенос закладок.'],appearance:['Внешний вид','Стиль, цвета, текст и положение панели.'],newtab:['Новая вкладка','Фон, часы и ссылки — только то, что вам нужно.'],browser:['Запуск и вкладки','Настройте начало работы. Изменения сохраняются кнопкой ниже.'],search:['Поисковая система','Ваш привычный поиск в адресной строке и новой вкладке.'],privacy:['Данные и безопасность','Управление локальными данными и приватными окнами.'],performance:['Производительность','Освобождайте память осознанно, сохраняя важные страницы.'],network:['Сеть и сертификаты','VPN и безопасная диагностика подключения.'],icons:['Свои иконки','Замените значки интерфейса и сайтов.'],diagnostics:['Диагностика','Состояние компонентов и локальный журнал.'],about:['О браузере','Версия, исходники и установщики LiteRust.'],all:['Все настройки','Полный список доступных параметров.']};
 const settingCards=[...document.querySelectorAll('#settings .settings-cards>article')];
 function filterSettings(){const q=document.getElementById('settings-search').value.trim().toLocaleLowerCase();let visible=0;for(const card of settingCards){const searchable=card.textContent+' '+settingsSections[card.dataset.category][0];card.hidden=q?!searchable.toLocaleLowerCase().includes(q):!(settingsCategory==='all'||card.dataset.category===settingsCategory);if(!card.hidden)visible++;}document.getElementById('settings-empty').hidden=visible>0;document.getElementById('settings-section-title').textContent=q?'Результаты поиска':settingsSections[settingsCategory][0];document.getElementById('settings-section-description').textContent=q?'По всем разделам · найдено: '+visible:settingsSections[settingsCategory][1];}
 function selectSettingsCategory(category){cancelShortcutRecording();settingsCategory=category;document.getElementById('settings-search').value='';document.querySelectorAll('[data-settings-category]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.settingsCategory===category)));filterSettings();document.querySelector('.settings-main').scrollTop=0;}
 document.getElementById('settings-search').oninput=filterSettings;
-document.querySelectorAll('[data-settings-category]').forEach(b=>b.onclick=()=>selectSettingsCategory(b.dataset.settingsCategory));
+document.querySelectorAll('[data-settings-category]').forEach(b=>b.onclick=()=>{
+  const category=b.dataset.settingsCategory;
+  selectSettingsCategory(category);
+  if(category==='diagnostics')requestDiagnostics(false);
+});
 document.getElementById('settings-back-to-draft').onclick=()=>selectSettingsCategory('browser');
+let diagnosticEntries=[];
+const diagnosticComponents=document.getElementById('diagnostics-component');
+const diagnosticNames=Object.fromEntries(Array.from(diagnosticComponents.options,option=>[option.value,option.textContent]));
+const diagnosticMessages={
+  startup_failed:'LiteRust не удалось запустить.',
+  runtime_unavailable:'WebView2 Runtime недоступен.',
+  controller_failed:'Не удалось открыть страницу.',
+  window_restore_failed:'Не удалось восстановить окно.',
+  network_rules_failed:'Не удалось применить сетевые правила.',
+  proxy_stopped:'Подключение VPN прервалось.',
+  system_tunnel_unavailable:'Системный VPN недоступен.',
+  profile_save_failed:'Не удалось сохранить профиль.',
+  download_interrupted:'Загрузка прервалась.',
+  journal_unavailable:'Не удалось записать локальный журнал.'
+};
+const diagnosticReview=document.getElementById('diagnostics-review');
+const diagnosticPreview=document.getElementById('diagnostics-preview');
+const diagnosticExport=document.getElementById('diagnostics-export');
+function requestDiagnostics(preview){
+  diagnosticExport.disabled=true;
+  diagnosticReview.hidden=true;
+  send('read_diagnostics',{preview});
+}
+function renderDiagnosticEntries(){
+  const errors=document.getElementById('diagnostics-errors');
+  const records=document.getElementById('diagnostics-log');
+  const latest=diagnosticEntries.filter(entry=>entry.error).slice(0,8);
+  const option=diagnosticComponents.value;
+  const log=diagnosticEntries.filter(entry=>!option||entry.component===option).slice(0,40);
+  document.getElementById('diagnostics-error-empty').hidden=latest.length>0;
+  errors.replaceChildren(...latest.map(entry=>{
+    const row=document.createElement('li');
+    row.textContent=diagnosticMessages[entry.event]||entry.event;
+    return row;
+  }));
+  records.replaceChildren(...log.map(entry=>{
+    const row=document.createElement('li');
+    const code=document.createElement('code');
+    const at=new Date(entry.timestamp*1000);
+    row.append((Number.isFinite(at.getTime())?at.toLocaleString(document.documentElement.lang)+' · ':'')
+      +(diagnosticNames[entry.component]||entry.component)+' · ');
+    code.textContent=entry.event;
+    row.append(code);
+    return row;
+  }));
+}
+window.diagnosticsUpdate=([serialized,names,preview])=>{
+  const report=JSON.parse(serialized);
+  for(const key of ['browser_version','rust_build','runtime','workspace_tabs','live_views']){
+    document.querySelector('[data-diag="'+key+'"]').textContent=report[key]??'—';
+  }
+  document.querySelector('[data-diag="active_profiles"]').textContent=names.length?names.join(', '):String(report.active_profiles);
+  const vpn={system:'Системный VPN',browser:'VPN браузера',unavailable:'Недоступен',off:'Выключен'};
+  document.querySelector('[data-diag="vpn"]').textContent=vpn[report.vpn]||'—';
+  document.querySelector('[data-diag="journal"]').textContent=report.journal==='session'?'В памяти окна':'В локальном профиле';
+  diagnosticEntries=report.events;
+  const components=document.createDocumentFragment();
+  for(const [key,label] of Object.entries(diagnosticNames)){
+    if(!key)continue;
+    const name=document.createElement('dt');
+    const state=document.createElement('dd');
+    const event=diagnosticEntries.find(entry=>entry.component===key);
+    name.textContent=label;
+    if(event?.error)state.textContent='Требует внимания';
+    else state.textContent=event?'Есть события':'—';
+    components.append(name,state);
+  }
+  document.getElementById('diagnostics-components').replaceChildren(components);
+  renderDiagnosticEntries();
+  diagnosticReview.hidden=!preview;
+  diagnosticExport.disabled=!preview;
+  diagnosticPreview.textContent=preview?serialized:'';
+  if(preview)diagnosticPreview.focus();
+};
+diagnosticComponents.onchange=renderDiagnosticEntries;
+document.getElementById('diagnostics-refresh').onclick=()=>requestDiagnostics(false);
+document.getElementById('diagnostics-prepare').onclick=()=>requestDiagnostics(true);
+diagnosticExport.onclick=()=>send('export_diagnostics');
 document.getElementById('settings-vpn').onclick=()=>window.openPanel('vpn');
 document.getElementById('settings-release').onclick=()=>{window.openPanel(null);send('navigate',{value:'https://github.com/m1rak03/LiteRust/releases'});};
 window.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='k'&&!document.getElementById('settings').hidden){e.preventDefault();document.getElementById('settings-search').focus();}});

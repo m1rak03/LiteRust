@@ -124,6 +124,7 @@ impl Browser {
             tab.scroll_position = position;
         }
         self.pages.remove(&id);
+        super::note_diagnostic(literust_browser::diagnostics::Event::TabReleased);
         if let Some(count) = &mut self.resources.manual_released {
             *count += 1;
         }

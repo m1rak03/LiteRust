@@ -2,11 +2,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use literust_browser::{
-    google_passwords, import, layout,
+    diagnostics, google_passwords, import, layout,
     local_profiles::{self, Catalog, ProfileDetails},
     network_block, notes, omnibox, page_tools, security, split_view, storage, tab_groups,
     tab_resources, vpn, window_session, workspaces,
 };
+mod browser_diagnostics;
 mod browser_resources;
 mod startup_trace;
 use startup_trace::Phase as StartupPhase;
@@ -315,6 +316,10 @@ enum UiCommand {
         mode: tab_resources::Mode,
     },
     SampleResources,
+    ReadDiagnostics {
+        preview: bool,
+    },
+    ExportDiagnostics,
     SetBackgroundPolicy {
         policy: tab_resources::BackgroundPolicy,
     },
@@ -610,6 +615,7 @@ struct Browser {
     account_prompt_checked: bool,
     initial_page_pending: bool,
     first_document: Option<(u64, u64)>,
+    diagnostic_preview: Option<String>,
     ready: bool,
 }
 
@@ -706,6 +712,7 @@ impl Browser {
             account_prompt_checked: false,
             initial_page_pending: true,
             first_document: None,
+            diagnostic_preview: None,
             ready: false,
         }
     }
@@ -1719,6 +1726,9 @@ impl Browser {
                 if allowed && valid_web_url(&url) {
                     navigation_mode.set(false);
                 }
+                if !allowed {
+                    note_diagnostic(diagnostics::Event::NavigationRejected);
+                }
                 allowed
             })
             .with_permission_handler(site_permission_policy)
@@ -1848,7 +1858,11 @@ impl Browser {
                 true
             }
             Err(err) => {
-                self.notice(&format!("Не удалось создать WebView: {err}"));
+                eprintln!("WebView2 controller creation: {err}");
+                note_diagnostic(diagnostics::Event::ControllerFailed);
+                self.notice_localized(
+                    "Не удалось открыть страницу. Попробуйте снова открыть вкладку.",
+                );
                 false
             }
         }
@@ -2269,6 +2283,7 @@ impl Browser {
         if background {
             self.sync_toolbar();
         } else {
+            note_diagnostic(diagnostics::Event::TabOpened);
             self.show_active();
         }
         self.persist();
@@ -3004,6 +3019,7 @@ impl Browser {
                 self.data
                     .tab_groups
                     .organize(&mut self.data.tabs, &mut self.data.active);
+                note_diagnostic(diagnostics::Event::TabClosed);
                 self.show_active();
                 self.persist();
             }
@@ -3165,6 +3181,7 @@ impl Browser {
             UiCommand::AppearancePanel { open, name } => {
                 self.appearance_open = open;
                 self.panel = if open { name } else { None };
+                self.diagnostic_preview = None;
                 if self.panel.as_deref() != Some("tools") {
                     self.translation_selection = None;
                     self.translation_request = self.translation_request.wrapping_add(1);
@@ -3210,6 +3227,8 @@ impl Browser {
             UiCommand::DiscardBackground => self.start_manual_release(),
             UiCommand::SetResourceMode { mode } => self.set_resource_mode(mode),
             UiCommand::SampleResources => self.sample_resources(),
+            UiCommand::ReadDiagnostics { preview } => self.show_diagnostics(preview),
+            UiCommand::ExportDiagnostics => self.export_diagnostics(),
             UiCommand::SetBackgroundPolicy { policy } => self.set_background_policy(policy),
             UiCommand::OpenGoogleAccount => {
                 if self.private_mode {
@@ -3389,6 +3408,7 @@ impl Browser {
             if loading {
                 if let Err(err) = network_block::apply(&page.view, enabled_for_url) {
                     eprintln!("Cannot adjust filter on page load: {err}");
+                    note_diagnostic(diagnostics::Event::NetworkRulesFailed);
                 }
             }
             #[cfg(not(windows))]
@@ -3411,6 +3431,7 @@ impl Browser {
         if !loading {
             if self.first_document == Some((tab_id, generation)) && !url.is_empty() {
                 startup_trace::phase(StartupPhase::FirstDocumentLoaded);
+                note_diagnostic(diagnostics::Event::FirstDocumentLoaded);
                 self.first_document = None;
             }
             if valid_web_url(&url) {
@@ -3457,6 +3478,7 @@ impl Browser {
     fn on_download_start(&mut self, id: u64, url: String, file: String) {
         let source = download_source(&url);
         self.data.record_download_start(id, source, file);
+        note_diagnostic(diagnostics::Event::DownloadStarted);
         self.update_background_hints(std::time::Instant::now());
         if self.data.downloads.len() > storage::MAX_DOWNLOADS {
             #[cfg(windows)]
@@ -3482,6 +3504,14 @@ impl Browser {
         progress: storage::DownloadProgress,
     ) {
         let terminal = !progress.can_cancel;
+        if terminal {
+            let event = match status {
+                storage::DownloadStatus::Completed => diagnostics::Event::DownloadCompleted,
+                storage::DownloadStatus::Cancelled => diagnostics::Event::DownloadCancelled,
+                _ => diagnostics::Event::DownloadInterrupted,
+            };
+            note_diagnostic(event);
+        }
         self.data.record_download_state(id, file, status, progress);
         self.update_background_hints(std::time::Instant::now());
         if terminal {
@@ -3734,6 +3764,14 @@ fn unix_seconds() -> u64 {
         .map_or(0, |elapsed| elapsed.as_secs())
 }
 
+static DIAGNOSTICS: std::sync::OnceLock<diagnostics::Journal> = std::sync::OnceLock::new();
+
+fn note_diagnostic(event: diagnostics::Event) {
+    if let Some(journal) = DIAGNOSTICS.get() {
+        journal.record(event);
+    }
+}
+
 fn startup_log(message: &str) {
     startup_trace::note(message);
 }
@@ -3797,6 +3835,7 @@ fn main() {
 
     if let Err(error) = run() {
         startup_log("Startup failed");
+        note_diagnostic(diagnostics::Event::StartupFailed);
         #[cfg(windows)]
         unsafe {
             use windows::{
@@ -3882,6 +3921,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         });
         startup_trace::open(&file);
     }
+    let journal = (!private_mode && diagnostics.is_dir()).then(|| diagnostics.join("events.jsonl"));
+    let _ = DIAGNOSTICS.set(diagnostics::Journal::open(journal));
+    note_diagnostic(diagnostics::Event::StartupBegun);
     startup_trace::phase(StartupPhase::ProfilesOpened);
     // Fail before creating any native window: an absent runtime must not leave
     // a blank window while WebView construction is attempted.
@@ -3889,6 +3931,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     {
         startup_log("Checking WebView2 Runtime");
         let version = wry::webview_version().map_err(|error| {
+            note_diagnostic(diagnostics::Event::RuntimeUnavailable);
             std::io::Error::other(format!(
                 "Microsoft Edge WebView2 Runtime не найден или недоступен.\n\nУстановите WebView2 Runtime с официального сайта Microsoft:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703\n\nПосле установки снова запустите LiteRust. Сам браузер Edge устанавливать не обязательно.\n\nДиагностика: {error}"
             ))
@@ -3897,6 +3940,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err(std::io::Error::other("WebView2 вернул пустую версию. Установите Microsoft WebView2 Runtime: https://go.microsoft.com/fwlink/p/?LinkId=2124703").into());
         }
         startup_log(&format!("WebView2 Runtime available: {version}"));
+        note_diagnostic(diagnostics::Event::RuntimeAvailable);
     }
     startup_trace::phase(StartupPhase::RuntimeChecked);
     startup_log("Creating event loop and window");
@@ -3918,6 +3962,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
     };
     startup_trace::phase(StartupPhase::SettingsLoaded);
+    note_diagnostic(diagnostics::Event::ProfileOpened);
     #[cfg(windows)]
     let mut vpn_vault = literust_browser::vpn_platform::load(&profile_root())?;
     #[cfg(windows)]
@@ -3948,6 +3993,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         if result.is_err() {
             startup_log("System VPN unavailable; browser remains proxied");
+            note_diagnostic(diagnostics::Event::SystemTunnelUnavailable);
         }
         result.ok()
     } else {
@@ -3961,6 +4007,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let system_vpn_active = false;
     #[cfg(windows)]
     windows_platform::Downloads::reserve_ids(data.downloads.len());
+    if vpn_port.is_some() {
+        note_diagnostic(diagnostics::Event::ProxyStarted);
+    }
     let options = WindowOptions {
         private_mode,
         #[cfg(windows)]
@@ -3996,6 +4045,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(windows)]
         {
             if windows[0].vpn_running && vpn_tunnel.as_mut().is_some_and(|tunnel| !tunnel.alive()) {
+                note_diagnostic(diagnostics::Event::ProxyStopped);
                 for browser in &mut windows {
                     browser.vpn_running = false;
                     browser.notice_localized("VPN остановился. Прямое соединение не включается. Откройте VPN-хаб.");
@@ -4108,6 +4158,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             changed = true;
             if windows.len() > 1 {
                 let closed = windows.remove(index);
+                note_diagnostic(diagnostics::Event::WindowClosed);
                 if let Some(id) = closed.data.workspace.current {
                     let mut profile = closed.data.profile.clone();
                     if let Some(space) = std::rc::Rc::make_mut(&mut profile).workspaces.get_mut(id) {
@@ -4150,6 +4201,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err(error) => {
                     restore_failed = true;
+                    note_diagnostic(diagnostics::Event::WindowRestoreFailed);
                     source.notice(&error.to_string());
                 }
             }
@@ -4200,6 +4252,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(()) => { persisted = true; placement_save_at = None; }
                         Err(error) => {
                             eprintln!("Failed to persist browser state: {error}");
+                            note_diagnostic(diagnostics::Event::ProfileSaveFailed);
                             windows[first].notice_localized("Не удалось сохранить профиль. Проверьте свободное место и права доступа.");
                         }
                     }
@@ -4231,6 +4284,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if windows.len() == 1 && windows[0].close_requested {
+            note_diagnostic(diagnostics::Event::WindowClosed);
             #[cfg(windows)] { system_vpn.take(); vpn_tunnel.take(); }
             *control_flow = ControlFlow::Exit;
             return;
@@ -4488,6 +4542,7 @@ fn create_browser(
     browser.system_vpn_active = options.system_vpn_active;
     browser.resize();
     startup_trace::phase(StartupPhase::InterfaceCreated);
+    note_diagnostic(diagnostics::Event::WindowOpened);
     startup_log("Browser interface WebViews created");
 
     Ok(browser)

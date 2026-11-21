@@ -413,6 +413,29 @@ pub fn print_preview(view: &wry::WebView) -> windows::core::Result<()> {
 }
 
 pub fn choose_pdf(view: &wry::WebView) -> windows::core::Result<Option<PathBuf>> {
+    choose_file(
+        view,
+        "LiteRust.pdf",
+        "PDF (*.pdf)\0*.pdf\0\0",
+        windows::core::w!("pdf"),
+    )
+}
+
+pub fn choose_diagnostics(view: &wry::WebView) -> windows::core::Result<Option<PathBuf>> {
+    choose_file(
+        view,
+        "LiteRust-diagnostics.json",
+        "JSON (*.json)\0*.json\0\0",
+        windows::core::w!("json"),
+    )
+}
+
+fn choose_file(
+    view: &wry::WebView,
+    filename_hint: &str,
+    filter_hint: &str,
+    extension: windows::core::PCWSTR,
+) -> windows::core::Result<Option<PathBuf>> {
     use std::{ffi::OsString, os::windows::ffi::OsStringExt};
     use windows::{
         core::PCWSTR,
@@ -433,16 +456,16 @@ pub fn choose_pdf(view: &wry::WebView) -> windows::core::Result<Option<PathBuf>>
         }
     }
     let mut filename = [0u16; 4096];
-    let default_name: Vec<u16> = "LiteRust.pdf".encode_utf16().collect();
+    let default_name: Vec<u16> = filename_hint.encode_utf16().collect();
     filename[..default_name.len()].copy_from_slice(&default_name);
-    let filter: Vec<u16> = "PDF (*.pdf)\0*.pdf\0\0".encode_utf16().collect();
+    let filter: Vec<u16> = filter_hint.encode_utf16().collect();
     let options = OPENFILENAMEW {
         lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
         hwndOwner: owner,
         lpstrFilter: PCWSTR(filter.as_ptr()),
         lpstrFile: PWSTR(filename.as_mut_ptr()),
         nMaxFile: filename.len() as u32,
-        lpstrDefExt: windows::core::w!("pdf"),
+        lpstrDefExt: extension,
         Flags: OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
         ..Default::default()
     };
@@ -571,6 +594,10 @@ pub fn register_profile_window(
             Some(HANDLE(1 as _)),
         )
     }
+}
+
+pub fn profile_is_open(root: &std::path::Path) -> bool {
+    find_profile_window(root).is_some()
 }
 
 fn find_profile_window(root: &std::path::Path) -> Option<windows::Win32::Foundation::HWND> {

@@ -310,6 +310,10 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     if !root.is_absolute() || !root.is_dir() || !super::profile_root().starts_with(&root) {
         return Err("Split test requires isolated fixture profile storage".into());
     }
+    let diagnostic_log = root.join("fixture-events.jsonl");
+    let _ = super::DIAGNOSTICS.set(literust_browser::diagnostics::Journal::open(
+        (!private_mode).then(|| diagnostic_log.clone()),
+    ));
     let port = std::env::var("LITERUST_SPLIT_TEST_PORT")?.parse::<u16>()?;
     let urls = ["one", "two", "three"].map(|name| format!("http://127.0.0.1:{port}/{name}"));
     let mut log = std::fs::File::create(root.join("results.log"))?;
@@ -759,6 +763,31 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                         return Err("The background page script stopped under the memory hint");
                     }
                 }
+                22 => {
+                    browser.handle(UiCommand::AppearancePanel { open: true, name: Some("settings".into()) });
+                    browser.handle(UiCommand::ReadDiagnostics { preview: true });
+                    let text = browser.diagnostic_preview.as_ref().ok_or("Diagnostic preview missing")?;
+                    let report: serde_json::Value = serde_json::from_str(text).map_err(|_| "Invalid report JSON")?;
+                    if report["private_window"] != private_mode
+                        || !report["rust_build"].as_str().is_some_and(|version| version.starts_with("rustc "))
+                        || report["runtime"].is_null()
+                        || report["events"].as_array().is_none_or(Vec::is_empty)
+                        || text.contains("127.0.0.1")
+                        || text.contains("Fixture note")
+                        || diagnostic_log.is_file() == private_mode
+                    {
+                        return Err("Diagnostics omitted status or included a URL, note or private history");
+                    }
+                    let output = root.join("fixture-diagnostic-report.json");
+                    browser.write_diagnostics(&output).map_err(|_| "Write fixture diagnostics export")?;
+                    if !std::fs::read_to_string(&output).is_ok_and(|report| report == *text) {
+                        return Err("The exported report changed after its preview");
+                    }
+                    browser.handle(UiCommand::AppearancePanel { open: false, name: None });
+                    if browser.diagnostic_preview.is_some() {
+                        return Err("Closing Settings kept the export preview active");
+                    }
+                }
                 _ => return Ok(false),
             }
             Ok(true)
@@ -768,7 +797,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = writeln!(log, "phase {stage}: true");
                 stage += 1;
                 since = Instant::now();
-                if stage == 22 {
+                if stage == 23 {
                     result = Ok(());
                     *flow = ControlFlow::Exit;
                 }
@@ -792,6 +821,10 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     writeln!(
         log,
         "PASS: real WebView2 background policy, protected tabs and continued page scripts"
+    )?;
+    writeln!(
+        log,
+        "PASS: diagnostic report, private log isolation and exact preview export"
     )?;
     Ok(())
 }

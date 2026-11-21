@@ -1,4 +1,5 @@
 //! Platform-independent browser metadata and policies.
+pub mod diagnostics;
 pub mod google_passwords;
 pub mod import;
 pub mod layout;

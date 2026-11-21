@@ -865,3 +865,46 @@ CPU процессов WebView2	WebView2 process CPU
 LiteRust оставляет стандартное поведение фоновых страниц.	LiteRust uses the standard behavior for background pages.
 Подсказка экономии памяти действует только для фоновых страниц LiteRust.	The memory-saving hint applies only to background LiteRust pages.
 Через минуту LiteRust проверяет, можно ли применить подсказку к неактивному сайту.	After a minute, LiteRust checks whether it can apply the memory-saving hint to an idle site.
+
+Диагностика	Diagnostics
+Состояние компонентов и локальный журнал.	Component status and the local event log.
+Состояние LiteRust	LiteRust status
+Версия LiteRust	LiteRust version
+Компилятор Rust	Rust compiler
+Открытых WebView в окне	Live WebViews in this window
+Активные обычные профили	Active regular profiles
+Состояние VPN	VPN status
+Хранение журнала	Journal storage
+Обновить сведения	Refresh status
+Последние ошибки	Recent errors
+Недавних ошибок нет.	No recent errors.
+Журнал компонентов	Component log
+Компонент	Component
+Все компоненты	All components
+Диагностический отчёт	Diagnostic report
+Проверьте содержимое перед сохранением файла. Отчёт содержит состояние компонентов, счётчики и коды событий.	Review the contents before saving. The report includes component status, counts, and event codes.
+Показать отчёт	Preview report
+Сохранить отчёт	Save report
+LiteRust не удалось запустить.	LiteRust could not start.
+WebView2 Runtime недоступен.	WebView2 Runtime is unavailable.
+Не удалось открыть страницу.	Could not open the page.
+Не удалось открыть страницу. Попробуйте снова открыть вкладку.	Could not open the page. Try opening the tab again.
+Не удалось восстановить окно.	Could not restore a window.
+Не удалось применить сетевые правила.	Could not apply network rules.
+Подключение VPN прервалось.	The VPN connection stopped.
+Системный VPN недоступен.	System VPN is unavailable.
+Не удалось сохранить профиль.	Could not save the profile.
+Загрузка прервалась.	The download was interrupted.
+Не удалось записать локальный журнал.	Could not write the local journal.
+Системный VPN	System VPN
+VPN браузера	Browser VPN
+Хранится в памяти окна	Keep in window memory
+В памяти окна	In window memory
+В локальном профиле	In the local profile
+Диагностический отчёт сохранён.	Diagnostic report saved.
+Не удалось записать диагностический отчёт.	Could not write the diagnostic report.
+Не удалось открыть диалог сохранения отчёта.	Could not open the report save dialog.
+
+Текущее состояние компонентов	Current component status
+Требует внимания	Needs attention
+Есть события	Events available
