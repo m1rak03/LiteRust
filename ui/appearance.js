@@ -113,7 +113,8 @@ window.applyCustomization=value=>{
  const number=(v,min,max,fallback)=>Number.isFinite(Number(v))?Math.max(min,Math.min(max,Number(v))):fallback;
  const font=number(p.font_size,12,16,13),radius=number(p.corner_radius,0,24,12);
  const hasAccent=Number.isInteger(p.accent)&&p.accent>=0&&p.accent<=0xffffff;
- const signature=JSON.stringify([font,radius,hasAccent?p.accent:null,!!p.custom_tab_shape]);
+ const bg=Number.isInteger(p.background_color)?p.background_color:null;
+ const signature=JSON.stringify([bg,font,radius,hasAccent?p.accent:null,!!p.custom_tab_shape]);
  if(style.dataset.config===signature)return;
  style.dataset.config=signature;
  let accent='',ink='';
@@ -124,5 +125,5 @@ window.applyCustomization=value=>{
    accent='--accent:#'+p.accent.toString(16).padStart(6,'0')+'!important;--accent-ink:'+text+';';
    ink='.search-submit,.brand-mark{color:var(--accent-ink)!important}';
  }
- style.textContent=`:root{${accent}}${ink}${p.custom_tab_shape?'.tab,':''}.address-wrap,.hub-panel article,.shortcut,.sign-in,.customize,form{border-radius:${radius}px!important}.tab,.controls input,.hub-panel label,.hub-panel input,.hub-panel select,.hub-panel button,.shortcut-label,.lead{font-size:${font}px!important}`;
+ style.textContent=`:root{${bg===null?"":"--bg:#"+bg.toString(16).padStart(6,"0")+"!important;--text:"+((.299*(bg>>16)+.587*((bg>>8)&255)+.114*(bg&255))>145?"#111":"#fff")+"!important;--surface:color-mix(in srgb,var(--bg) 88%,var(--text))!important;"}${accent}}${ink}${p.custom_tab_shape?'.tab,':''}.address-wrap,.hub-panel article,.shortcut,.sign-in,.customize,form{border-radius:${radius}px!important}.tab,.controls input,.hub-panel label,.hub-panel input,.hub-panel select,.hub-panel button,.shortcut-label,.lead{font-size:${font}px!important}`;
 };

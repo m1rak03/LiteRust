@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['docs/releases/0.18.0-alpha.5.md']
+    paths: ['docs/releases/0.18.0-alpha.6.md']
 permissions:
   contents: write
 jobs:
@@ -218,7 +218,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
           & "${env:ProgramFiles(x86)}/NSIS/makensis.exe" packaging/setup.nsi
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
-          $exe = 'packaging/LiteRust-0.18.0-alpha.5-Setup-x64.exe'
+          $exe = 'packaging/LiteRust-0.18.0-alpha.6-Setup-x64.exe'
           gh release download v0.16.0-alpha.2 --repo $env:GITHUB_REPOSITORY --pattern LiteRust-0.16.0-alpha.2-Setup-x64.exe --dir previous
           if ($LASTEXITCODE -ne 0) { throw 'Previous installer download failed' }
           $oldInstall = Start-Process previous/LiteRust-0.16.0-alpha.2-Setup-x64.exe -ArgumentList '/S' -Wait -PassThru
@@ -301,7 +301,7 @@ jobs:
           if (Test-Path "$desktop/LiteRust.lnk") { throw 'Desktop shortcut not removed' }
           if (Test-Path "$folder/literust-browser.exe") { Get-ChildItem $folder; throw "Installed browser not removed, uninstall exit: $($uninstall.ExitCode)" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  LiteRust-0.18.0-alpha.5-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
+          "$hash  LiteRust-0.18.0-alpha.6-Setup-x64.exe" | Set-Content packaging/SHA256SUMS.txt
       - name: Preserve installer under test
         if: always()
         uses: actions/upload-artifact@v4
@@ -323,5 +323,5 @@ jobs:
       - name: Publish verified prerelease
         shell: pwsh
         run: |
-          gh release create v0.18.0-alpha.5 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LiteRust 0.18.0-alpha.5 — Interface rendering' --prerelease --notes-file docs/releases/0.18.0-alpha.5.md packaging/LiteRust-0.18.0-alpha.5-Setup-x64.exe packaging/SHA256SUMS.txt "${{ runner.temp }}/literust-source/literust-browser-0.18.0-alpha.5-source.zip"
+          gh release create v0.18.0-alpha.6 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LiteRust 0.18.0-alpha.6 — Settings tabs and personalization' --prerelease --notes-file docs/releases/0.18.0-alpha.6.md packaging/LiteRust-0.18.0-alpha.6-Setup-x64.exe packaging/SHA256SUMS.txt "${{ runner.temp }}/literust-source/literust-browser-0.18.0-alpha.6-source.zip"
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }

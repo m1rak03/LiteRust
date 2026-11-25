@@ -1,4 +1,7 @@
 <p align="center"><img src="docs/assets/banner.svg" alt="LiteRust — ваш браузер, ваш стиль" width="100%"></p>
+
+Настройки открываются отдельной вкладкой. В оформлении можно выбрать цвет фона и акцент. Google Password Manager и безопасность Яндекс ID открываются в LiteRust. После установки браузер можно выбрать для HTTP и HTTPS в параметрах Windows.
+
 # LiteRust
 
 [Русский](README.md) · [English](README.en.md)

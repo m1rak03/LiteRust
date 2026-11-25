@@ -908,3 +908,5 @@ VPN браузера	Browser VPN
 Текущее состояние компонентов	Current component status
 Требует внимания	Needs attention
 Есть события	Events available
+Пароль аккаунта Яндекс ID	Yandex ID account password
+Google Password Manager открывается во вкладке LiteRust на passwords.google.com. Для доступа к паролям войдите в Google.	Google Password Manager opens at passwords.google.com in a LiteRust tab. Sign in to Google to access your passwords.

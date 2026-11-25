@@ -1,22 +1,5 @@
-//! The only supported Google Password Manager integration for LiteRust 0.9-alpha.1.
-//!
-//! There is no documented public Google Password Manager API for arbitrary
-//! Windows desktop browsers to read/sync/autofill account credentials. Do NOT
-//! inspect Chrome's password database, extract Google tokens, inject scripts
-//! into the vault, or claim that the WebView2 password store is Google's vault.
-//!
-//! The user can open the official Google Password Manager website in their
-//! system browser and manage their Google Account credentials there.
-
+//! Official Google account destinations.
 pub const OFFICIAL_MANAGER_URL: &str = "https://passwords.google.com/";
-
-/// Open the *fixed* official URL using the Windows system URL handler.
-/// No user-controlled URL or secrets are passed to a shell or the host.
-/// An Ok only confirms the launch request was handed to the OS, not that
-/// authentication succeeded or that Google credentials were synchronized.
-pub fn open_official_manager() -> Result<(), std::io::Error> {
-    open_url(OFFICIAL_MANAGER_URL)
-}
 
 pub const OFFICIAL_ACCOUNT_URL: &str = "https://myaccount.google.com/";
 pub fn open_official_account() -> Result<(), std::io::Error> {

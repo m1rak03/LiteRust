@@ -342,7 +342,12 @@ fn ranked(
         }
         let engine = crate::i18n::template(data.search_engine.name(), language);
         for (_, (text, visits, last)) in past_queries {
-            let score = text_score(&folded, &text) + frecency(visits, last, now) - 22;
+            let prefix_bonus = if text.to_lowercase().starts_with(&folded) {
+                65
+            } else {
+                0
+            };
+            let score = text_score(&folded, &text) + frecency(visits, last, now) + prefix_bonus;
             matches.push((score, last, search_match(text, &engine, language)));
         }
         if let Some(url) = address {

@@ -1,5 +1,8 @@
 # LiteRust
 
+Settings open in their own tab. Appearance supports separate background and accent colors. Google Password Manager and Yandex ID security open in LiteRust. After installation, Windows Default Apps can associate LiteRust with HTTP and HTTPS.
+
+
 [English](README.en.md) · [Русский](README.md)
 
 LiteRust is a Windows browser built with Rust and Microsoft WebView2. Arrange quick links and widgets on the start page, keep work and personal browsing in separate profiles, and open your bookmarks, history and downloads from the sidebar.

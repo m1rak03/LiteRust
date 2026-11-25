@@ -197,6 +197,9 @@ body.split-active{--page-start:172px}
 .local-profile-item>button{min-width:0;overflow-wrap:anywhere}
 #diagnostics-preview{max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:8px;padding:12px}
 #resource-metrics dd{margin:0;max-width:120px;text-align:right;font-variant-numeric:tabular-nums;}
+#vpn.vpn-workspace{inset-inline:auto 10px;width:min(560px,calc(100% - 20px));bottom:auto;max-height:calc(100vh - 110px);overflow:auto;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border:1px solid var(--line);border-radius:14px}
+#vpn .vpn-servers,#vpn .vpn-connection{min-width:0;padding:12px}#vpn .power-orbit{width:112px;height:112px;margin:8px auto}
+.vpn-actions,.panel-heading{flex-wrap:wrap}.vpn-actions button{max-width:100%}
 </style></head><body>
 <div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><button type="button" id="workspace-switcher" aria-label="Рабочие пространства" title="Рабочие пространства"><i class="workspace-icon" aria-hidden="true"></i><span id="workspace-label">Пространства</span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div><div id="window-drag-space" aria-hidden="true"></div><div class="window-controls"><button id="window-minimize" aria-label="Свернуть окно">−</button><button id="window-maximize" aria-label="Развернуть окно">□</button><button id="window-close" aria-label="Закрыть окно">×</button></div></div>
 <div class="controls">
@@ -276,8 +279,8 @@ body.split-active{--page-start:172px}
 <section id="appearance" hidden aria-label="Оформление">
   <div class="panel-heading"><div><span class="eyebrow">ВАШ LITERUST</span><h2>Пространство по вкусу</h2></div><button id="close-appearance" aria-label="Закрыть оформление">Готово ✓</button></div>
   <p class="appearance-intro">Сначала выберите характер интерфейса, затем — палитру. Все стили сочетаются с тёмными и светлыми темами.</p><div class="preset-row" id="presets"></div><h3 class="catalog-label">Форма вкладок <span>30 вариантов</span></h3><div id="designs" aria-label="30 стилей вкладок"></div>
-  <div class="theme-heading"><h3>330 тем</h3><input id="theme-search" type="search" placeholder="Название темы" aria-label="Поиск темы"><label>Показать <select id="theme-filter"><option value="all">Все темы</option><option value="dark">Тёмные</option><option value="light">Светлые</option><option value="contrast">Контрастные</option></select></label></div>
-  <div id="themes" aria-label="Цветовые темы"></div>
+  <div class="theme-heading"><label>Фон / Background <input type="color" id="palette-background"></label><label>Акцент / Accent <input type="color" id="palette-accent"></label></div><details><summary>Готовые темы / Presets</summary><div class="theme-heading"><h3>330 тем</h3><input id="theme-search" type="search" placeholder="Название темы" aria-label="Поиск темы"><label>Показать <select id="theme-filter"><option value="all">Все темы</option><option value="dark">Тёмные</option><option value="light">Светлые</option><option value="contrast">Контрастные</option></select></label></div>
+  <div id="themes" aria-label="Цветовые темы"></div></details>
   <p class="panel-note">Выбор сохраняется автоматически · Оформление панели и внутренних страниц</p>
 </section>
 <section id="settings" class="hub-panel" hidden aria-label="Настройки">
@@ -376,7 +379,7 @@ body.split-active{--page-start:172px}
 <pre id="diagnostics-preview" tabindex="0"></pre>
 <button id="diagnostics-export" disabled>Сохранить отчёт</button>
 </div>
-</article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
+</article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="set-default-browser">Браузер по умолчанию / Default browser</button><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
 <section id="vpn" class="hub-panel vpn-workspace" hidden aria-label="VPN-хаб">
 <div class="vpn-servers">
   <div class="vpn-title"><div><span class="eyebrow">LITERUST / VPN</span><h2>Серверы</h2></div><button id="vpn-open-import" title="Добавить ключ или подписку" aria-label="Добавить серверы">＋</button></div>
@@ -420,7 +423,7 @@ body.split-active{--page-start:172px}
   <button id="cycle-memory-mode">Память: баланс (3 вкладки)</button>
   <button id="toggle-cosmetic-filter">Косметический фильтр рекламы: выкл.</button>
   <button id="google-passwords-menu">Google Password Manager ↗</button>
-  <button id="google-passwords-info">Как работают пароли Google?</button>
+  <button id="yandex-security">Пароль аккаунта Яндекс ID</button><button id="google-passwords-info">Как работают пароли Google?</button>
   <button id="import-bookmarks">Импорт закладок Chrome (HTML)</button>
   <button id="export-bookmarks">Экспорт закладок (HTML)</button>
   <button id="clear-download-history">Очистить список загрузок</button>
@@ -972,6 +975,8 @@ function render(){
   window.applyCustomization(display);
   for(const key of ['font_size','corner_radius','shortcut_count','home_layout','wallpaper_blur']){const el=document.getElementById('pref-'+key);if(document.activeElement!==el)el.value=prefs[key];}
   document.getElementById('pref-custom_accent').checked=prefs.accent!==null;
+  document.getElementById('palette-background').value='#'+(prefs.background_color??0x101421).toString(16).padStart(6,'0');
+  document.getElementById('palette-accent').value='#'+(prefs.accent??0xb5a2ff).toString(16).padStart(6,'0');
   document.getElementById('pref-accent').value='#'+(prefs.accent??0xb5a2ff).toString(16).padStart(6,'0');
   renderBrowserSettings();
   updateAppearanceSelection();
@@ -1006,10 +1011,10 @@ function render(){
     : 'AdBlock для сайта: откройте HTTP(S)-страницу';
   document.getElementById('toggle-cosmetic-filter').textContent='Косметический фильтр рекламы: '+(state.cosmetic_filter?'вкл.':'выкл.');
   bookmark.disabled=state.private_mode||bookmark.disabled;
-  document.getElementById('google-passwords').title=state.private_mode?'В приватном окне Google Password Manager не открывается':'Google Password Manager (внешний браузер)';
+  document.getElementById('google-passwords').title='Google Password Manager — passwords.google.com';
 }
 window.updateWindowState=maximized=>{const b=document.getElementById('window-maximize');b.textContent=maximized?'❐':'□';b.setAttribute('aria-label',maximized?'Восстановить окно':'Развернуть окно');};
-window.browserUpdate=value=>{const previous=state;state=value;render();if(JSON.stringify(previous.shortcuts)!==JSON.stringify(state.shortcuts))renderShortcuts();if(JSON.stringify([previous.local_profiles,previous.current_profile,previous.private_mode,previous.profile_details,previous.profile_scan_pending])!==JSON.stringify([state.local_profiles,state.current_profile,state.private_mode,state.profile_details,state.profile_scan_pending]))renderLocalProfiles();if(JSON.stringify(previous.sidebar)!==JSON.stringify(state.sidebar))renderSidebarSettings();window.updateWindowState(state.maximized);};
+window.browserUpdate=value=>{const previous=state;state=value;render();if(state.settings_tab&&!previous.settings_tab)window.openPanel('settings');if(!state.settings_tab&&panelName==='settings')window.openPanel(null);if(JSON.stringify(previous.shortcuts)!==JSON.stringify(state.shortcuts))renderShortcuts();if(JSON.stringify([previous.local_profiles,previous.current_profile,previous.private_mode,previous.profile_details,previous.profile_scan_pending])!==JSON.stringify([state.local_profiles,state.current_profile,state.private_mode,state.profile_details,state.profile_scan_pending]))renderLocalProfiles();if(JSON.stringify(previous.sidebar)!==JSON.stringify(state.sidebar))renderSidebarSettings();window.updateWindowState(state.maximized);};
 let noticeTimer;
 window.browserNotice=message=>{
   const el=document.getElementById('notice');
@@ -1049,6 +1054,8 @@ document.getElementById('toggle-cosmetic-filter').onclick=()=>{
   menu.classList.remove('open');
   if(confirm('Переключить визуальное скрытие некоторых рекламных элементов? Все загруженные вкладки будут выгружены и при открытии загрузятся снова. Реальные сетевые запросы не блокируются.'))send('toggle_cosmetic_filter');
 };
+document.getElementById('set-default-browser').onclick=()=>send('default_browser_settings');
+document.getElementById('yandex-security').onclick=()=>{menu.classList.remove('open');send('open_yandex_security');};
 function openGooglePasswords(){
   menu.classList.remove('open');
   send('open_google_passwords');
@@ -1057,7 +1064,7 @@ document.getElementById('google-passwords').onclick=openGooglePasswords;
 document.getElementById('google-passwords-menu').onclick=openGooglePasswords;
 document.getElementById('google-passwords-info').onclick=()=>{
   menu.classList.remove('open');
-  alert('Google Password Manager: официальный сайт passwords.google.com можно открывать в любом браузере.\n\nВ LiteRust 0.17-alpha.2 кнопка открывает Google Password Manager во внешнем браузере. Пароли остаются в Google.\n\nВажно: Google пока не предоставляет публичный API, позволяющий LiteRust автоматически заполнять пароли из Google на произвольных сайтах. WebView2 не имеет доступа к хранилищу Chrome. Наша программа не читает, не копирует и не хранит пароли Google.');
+  alert('Google Password Manager открывается во вкладке LiteRust на passwords.google.com. Для доступа к паролям войдите в Google.');
 };
 document.getElementById('export-bookmarks').onclick=()=>{
   menu.classList.remove('open');
@@ -1246,6 +1253,8 @@ window.addEventListener('keydown',e=>{if(e.key==='Escape')menu.classList.remove(
 const appearance=document.getElementById('appearance');
 let panelName=null;
 window.openPanel=name=>{
+  if(name==='settings'&&state.settings_tab===false){send('show_settings');return;}
+  if(!name&&state.settings_tab)name='settings';
   panelName=name;closeTabGroupMenu();clearSuggestions();
   if(typeof cancelShortcutRecording==='function')cancelShortcutRecording();
   for(const id of ['appearance','settings','vpn','accounts','tools','print','bookmarks-manager','downloads-manager','workspaces'])document.getElementById(id).hidden=id!==name;
@@ -1655,7 +1664,7 @@ document.getElementById('bookmark-edit-cancel').onclick=()=>{
 };
 syncBookmarkFolders();renderBookmarkList();
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&['settings','vpn','accounts','tools','print'].some(id=>!document.getElementById(id).hidden))window.openPanel(null);});
-document.querySelectorAll('.close-panel').forEach(b=>b.onclick=()=>window.openPanel(null));
+document.querySelectorAll('.close-panel').forEach(b=>b.onclick=()=>{if(panelName==='settings'&&state.settings_tab)send('close_tab',{index:state.active,tab_id:state.tabs[state.active].id});else window.openPanel(null);});
 
 document.getElementById('show-settings').onclick=()=>window.openPanel('settings');
 document.getElementById('show-vpn').onclick=()=>window.openPanel('vpn');
@@ -1810,7 +1819,14 @@ document.getElementById('wallpaper-file').onchange=async e=>{const file=e.target
 
 const customBools=['animations','compact_tabs','show_clock','show_greeting','show_shortcuts','show_services','wallpaper_contain','clock_24','custom_tab_shape'];
 const customNumbers=['wallpaper_dim','font_size','corner_radius','shortcut_count','home_layout','wallpaper_blur'];
-function saveCustomization(){const value={};for(const key of customBools)value[key]=document.getElementById('pref-'+key).checked;for(const key of customNumbers)value[key]=Number(document.getElementById('pref-'+key).value);value.accent=document.getElementById('pref-custom_accent').checked?parseInt(document.getElementById('pref-accent').value.slice(1),16):null;state.customization=value;render();send('set_customization',{value});}
+for(const id of ['palette-background','palette-accent']){
+  document.getElementById(id).onchange=e=>{
+    const key=id==='palette-background'?'background_color':'accent';
+    state.customization={...state.customization,[key]:parseInt(e.target.value.slice(1),16)};
+    render();send('set_customization',{value:state.customization});
+  };
+}
+function saveCustomization(){const value={background_color:state.customization?.background_color??null};for(const key of customBools)value[key]=document.getElementById('pref-'+key).checked;for(const key of customNumbers)value[key]=Number(document.getElementById('pref-'+key).value);value.accent=document.getElementById('pref-custom_accent').checked?parseInt(document.getElementById('pref-accent').value.slice(1),16):null;state.customization=value;render();send('set_customization',{value});}
 for(const key of [...customBools,...customNumbers,'custom_accent','accent'])document.getElementById('pref-'+key).onchange=saveCustomization;
 document.getElementById('pref-wallpaper_dim').oninput=e=>document.getElementById('dim-value').textContent=e.target.value+'%';
 document.getElementById('reset-customization').onclick=()=>{document.activeElement?.blur();state.customization={...window.customizationDefaults};render();send('set_customization',{value:state.customization});};

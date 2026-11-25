@@ -672,6 +672,36 @@ pub fn activate_profile_window(root: &std::path::Path) -> bool {
 
 const NEW_WINDOW_MESSAGE: windows::core::PCWSTR = windows::core::w!("LiteRust.OpenNormalWindow.v1");
 
+pub fn forward_url(root: &Path, url: &str) -> bool {
+    use windows::Win32::{
+        Foundation::{LPARAM, WPARAM},
+        System::DataExchange::COPYDATASTRUCT,
+        UI::WindowsAndMessaging::{SendMessageTimeoutW, SMTO_ABORTIFHUNG, WM_COPYDATA},
+    };
+    let Some(window) = find_profile_window(root) else {
+        return false;
+    };
+    let payload = COPYDATASTRUCT {
+        dwData: 0x4c525552,
+        cbData: url.len() as u32,
+        lpData: url.as_ptr() as _,
+    };
+    let mut result = 0;
+    unsafe {
+        SendMessageTimeoutW(
+            window,
+            WM_COPYDATA,
+            WPARAM(0),
+            LPARAM(&payload as *const _ as isize),
+            SMTO_ABORTIFHUNG,
+            3000,
+            Some(&mut result),
+        )
+        .0 != 0
+            && result == 1
+    }
+}
+
 pub fn request_profile_window(root: &std::path::Path) -> bool {
     use windows::Win32::{
         Foundation::{LPARAM, WPARAM},
@@ -724,6 +754,36 @@ pub fn install_window_request(
             }
         } else {
             let context = unsafe { &*context };
+            if message == windows::Win32::UI::WindowsAndMessaging::WM_COPYDATA && lparam.0 != 0 {
+                // Windows marshals this buffer for the synchronous WM_COPYDATA call.
+                let packet = unsafe {
+                    &*(lparam.0 as *const windows::Win32::System::DataExchange::COPYDATASTRUCT)
+                };
+                if packet.dwData == 0x4c525552
+                    && (1..=8192).contains(&packet.cbData)
+                    && !packet.lpData.is_null()
+                {
+                    let bytes = unsafe {
+                        std::slice::from_raw_parts(
+                            packet.lpData as *const u8,
+                            packet.cbData as usize,
+                        )
+                    };
+                    if let Ok(url) = std::str::from_utf8(bytes) {
+                        if literust_browser::storage::valid_web_url(url)
+                            && literust_browser::security::safe_top_level_navigation(url)
+                        {
+                            return LRESULT(
+                                context
+                                    .proxy
+                                    .send_event(AppEvent::ExternalUrl(url.to_owned()))
+                                    as isize,
+                            );
+                        }
+                    }
+                }
+                return LRESULT(0);
+            }
             if message == context.message && wparam.0 == 0 && lparam.0 == 0 {
                 let _ = context
                     .proxy

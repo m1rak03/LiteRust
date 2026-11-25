@@ -7,6 +7,7 @@ use std::{
 };
 use url::Url;
 
+pub const SETTINGS: &str = "literust://settings";
 pub const NEW_TAB: &str = "literust://newtab";
 pub const BOOKMARKS: &str = "literust://bookmarks";
 pub const HISTORY: &str = "literust://history";
@@ -37,7 +38,7 @@ pub fn valid_web_url(input: &str) -> bool {
 }
 
 pub fn valid_tab_url(input: &str) -> bool {
-    matches!(input, NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS) || valid_web_url(input)
+    matches!(input, NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS | SETTINGS) || valid_web_url(input)
 }
 
 /// Host only, never URL userinfo/path. Explicitly no parent-domain inheritance:
@@ -138,7 +139,7 @@ impl Tab {
         self.url = next.into();
         self.scroll_position = None;
         self.title = match next {
-            NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS => Self::internal(next).title,
+            NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS | SETTINGS => Self::internal(next).title,
             _ => Self::title_for(next),
         };
     }
@@ -166,7 +167,7 @@ impl Tab {
     }
     fn title_for(url: &str) -> String {
         match url {
-            NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS => Self::internal(url).title,
+            NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS | SETTINGS => Self::internal(url).title,
             _ => Url::parse(url)
                 .ok()
                 .and_then(|value| value.host_str().map(str::to_owned))
@@ -175,6 +176,7 @@ impl Tab {
     }
     pub fn internal(url: &str) -> Self {
         let title = match url {
+            SETTINGS => "Настройки",
             BOOKMARKS => "Закладки",
             HISTORY => "История",
             DOWNLOADS => "Загрузки",
@@ -283,6 +285,7 @@ pub struct Customization {
     pub show_greeting: bool,
     pub wallpaper_dim: u8,
     pub accent: Option<u32>,
+    pub background_color: Option<u32>,
     pub font_size: u8,
     pub corner_radius: u8,
     pub shortcut_count: u8,
@@ -303,6 +306,7 @@ impl Default for Customization {
             show_greeting: true,
             wallpaper_dim: 55,
             accent: None,
+            background_color: None,
             font_size: 13,
             corner_radius: 12,
             shortcut_count: 10,
@@ -320,6 +324,7 @@ impl Default for Customization {
 impl Customization {
     pub fn validated(mut self) -> Self {
         self.wallpaper_dim = self.wallpaper_dim.min(90);
+        self.background_color = self.background_color.filter(|v| *v <= 0xffffff);
         self.accent = self.accent.filter(|v| *v <= 0xffffff);
         self.font_size = self.font_size.clamp(12, 16);
         self.corner_radius = self.corner_radius.min(24);

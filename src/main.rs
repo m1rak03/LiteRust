@@ -216,6 +216,7 @@ enum UiCommand {
         rows: u8,
     },
     ShowSettings,
+    DefaultBrowserSettings,
     ShowSecurity,
     ShowAppearance,
     ShowVpn,
@@ -295,6 +296,7 @@ enum UiCommand {
     },
     ClearSiteData,
     OpenGooglePasswords,
+    OpenYandexSecurity,
     OpenGoogleAccount,
     SetAppearance {
         design: u8,
@@ -332,6 +334,8 @@ impl std::fmt::Debug for UiCommand {
 }
 #[derive(Debug)]
 enum AppEvent {
+    #[cfg(windows)]
+    ExternalUrl(String),
     InitializePages,
     InternalCommand {
         tab_id: u64,
@@ -439,6 +443,7 @@ impl BrowserProxy {
 
 #[derive(Serialize)]
 struct ToolbarState<'a> {
+    settings_tab: bool,
     sidebar: &'a layout::Sidebar,
     local_profiles: Catalog,
     profile_details: Option<&'a ProfileDetails>,
@@ -1238,6 +1243,7 @@ impl Browser {
     fn sync_toolbar(&self) {
         let url = self.current_url();
         let state = ToolbarState {
+            settings_tab: url == storage::SETTINGS,
             sidebar: &self.data.sidebar,
             local_profiles: self.local_profiles.for_ui(if self.private_mode {
                 ""
@@ -1272,6 +1278,8 @@ impl Browser {
                     group: t.group,
                     title: if t.url == NEW_TAB {
                         self.ui_language.pick("Новая вкладка", "New tab")
+                    } else if t.url == storage::SETTINGS {
+                        self.ui_language.pick("Настройки", "Settings")
                     } else {
                         &t.title
                     },
@@ -1848,6 +1856,14 @@ impl Browser {
     }
 
     fn ensure_page(&mut self, id: u64) -> bool {
+        if self
+            .data
+            .tabs
+            .iter()
+            .any(|t| t.id == id && t.url == storage::SETTINGS)
+        {
+            return true;
+        }
         if self.pages.contains_key(&id) {
             return true;
         }
@@ -1933,7 +1949,14 @@ impl Browser {
     }
 
     fn load_active(&mut self) {
-        self.load_page(self.active_id());
+        let id = self.active_id();
+        if self.current_url() == storage::SETTINGS {
+            self.pages.remove(&id);
+        } else if self.pages.contains_key(&id) {
+            self.load_page(id);
+        } else {
+            self.show_active();
+        }
         self.sync_toolbar();
     }
 
@@ -2140,7 +2163,14 @@ impl Browser {
         match operation {
             Operation::Open { tab } => {
                 let active = self.active_id();
-                if tab == active || !self.data.tabs.iter().any(|item| item.id == tab) {
+                if self.current_url() == storage::SETTINGS
+                    || tab == active
+                    || !self
+                        .data
+                        .tabs
+                        .iter()
+                        .any(|item| item.id == tab && item.url != storage::SETTINGS)
+                {
                     return;
                 }
                 if let Some(split) = &mut self.data.split {
@@ -2504,9 +2534,39 @@ impl Browser {
                 self.persist();
                 self.sync_toolbar();
             }
+            UiCommand::DefaultBrowserSettings => {
+                #[cfg(windows)]
+                if Command::new("explorer.exe")
+                    .arg("ms-settings:defaultapps")
+                    .spawn()
+                    .is_err()
+                {
+                    self.notice_localized("Откройте приложения по умолчанию в параметрах Windows.");
+                }
+            }
+            UiCommand::ShowSettings => {
+                if self.current_url() == storage::SETTINGS {
+                    let _ = self
+                        .toolbar
+                        .evaluate_script("window.openPanel?.('settings');");
+                    return;
+                }
+                self.data.split = None;
+                if let Some(index) = self
+                    .data
+                    .tabs
+                    .iter()
+                    .position(|tab| tab.url == storage::SETTINGS)
+                {
+                    self.data.active = index;
+                    self.show_active();
+                    self.persist();
+                } else {
+                    self.new_tab(Some(storage::SETTINGS));
+                }
+            }
             UiCommand::ShowTools
             | UiCommand::ShowAccounts
-            | UiCommand::ShowSettings
             | UiCommand::ShowAppearance
             | UiCommand::ShowVpn => {
                 let panel = match command {
@@ -3260,15 +3320,9 @@ impl Browser {
                 }
                 self.persist();
             }
+            UiCommand::OpenYandexSecurity => self.new_tab(Some("https://id.yandex.ru/security")),
             UiCommand::OpenGooglePasswords => {
-                if self.private_mode {
-                    self.notice_localized("Google Password Manager открывается во внешнем обычном браузере. В приватном окне LiteRust действие отключено.");
-                    return;
-                }
-                match google_passwords::open_official_manager() {
-                    Ok(()) => self.notice_localized("Открываем Google Password Manager во внешнем браузере. Автозаполнение Google внутри LiteRust пока недоступно."),
-                    Err(err) => self.notice(&format!("Не удалось открыть Google Password Manager: {err}")),
-                }
+                self.new_tab(Some(google_passwords::OFFICIAL_MANAGER_URL));
             }
             UiCommand::ClearSiteData => {
                 if let Some(page) = self.pages.get(&self.active_id()) {
@@ -3868,6 +3922,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let private_mode = args.iter().any(|arg| arg == "--private");
     let restarting = args.iter().any(|arg| arg == "--resume-after-restart");
+    let launch_url = args
+        .windows(2)
+        .find(|p| p[0] == "--open-url")
+        .map(|p| p[1].as_str())
+        .filter(|url| valid_web_url(url) && security::safe_top_level_navigation(url));
     let new_window = args.iter().any(|arg| arg == "--new-window");
     let selected = args
         .windows(2)
@@ -3893,7 +3952,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     #[cfg(windows)]
                     if !restarting {
                         let root = profile_root();
-                        let accepted = if new_window {
+                        let accepted = if let Some(url) = launch_url {
+                            windows_platform::forward_url(&root, url)
+                        } else if new_window {
                             windows_platform::request_profile_window(&root)
                         } else {
                             windows_platform::activate_profile_window(&root)
@@ -4037,6 +4098,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         options.clone(),
         None,
     )?];
+    if let Some(url) = launch_url {
+        windows[0].new_tab(Some(url));
+    }
     if new_window && !private_mode {
         windows[0].new_window_requested = true;
     }
@@ -4556,6 +4620,8 @@ fn create_browser(
 
 fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
     match event {
+        #[cfg(windows)]
+        AppEvent::ExternalUrl(url) => browser.new_tab(Some(&url)),
         AppEvent::InitializePages => {
             if std::mem::take(&mut browser.initial_page_pending) {
                 if browser.pages.is_empty() {
