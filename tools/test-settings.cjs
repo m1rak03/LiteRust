@@ -2,7 +2,14 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const fixture=require('./rust-fixture.cjs');
 (async()=>{const browser=await chromium.launch({headless:true});try{
 const page=await browser.newPage({viewport:{width:1280,height:800}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.setContent(fixture('security_controls'));await page.evaluate(()=>{window.sent=[];window.ipc={postMessage:m=>sent.push(JSON.parse(m))};window.openPanel('settings');});await page.locator('[data-settings-category=all]').click();
+await page.setContent(fixture('security_controls'));await page.evaluate(()=>{window.sent=[];window.ipc={postMessage:m=>sent.push(JSON.parse(m))};window.browserUpdate({...state,settings_tab:false});window.openPanel('settings');});
+assert.equal(await page.evaluate(()=>sent.at(-1).action),'show_settings');
+await page.evaluate(()=>window.browserUpdate({...state,settings_tab:true}));
+assert(await page.locator('#settings').isVisible());
+await page.evaluate(()=>window.browserUpdate({...state,settings_tab:false}));
+assert(await page.locator('#settings').isHidden());
+await page.evaluate(()=>window.browserUpdate({...state,settings_tab:true}));
+await page.locator('[data-settings-category=all]').click();
 await page.locator('#pref-custom_accent').check();await page.locator('#pref-accent').fill('#22aaff');await page.locator('#pref-accent').dispatchEvent('change');
 assert.equal(await page.evaluate(()=>sent.at(-1).value.accent),0x22aaff);assert.equal((await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--accent'))).trim(),'#22aaff');
 await page.locator('#pref-font_size').selectOption('16');assert.equal(await page.evaluate(()=>sent.at(-1).value.font_size),16);
