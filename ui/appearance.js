@@ -106,6 +106,25 @@
   window.setCustomIcons=icons=>{window.liteIcons=icons||{};window.refreshLiteIcons();if(typeof render==='function')render();};
 })();
 
+// Index order is part of the profile and theme-file formats. Append new slots.
+window.paletteSlots=[
+ ['Основной текст','body','color'],['Вторичный текст','small,.muted,.lead','color'],
+ ['Верхняя панель','.tabstrip','background-color'],['Панель инструментов','.controls','background-color'],
+ ['Боковая панель','nav','background-color'],['Адресная строка','.address-wrap','background-color'],
+ ['Внутренние страницы','body,.hub-panel','background-color'],['Активная вкладка','.tab.active','background-color'],
+ ['Неактивная вкладка','.tab:not(.active)','background-color'],['Наведение вкладки','.tab:hover','background-color'],
+ ['Текст активной вкладки','.tab.active','color'],['Текст вкладок','.tab:not(.active)','color'],
+ ['Разделители вкладок','.tab','border-color'],['Закрытие вкладки','.tab-close','color'],
+ ['Неактивный текст',':disabled','color'],['Иконки','.ui-icon','color'],
+ ['Активные иконки','.active .ui-icon','color'],['Наведение иконок','button:hover .ui-icon','color'],
+ ['Кнопки','button','background-color'],['Текст кнопок','button','color'],
+ ['Наведение кнопок','button:hover','background-color'],['Выбранные элементы','[aria-selected=true],[aria-pressed=true]','background-color'],
+ ['Переключатели','input[type=checkbox],input[type=range]','accent-color'],['Поля ввода','input,textarea,select','background-color'],
+ ['Выделение текста','::selection','background-color'],['Панели','.hub-panel','background-color'],
+ ['Контекстное меню','[role=menu],.tab-context-menu','background-color'],['Границы','button,input,article,.hub-panel','border-color'],
+ ['Полоса прокрутки','::-webkit-scrollbar-thumb','background-color'],['Уведомления','#notice','background-color'],
+ ['Индикатор загрузки','.loading','color'],['Поисковые подсказки','[role=listbox]','background-color']
+];
 window.customizationDefaults={animations:true,compact_tabs:false,show_clock:true,show_greeting:true,wallpaper_dim:55,accent:null,font_size:13,corner_radius:12,shortcut_count:10,show_shortcuts:true,show_services:true,home_layout:0,wallpaper_contain:false,wallpaper_blur:0,clock_24:true,custom_tab_shape:false};
 window.applyCustomization=value=>{
  const p={...window.customizationDefaults,...value};
@@ -114,7 +133,7 @@ window.applyCustomization=value=>{
  const font=number(p.font_size,12,16,13),radius=number(p.corner_radius,0,24,12);
  const hasAccent=Number.isInteger(p.accent)&&p.accent>=0&&p.accent<=0xffffff;
  const bg=Number.isInteger(p.background_color)?p.background_color:null;
- const signature=JSON.stringify([bg,font,radius,hasAccent?p.accent:null,!!p.custom_tab_shape]);
+ const signature=JSON.stringify([p.palette,bg,font,radius,hasAccent?p.accent:null,!!p.custom_tab_shape]);
  if(style.dataset.config===signature)return;
  style.dataset.config=signature;
  let accent='',ink='';
@@ -126,4 +145,13 @@ window.applyCustomization=value=>{
    ink='.search-submit,.brand-mark{color:var(--accent-ink)!important}';
  }
  style.textContent=`:root{${bg===null?"":"--bg:#"+bg.toString(16).padStart(6,"0")+"!important;--text:"+((.299*(bg>>16)+.587*((bg>>8)&255)+.114*(bg&255))>145?"#111":"#fff")+"!important;--surface:color-mix(in srgb,var(--bg) 88%,var(--text))!important;"}${accent}}${ink}${p.custom_tab_shape?'.tab,':''}.address-wrap,.hub-panel article,.shortcut,.sign-in,.customize,form{border-radius:${radius}px!important}.tab,.controls input,.hub-panel label,.hub-panel input,.hub-panel select,.hub-panel button,.shortcut-label,.lead{font-size:${font}px!important}`;
+ if(Array.isArray(p.palette)){
+   const rules=window.paletteSlots.map(([,selector,property],i)=>{
+     const v=p.palette[i];
+     if(!Number.isInteger(v)||v<0||v>0xffffffff)return '';
+     return selector+'{'+property+':#'+v.toString(16).padStart(8,'0')+'!important}';
+   });
+   style.append(document.createTextNode(rules.join('')));
+ }
+
 };

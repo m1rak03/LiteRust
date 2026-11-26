@@ -8,6 +8,22 @@ use std::{
 use url::Url;
 
 pub const SETTINGS: &str = "literust://settings";
+pub const APPEARANCE: &str = "literust://appearance";
+pub const PASSWORDS: &str = "literust://passwords";
+pub const ABOUT: &str = "literust://about";
+pub const ACCOUNTS: &str = "literust://accounts";
+pub fn service_panel(url: &str) -> Option<&'static str> {
+    match url {
+        SETTINGS => Some("settings"),
+        BOOKMARKS => Some("bookmarks-manager"),
+        DOWNLOADS => Some("downloads-manager"),
+        APPEARANCE => Some("appearance"),
+        PASSWORDS => Some("passwords"),
+        ABOUT => Some("about-page"),
+        ACCOUNTS => Some("accounts"),
+        _ => None,
+    }
+}
 pub const NEW_TAB: &str = "literust://newtab";
 pub const BOOKMARKS: &str = "literust://bookmarks";
 pub const HISTORY: &str = "literust://history";
@@ -38,7 +54,18 @@ pub fn valid_web_url(input: &str) -> bool {
 }
 
 pub fn valid_tab_url(input: &str) -> bool {
-    matches!(input, NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS | SETTINGS) || valid_web_url(input)
+    matches!(
+        input,
+        NEW_TAB
+            | BOOKMARKS
+            | HISTORY
+            | DOWNLOADS
+            | SETTINGS
+            | APPEARANCE
+            | PASSWORDS
+            | ABOUT
+            | ACCOUNTS
+    ) || valid_web_url(input)
 }
 
 /// Host only, never URL userinfo/path. Explicitly no parent-domain inheritance:
@@ -139,7 +166,8 @@ impl Tab {
         self.url = next.into();
         self.scroll_position = None;
         self.title = match next {
-            NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS | SETTINGS => Self::internal(next).title,
+            NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS | SETTINGS | APPEARANCE | PASSWORDS
+            | ABOUT | ACCOUNTS => Self::internal(next).title,
             _ => Self::title_for(next),
         };
     }
@@ -167,7 +195,8 @@ impl Tab {
     }
     fn title_for(url: &str) -> String {
         match url {
-            NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS | SETTINGS => Self::internal(url).title,
+            NEW_TAB | BOOKMARKS | HISTORY | DOWNLOADS | SETTINGS | APPEARANCE | PASSWORDS
+            | ABOUT | ACCOUNTS => Self::internal(url).title,
             _ => Url::parse(url)
                 .ok()
                 .and_then(|value| value.host_str().map(str::to_owned))
@@ -177,6 +206,10 @@ impl Tab {
     pub fn internal(url: &str) -> Self {
         let title = match url {
             SETTINGS => "Настройки",
+            APPEARANCE => "Оформление",
+            PASSWORDS => "Пароли",
+            ABOUT => "О браузере",
+            ACCOUNTS => "Аккаунты",
             BOOKMARKS => "Закладки",
             HISTORY => "История",
             DOWNLOADS => "Загрузки",
@@ -286,6 +319,7 @@ pub struct Customization {
     pub wallpaper_dim: u8,
     pub accent: Option<u32>,
     pub background_color: Option<u32>,
+    pub palette: [Option<u32>; 32],
     pub font_size: u8,
     pub corner_radius: u8,
     pub shortcut_count: u8,
@@ -307,6 +341,7 @@ impl Default for Customization {
             wallpaper_dim: 55,
             accent: None,
             background_color: None,
+            palette: [None; 32],
             font_size: 13,
             corner_radius: 12,
             shortcut_count: 10,
@@ -467,6 +502,14 @@ impl Appearance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Palette {
+    pub background_color: Option<u32>,
+    pub accent: Option<u32>,
+    pub palette: [Option<u32>; 32],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BrowserData {
     pub tabs: Vec<Tab>,
@@ -520,6 +563,9 @@ pub struct ProfileData {
     pub shortcuts: crate::shortcuts::Shortcuts,
     pub custom_icons: std::collections::BTreeMap<String, String>,
     pub app_icon_rgba: String,
+    #[serde(default)]
+    pub password_autosave: bool,
+    pub saved_palettes: std::collections::BTreeMap<String, Palette>,
     pub customization: Customization,
     pub browser_settings: BrowserSettings,
     pub background: String,
@@ -562,6 +608,8 @@ impl Default for ProfileData {
             shortcuts: crate::shortcuts::Shortcuts::default(),
             custom_icons: std::collections::BTreeMap::new(),
             app_icon_rgba: String::new(),
+            password_autosave: false,
+            saved_palettes: Default::default(),
             customization: Customization::default(),
             browser_settings: BrowserSettings::default(),
             background: String::new(),

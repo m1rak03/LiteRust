@@ -136,6 +136,13 @@ pub fn open_download_folder(hwnd: windows::Win32::Foundation::HWND, file: &Path)
     result.0 as isize > 32
 }
 
+pub fn password_autosave(view: &wry::WebView, enabled: bool) -> windows::core::Result<()> {
+    unsafe {
+        let settings: ICoreWebView2Settings4 = view.webview().Settings()?.cast()?;
+        settings.SetIsPasswordAutosaveEnabled(enabled)
+    }
+}
+
 pub fn configure(
     view: &wry::WebView,
     proxy: BrowserProxy,
@@ -360,6 +367,43 @@ pub fn find(view: &wry::WebView) -> windows::core::Result<()> {
             &options,
             &webview2_com::FindStartCompletedHandler::create(Box::new(|_| Ok(()))),
         )?;
+    }
+    Ok(())
+}
+
+pub fn popup_region(
+    view: &wry::WebView,
+    bounds: Option<(i32, i32, i32, i32, i32)>,
+) -> windows::core::Result<()> {
+    use windows::Win32::{
+        Foundation::HWND,
+        Graphics::Gdi::{CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, RGN_OR},
+    };
+    unsafe {
+        let mut hwnd = HWND::default();
+        view.controller().ParentWindow(&mut hwnd)?;
+        if let Some((width, bar, left, right, bottom)) = bounds {
+            let region = CreateRectRgn(0, 0, width, bar);
+            let popup = CreateRectRgn(left, bar, right, bottom);
+            if region.is_invalid() || popup.is_invalid() {
+                if !region.is_invalid() {
+                    let _ = DeleteObject(region.into());
+                }
+                if !popup.is_invalid() {
+                    let _ = DeleteObject(popup.into());
+                }
+                return Err(windows::core::Error::from_thread());
+            }
+            let combined = CombineRgn(Some(region), Some(region), Some(popup), RGN_OR);
+            let _ = DeleteObject(popup.into());
+            if combined.0 == 0 || SetWindowRgn(hwnd, Some(region), true) == 0 {
+                let _ = DeleteObject(region.into());
+                return Err(windows::core::Error::from_thread());
+            }
+            // After success Windows owns the combined region.
+        } else {
+            SetWindowRgn(hwnd, None, true);
+        }
     }
     Ok(())
 }

@@ -197,9 +197,10 @@ body.split-active{--page-start:172px}
 .local-profile-item>button{min-width:0;overflow-wrap:anywhere}
 #diagnostics-preview{max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:8px;padding:12px}
 #resource-metrics dd{margin:0;max-width:120px;text-align:right;font-variant-numeric:tabular-nums;}
-#vpn.vpn-workspace{inset-inline:auto 10px;width:min(560px,calc(100% - 20px));bottom:auto;max-height:calc(100vh - 110px);overflow:auto;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border:1px solid var(--line);border-radius:14px}
+#vpn.vpn-workspace{inset-inline:auto 10px;width:min(560px,calc(100% - 20px));bottom:auto;height:min(440px,calc(100vh - 110px));box-sizing:border-box;overflow:auto;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border:1px solid var(--line);border-radius:14px}
 #vpn .vpn-servers,#vpn .vpn-connection{min-width:0;padding:12px}#vpn .power-orbit{width:112px;height:112px;margin:8px auto}
 .vpn-actions,.panel-heading{flex-wrap:wrap}.vpn-actions button{max-width:100%}
+#palette-rows{display:grid;gap:8px}#palette-rows label{display:grid;align-items:center;grid-template-columns:minmax(90px,1fr) 44px 9ch auto;gap:6px}#palette-rows input{min-width:0;max-width:100%}#site-actions{position:absolute;right:6px;top:86px;z-index:11;background:var(--surface);font-size:12px}#site-actions:not([open]){background:transparent}#site-actions>summary{cursor:pointer}#site-actions button{padding:7px}
 </style></head><body>
 <div class="tabstrip"><button id="profile-account" title="Аккаунты Google, Яндекс и другие" aria-label="Аккаунты"><span class="google-g" data-icon="user"></span><span>Аккаунты<small>Google · Яндекс</small></span></button><button type="button" id="workspace-switcher" aria-label="Рабочие пространства" title="Рабочие пространства"><i class="workspace-icon" aria-hidden="true"></i><span id="workspace-label">Пространства</span></button><div class="tabs" id="tabs" aria-label="Вкладки"></div><div id="window-drag-space" aria-hidden="true"></div><div class="window-controls"><button id="window-minimize" aria-label="Свернуть окно">−</button><button id="window-maximize" aria-label="Развернуть окно">□</button><button id="window-close" aria-label="Закрыть окно">×</button></div></div>
 <div class="controls">
@@ -217,8 +218,8 @@ body.split-active{--page-start:172px}
   <button class="btn" id="bookmarks" title="Закладки" aria-label="Закладки"><span data-icon="bookmarks"></span></button>
   <button class="btn" id="history" title="История" aria-label="История"><span data-icon="history"></span></button>
   <button class="btn" id="downloads" title="Загрузки" aria-label="Загрузки"><span data-icon="downloads"></span></button>
-  <button class="btn" id="google-passwords" title="Google Password Manager — открыть официальный сайт" aria-label="Google Password Manager"><span data-icon="key"></span></button>
-  <button class="btn" id="more" title="Ещё" aria-label="Ещё"><span data-icon="more"></span></button>
+  <button class="btn" id="vpn-toolbar" title="VPN" aria-label="VPN"><span data-icon="shield"></span></button><button class="btn" id="google-passwords" title="Google Password Manager — открыть официальный сайт" aria-label="Google Password Manager"><span data-icon="key"></span></button>
+  <button class="btn" id="settings-button" title="Настройки" aria-label="Настройки"><span data-icon="settings"></span></button>
   <div class="mark" id="mode-badge" hidden></div>
 </div>
 <section id="split-view" hidden aria-label="Разделение экрана">
@@ -279,7 +280,8 @@ body.split-active{--page-start:172px}
 <section id="appearance" hidden aria-label="Оформление">
   <div class="panel-heading"><div><span class="eyebrow">ВАШ LITERUST</span><h2>Пространство по вкусу</h2></div><button id="close-appearance" aria-label="Закрыть оформление">Готово ✓</button></div>
   <p class="appearance-intro">Сначала выберите характер интерфейса, затем — палитру. Все стили сочетаются с тёмными и светлыми темами.</p><div class="preset-row" id="presets"></div><h3 class="catalog-label">Форма вкладок <span>30 вариантов</span></h3><div id="designs" aria-label="30 стилей вкладок"></div>
-  <div class="theme-heading"><label>Фон / Background <input type="color" id="palette-background"></label><label>Акцент / Accent <input type="color" id="palette-accent"></label></div><details><summary>Готовые темы / Presets</summary><div class="theme-heading"><h3>330 тем</h3><input id="theme-search" type="search" placeholder="Название темы" aria-label="Поиск темы"><label>Показать <select id="theme-filter"><option value="all">Все темы</option><option value="dark">Тёмные</option><option value="light">Светлые</option><option value="contrast">Контрастные</option></select></label></div>
+  <div class="theme-heading"><label>Фон / Background <input type="color" id="palette-background"></label><label>Акцент / Accent <input type="color" id="palette-accent"></label></div><details id="my-palettes"><summary>Мои палитры / My palettes</summary><select id="palette-list" aria-label="Сохранённые палитры"></select>
+<input id="palette-name" maxlength="40" aria-label="Название палитры"><button id="palette-save">Сохранить</button><button id="palette-use">Выбрать</button><button id="palette-delete">Удалить</button><button id="palette-undo">Отменить</button><button id="palette-export">Экспорт JSON</button><label>Импорт JSON <input type="file" accept=".json" id="palette-import"></label></details><details id="palette-editor"><summary>Расширенные цвета / Advanced colors</summary><div id="palette-rows"></div></details><details><summary>Готовые темы / Presets</summary><div class="theme-heading"><h3>330 тем</h3><input id="theme-search" type="search" placeholder="Название темы" aria-label="Поиск темы"><label>Показать <select id="theme-filter"><option value="all">Все темы</option><option value="dark">Тёмные</option><option value="light">Светлые</option><option value="contrast">Контрастные</option></select></label></div>
   <div id="themes" aria-label="Цветовые темы"></div></details>
   <p class="panel-note">Выбор сохраняется автоматически · Оформление панели и внутренних страниц</p>
 </section>
@@ -379,7 +381,7 @@ body.split-active{--page-start:172px}
 <pre id="diagnostics-preview" tabindex="0"></pre>
 <button id="diagnostics-export" disabled>Сохранить отчёт</button>
 </div>
-</article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="set-default-browser">Браузер по умолчанию / Default browser</button><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
+</article><article data-category="accounts"><button id="open-password-settings">Пароли и автозаполнение</button></article><article data-category="about"><h3>LiteRust {{LITERUST_VERSION}}</h3><p>Экспериментальный браузер для Windows на Rust и Microsoft WebView2.</p><button id="set-default-browser">Браузер по умолчанию / Default browser</button><button id="open-about">О браузере</button><button id="settings-release">Открыть выпуски на GitHub</button><small>Версия установщика указана в описании выпуска. Обновление выполняется запуском нового установщика.</small></article></div><div id="settings-pending" hidden><span>Есть несохранённые настройки запуска.</span><button id="settings-back-to-draft">Вернуться к ним</button></div></div></div></section>
 <section id="vpn" class="hub-panel vpn-workspace" hidden aria-label="VPN-хаб">
 <div class="vpn-servers">
   <div class="vpn-title"><div><span class="eyebrow">LITERUST / VPN</span><h2>Серверы</h2></div><button id="vpn-open-import" title="Добавить ключ или подписку" aria-label="Добавить серверы">＋</button></div>
@@ -409,7 +411,7 @@ body.split-active{--page-start:172px}
   </div>
 </div>
 </section>
-<div id="menu">
+<details id="site-actions"><summary aria-label="Действия для сайта">▾</summary></details><div id="menu" hidden>
   <button id="show-settings">Настройки и положение панели</button>
   <button id="show-vpn">VPN-хаб</button>
   <button id="show-appearance">Оформление · 30 стилей вкладок / 330 тем</button>
@@ -432,7 +434,7 @@ body.split-active{--page-start:172px}
 </div>
 <input type="file" id="bookmark-file" accept=".html,.htm,text/html" hidden>
 <div id="notice" role="status" aria-live="polite"></div>
-<section id="print" class="hub-panel" hidden><button class="close-panel">Закрыть</button><h2>Печать и PDF</h2><article>
+<section id="passwords" class="hub-panel" hidden><button class="close-panel">Закрыть</button><article id="password-controls"><h3>Пароли и автозаполнение</h3><label><input type="checkbox" id="password-autosave"> Предлагать сохранение и обновление паролей в этом профиле WebView2</label><p>Ранее сохранённые пароли могут предлагаться для заполнения и после отключения сохранения.</p></article></section><section id="about-page" class="hub-panel" hidden><button class="close-panel">Закрыть</button><h2>LiteRust {{LITERUST_VERSION}}</h2><p>Rust · Tao · Wry · Microsoft WebView2</p><button id="about-release">GitHub Releases</button></section><section id="print" class="hub-panel" hidden><button class="close-panel">Закрыть</button><h2>Печать и PDF</h2><article>
 <label><input id="print-captions" type="checkbox" checked> Колонтитулы в PDF</label>
 <label for="print-header">Заголовок страницы вверху</label><input id="print-header" type="text" maxlength="240">
 <label for="print-footer">Текст внизу страницы</label><input id="print-footer" type="text" maxlength="240">
@@ -955,6 +957,11 @@ function renderTabStrip(){
   showSelectedTabs();
 }
 function render(){
+  document.getElementById('password-autosave').checked=!!state.password_autosave;
+  document.getElementById('password-autosave').disabled=!!state.private_mode;
+  const vpnButton=document.getElementById('vpn-toolbar');
+  vpnButton.classList.toggle('active',!!state.vpn_running);
+  vpnButton.title=state.vpn_running?'VPN включён':state.vpn_enabled?'VPN остановлен':'VPN выключен';
   const prefs={...window.customizationDefaults,...state.customization};
   const activeSpace=workspaceFor(state.current_workspace);
   const display={...prefs,accent:activeSpace?.display?.accent??prefs.accent,
@@ -1014,7 +1021,7 @@ function render(){
   document.getElementById('google-passwords').title='Google Password Manager — passwords.google.com';
 }
 window.updateWindowState=maximized=>{const b=document.getElementById('window-maximize');b.textContent=maximized?'❐':'□';b.setAttribute('aria-label',maximized?'Восстановить окно':'Развернуть окно');};
-window.browserUpdate=value=>{const previous=state;state=value;render();if(state.settings_tab&&!previous.settings_tab)window.openPanel('settings');if(!state.settings_tab&&panelName==='settings')window.openPanel(null);if(JSON.stringify(previous.shortcuts)!==JSON.stringify(state.shortcuts))renderShortcuts();if(JSON.stringify([previous.local_profiles,previous.current_profile,previous.private_mode,previous.profile_details,previous.profile_scan_pending])!==JSON.stringify([state.local_profiles,state.current_profile,state.private_mode,state.profile_details,state.profile_scan_pending]))renderLocalProfiles();if(JSON.stringify(previous.sidebar)!==JSON.stringify(state.sidebar))renderSidebarSettings();window.updateWindowState(state.maximized);};
+window.browserUpdate=value=>{const previous=state;state=value;render();if(JSON.stringify(previous.saved_palettes)!==JSON.stringify(state.saved_palettes))listPalettes();const current=servicePanel(state),old=servicePanel(previous);if(current!==old&&(current||panelName===old))window.openPanel(current);if(JSON.stringify(previous.shortcuts)!==JSON.stringify(state.shortcuts))renderShortcuts();if(JSON.stringify([previous.local_profiles,previous.current_profile,previous.private_mode,previous.profile_details,previous.profile_scan_pending])!==JSON.stringify([state.local_profiles,state.current_profile,state.private_mode,state.profile_details,state.profile_scan_pending]))renderLocalProfiles();if(JSON.stringify(previous.sidebar)!==JSON.stringify(state.sidebar))renderSidebarSettings();window.updateWindowState(state.maximized);};
 let noticeTimer;
 window.browserNotice=message=>{
   const el=document.getElementById('notice');
@@ -1027,7 +1034,14 @@ window.browserNotice=message=>{
 for(const [id,action] of Object.entries({back:'back',forward:'forward',reload:'reload',home:'home',bookmark:'toggle_bookmark',bookmarks:'show_bookmarks',history:'show_history',downloads:'show_downloads'})){
   document.getElementById(id).onclick=()=>{menu.classList.remove('open');send(action);};
 }
-document.getElementById('more').onclick=()=>menu.classList.toggle('open');
+document.getElementById('settings-button').onclick=()=>window.openPanel('settings');
+const commandCategories={network:['show-vpn'],appearance:['show-appearance'],accounts:['google-account','google-passwords-menu','yandex-security','google-passwords-info'],performance:['discard-background','toggle-auto-discard','cycle-memory-mode'],browser:['new-window','next-window','new-private-window','import-bookmarks','export-bookmarks','clear-download-history'],privacy:['toggle-network-blocking','toggle-cosmetic-filter','clear-history','clear-site-data']};
+for(const [category,ids] of Object.entries(commandCategories)){
+  const card=document.querySelector('#settings article[data-category="'+category+'"]');
+  for(const id of ids)card.append(document.getElementById(id));
+}
+document.getElementById('show-settings').hidden=true;
+document.getElementById('site-actions').append(document.getElementById('toggle-site-adblock'));
 document.getElementById('new-window').onclick=()=>{menu.classList.remove('open');send('new_window');};
 document.getElementById('next-window').onclick=()=>{menu.classList.remove('open');send('next_window');};
 document.getElementById('new-private-window').onclick=()=>{menu.classList.remove('open');send('new_private_window');};
@@ -1054,8 +1068,16 @@ document.getElementById('toggle-cosmetic-filter').onclick=()=>{
   menu.classList.remove('open');
   if(confirm('Переключить визуальное скрытие некоторых рекламных элементов? Все загруженные вкладки будут выгружены и при открытии загрузятся снова. Реальные сетевые запросы не блокируются.'))send('toggle_cosmetic_filter');
 };
+document.getElementById('password-autosave').onchange=e=>send('password_autosave',{enabled:e.target.checked});
+document.getElementById('open-password-settings').onclick=()=>send('show_passwords');
+document.getElementById('about-release').onclick=()=>document.getElementById('settings-release').click();
+document.getElementById('open-about').onclick=()=>send('show_about');
+for(const id of ['google-passwords-menu','yandex-security','google-passwords-info'])document.getElementById('password-controls').append(document.getElementById(id));
 document.getElementById('set-default-browser').onclick=()=>send('default_browser_settings');
 document.getElementById('yandex-security').onclick=()=>{menu.classList.remove('open');send('open_yandex_security');};
+document.getElementById('vpn-toolbar').onclick=()=>window.openPanel(panelName==='vpn'?null:'vpn');
+window.addEventListener('pointerdown',event=>{if(panelName==='vpn'&&!event.target.closest('#vpn,#vpn-toolbar'))window.openPanel(null);});
+window.addEventListener('keydown',event=>{if(panelName==='vpn'&&event.key==='Escape')window.openPanel(null);});
 function openGooglePasswords(){
   menu.classList.remove('open');
   send('open_google_passwords');
@@ -1251,14 +1273,17 @@ for(const input of addressInputs){
 }
 window.addEventListener('keydown',e=>{if(e.key==='Escape')menu.classList.remove('open');});
 const appearance=document.getElementById('appearance');
+const serviceCommands={settings:'show_settings',passwords:'show_passwords','about-page':'show_about',appearance:'show_appearance',accounts:'show_accounts','downloads-manager':'show_downloads','bookmarks-manager':'show_bookmarks'};
+function servicePanel(value){return value.service_panel||(value.settings_tab?'settings':null);}
 let panelName=null;
 window.openPanel=name=>{
-  if(name==='settings'&&state.settings_tab===false){send('show_settings');return;}
-  if(!name&&state.settings_tab)name='settings';
+  const current=servicePanel(state);
+  if(name&&serviceCommands[name]&&name!==current&&typeof state.settings_tab==='boolean'){send(serviceCommands[name]);return;}
+  if(!name&&current)name=current;
   panelName=name;closeTabGroupMenu();clearSuggestions();
   if(typeof cancelShortcutRecording==='function')cancelShortcutRecording();
-  for(const id of ['appearance','settings','vpn','accounts','tools','print','bookmarks-manager','downloads-manager','workspaces'])document.getElementById(id).hidden=id!==name;
-  menu.classList.remove('open');send('appearance_panel',['settings','bookmarks-manager','downloads-manager','workspaces','tools'].includes(name)?{open:true,name}:{open:Boolean(name)});
+  for(const id of ['passwords','about-page','appearance','settings','vpn','accounts','tools','print','bookmarks-manager','downloads-manager','workspaces'])document.getElementById(id).hidden=id!==name;
+  menu.classList.remove('open');send('appearance_panel',['settings','bookmarks-manager','downloads-manager','workspaces','tools','vpn'].includes(name)?{open:true,name}:{open:Boolean(name)});
   if(name==='tools'){renderToolsTabs();renderToolPreferences();renderNotes();}
   else resetTranslation();
   if(name==='workspaces')renderWorkspaces(workspaceFor(state.current_workspace));
@@ -1268,7 +1293,7 @@ window.openPanel=name=>{
     document.getElementById('print-header').value=Array.from(state.tabs[state.active]?.title||'').slice(0,240).join('');
     document.getElementById('print-footer').value=Array.from(state.url||'').slice(0,240).join('');
   }
-  if(name)document.getElementById(name).querySelector('button')?.focus();else document.getElementById('more').focus();
+  if(name)document.getElementById(name).querySelector('button')?.focus();else document.getElementById('settings-button').focus();
 };
 function setAppearanceOpen(open){window.openPanel(open?'appearance':null);}
 
@@ -1664,7 +1689,7 @@ document.getElementById('bookmark-edit-cancel').onclick=()=>{
 };
 syncBookmarkFolders();renderBookmarkList();
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&['settings','vpn','accounts','tools','print'].some(id=>!document.getElementById(id).hidden))window.openPanel(null);});
-document.querySelectorAll('.close-panel').forEach(b=>b.onclick=()=>{if(panelName==='settings'&&state.settings_tab)send('close_tab',{index:state.active,tab_id:state.tabs[state.active].id});else window.openPanel(null);});
+document.querySelectorAll('.close-panel').forEach(b=>b.onclick=()=>{if(panelName&&panelName===servicePanel(state))send('close_tab',{index:state.active,tab_id:state.tabs[state.active].id});else window.openPanel(null);});
 
 document.getElementById('show-settings').onclick=()=>window.openPanel('settings');
 document.getElementById('show-vpn').onclick=()=>window.openPanel('vpn');
@@ -1780,7 +1805,12 @@ document.getElementById('vpn-disconnect').onclick=()=>applyVpn(false);
 document.getElementById('show-appearance').onclick=()=>setAppearanceOpen(true);
 document.getElementById('close-appearance').onclick=()=>setAppearanceOpen(false);
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&!appearance.hidden)setAppearanceOpen(false);});
-function chooseAppearance(extra){state.appearance={design:0,theme:0,...state.appearance,...extra};window.applyAppearance(state.appearance);updateAppearanceSelection();send('set_appearance',state.appearance);}
+function chooseAppearance(extra){
+ if('theme' in extra){
+   state.customization={...state.customization,background_color:null,accent:null,palette:Array(32).fill(null)};
+   window.applyCustomization(state.customization);send('set_customization',{value:state.customization});
+ }
+state.appearance={design:0,theme:0,...state.appearance,...extra};window.applyAppearance(state.appearance);updateAppearanceSelection();send('set_appearance',state.appearance);}
 for(const [design,theme,name] of [[0,10,'Орбита'],[1,52,'Минимализм'],[2,12,'Студия'],[3,53,'Классика'],[4,50,'Терминал']]){const b=document.createElement('button');b.className='preset';b.textContent=name;b.onclick=()=>chooseAppearance({design,theme});document.getElementById('presets').append(b);}
 const previewStyle=document.createElement('style');previewStyle.textContent=window.designPreviewCSS;document.head.append(previewStyle);
 window.appearanceDesigns.forEach((name,design)=>{
@@ -1819,14 +1849,86 @@ document.getElementById('wallpaper-file').onchange=async e=>{const file=e.target
 
 const customBools=['animations','compact_tabs','show_clock','show_greeting','show_shortcuts','show_services','wallpaper_contain','clock_24','custom_tab_shape'];
 const customNumbers=['wallpaper_dim','font_size','corner_radius','shortcut_count','home_layout','wallpaper_blur'];
+const paletteInputs=[];
+const previousColors=[];
+function currentColors(){
+ const c=state.customization||{};
+ return {background_color:c.background_color??null,accent:c.accent??null,palette:Array.from({length:32},(_,i)=>c.palette?.[i]??null)};
+}
+function rememberColors(){previousColors.push(currentColors());if(previousColors.length>20)previousColors.shift();}
+function applyColors(colors,remember=true){
+ if(remember)rememberColors();
+ state.customization={...state.customization,...colors};
+ render();updatePaletteRows();send('set_customization',{value:state.customization});
+}
+const paletteList=document.getElementById('palette-list');
+function listPalettes(){
+ const selected=paletteList.value;
+ paletteList.replaceChildren(...Object.keys(state.saved_palettes||{}).map(name=>new Option(name,name)));
+ if(Object.hasOwn(state.saved_palettes||{},selected))paletteList.value=selected;
+}
+paletteList.onchange=()=>document.getElementById('palette-name').value=paletteList.value;
+document.getElementById('my-palettes').ontoggle=listPalettes;
+document.getElementById('palette-save').onclick=()=>{
+ const name=document.getElementById('palette-name').value.trim();if(!name||state.private_mode)return;
+ if(Object.hasOwn(state.saved_palettes||{},name)&&!confirm('Заменить сохранённую палитру?'))return;
+ send('save_palette',{name,value:currentColors()});
+};
+document.getElementById('palette-use').onclick=()=>{const colors=state.saved_palettes?.[paletteList.value];if(colors)applyColors(colors);};
+document.getElementById('palette-delete').onclick=()=>{if(paletteList.value&&confirm('Удалить палитру?'))send('save_palette',{name:paletteList.value,value:null});};
+document.getElementById('palette-undo').onclick=()=>{if(previousColors.length)applyColors(previousColors.pop(),false);};
+document.getElementById('palette-export').onclick=()=>{
+ const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(currentColors(),null,2)],{type:'application/json'}));
+ a.href=url;a.download='literust-theme.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+document.getElementById('palette-import').onchange=async e=>{
+ const file=e.target.files[0];e.target.value='';if(!file)return;
+ try{
+  if(file.size>8192)throw Error();
+  const data=JSON.parse(await file.text());
+  const valid=(v,max)=>v===null||(Number.isInteger(v)&&v>=0&&v<=max);
+  if(!data||!Array.isArray(data.palette)||data.palette.length!==32||!data.palette.every(v=>valid(v,0xffffffff))||!valid(data.background_color,0xffffff)||!valid(data.accent,0xffffff))throw Error();
+  applyColors({background_color:data.background_color,accent:data.accent,palette:data.palette});
+ }catch{window.browserNotice('Некорректный файл палитры');}
+};
+function updatePaletteRows(){
+  for(const [index,controls] of paletteInputs.entries()){
+    const value=state.customization?.palette?.[index];
+    controls.hex.placeholder='Авто';
+    controls.hex.value=value==null?'':'#'+value.toString(16).padStart(8,'0');
+    controls.color.value=controls.hex.value.slice(0,7)||'#808080';
+  }
+}
+function setPaletteSlot(index,value,save){
+  const palette=Array.from({length:32},(_,i)=>state.customization?.palette?.[i]??null);
+  palette[index]=value;
+  const prefs={...state.customization,palette};
+  window.applyCustomization(prefs);
+  if(save){rememberColors();state.customization=prefs;updatePaletteRows();send('set_customization',{value:prefs});}
+}
+for(const [index,[label]] of window.paletteSlots.entries()){
+  const row=document.createElement('label'),color=document.createElement('input'),hex=document.createElement('input'),reset=document.createElement('button');
+  color.type='color';color.setAttribute('aria-label',label);
+  hex.maxLength=9;hex.setAttribute('aria-label',label+' HEX');reset.type='button';reset.textContent='Сброс';
+  color.oninput=()=>{hex.value=color.value+'ff';setPaletteSlot(index,parseInt(hex.value.slice(1),16),false);};
+  color.onchange=()=>setPaletteSlot(index,parseInt(color.value.slice(1)+'ff',16),true);
+  hex.onchange=()=>{const v=hex.value.trim();if(!/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(v)){updatePaletteRows();return;}setPaletteSlot(index,parseInt(v.slice(1)+(v.length===7?'ff':''),16),true);};
+  reset.onclick=()=>setPaletteSlot(index,null,true);
+  row.append(label,color,hex,reset);document.getElementById('palette-rows').append(row);paletteInputs.push({color,hex});
+}
+document.getElementById('palette-editor').ontoggle=updatePaletteRows;
 for(const id of ['palette-background','palette-accent']){
+  document.getElementById(id).oninput=e=>{
+    const key=id==='palette-background'?'background_color':'accent';
+    window.applyCustomization({...state.customization,[key]:parseInt(e.target.value.slice(1),16)});
+  };
   document.getElementById(id).onchange=e=>{
     const key=id==='palette-background'?'background_color':'accent';
     state.customization={...state.customization,[key]:parseInt(e.target.value.slice(1),16)};
     render();send('set_customization',{value:state.customization});
   };
 }
-function saveCustomization(){const value={background_color:state.customization?.background_color??null};for(const key of customBools)value[key]=document.getElementById('pref-'+key).checked;for(const key of customNumbers)value[key]=Number(document.getElementById('pref-'+key).value);value.accent=document.getElementById('pref-custom_accent').checked?parseInt(document.getElementById('pref-accent').value.slice(1),16):null;state.customization=value;render();send('set_customization',{value});}
+function saveCustomization(){const value={...state.customization};for(const key of customBools)value[key]=document.getElementById('pref-'+key).checked;for(const key of customNumbers)value[key]=Number(document.getElementById('pref-'+key).value);value.accent=document.getElementById('pref-custom_accent').checked?parseInt(document.getElementById('pref-accent').value.slice(1),16):null;state.customization=value;render();send('set_customization',{value});}
 for(const key of [...customBools,...customNumbers,'custom_accent','accent'])document.getElementById('pref-'+key).onchange=saveCustomization;
 document.getElementById('pref-wallpaper_dim').oninput=e=>document.getElementById('dim-value').textContent=e.target.value+'%';
 document.getElementById('reset-customization').onclick=()=>{document.activeElement?.blur();state.customization={...window.customizationDefaults};render();send('set_customization',{value:state.customization});};

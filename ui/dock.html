@@ -13,7 +13,6 @@ body[data-side=left]:not(.expanded) nav{border-right-color:transparent}
 <button data-action="show_history" title="История" aria-label="История"><span data-icon="history"></span></button>
 <button data-action="show_downloads" title="Загрузки" aria-label="Загрузки"><span data-icon="downloads"></span></button>
 <button data-action="show_security" title="Безопасность" aria-label="Безопасность"><span data-icon="lock"></span></button>
-<button id="vpn" data-action="show_vpn" title="VPN-хаб" aria-label="VPN-хаб"><span data-icon="shield"></span></button>
 <button data-action="show_accounts" title="Аккаунты" aria-label="Аккаунты"><span data-icon="user"></span></button><button data-action="show_tools" title="Инструменты" aria-label="Инструменты"><span data-icon="settings"></span></button><button data-action="duplicate_tab" title="Дублировать вкладку" aria-label="Дублировать вкладку"><span data-icon="copy"></span></button><button data-action="print_page" title="Печать / PDF" aria-label="Печать / PDF"><span data-icon="print"></span></button><button data-action="new_private_window" title="Приватное окно" aria-label="Приватное окно"><span data-icon="private"></span></button><div class="spacer"></div>
 <button data-action="show_appearance" title="Оформление" aria-label="Оформление"><span data-icon="appearance"></span></button>
 <button data-action="show_settings" title="Настройки" aria-label="Настройки"><span data-icon="settings"></span></button>
@@ -35,6 +34,6 @@ nav.onmouseenter=()=>hoverDrawer(true);
 nav.onmouseleave=()=>hoverDrawer(false);
 window.dockUpdate=s=>{
  sidebarState=s.sidebar||sidebarState;expanded=!!s.expanded;manual=!!s.manual;position=s.position||"left";document.body.dataset.side=position;document.body.classList.toggle('expanded',expanded);const toggle=document.getElementById('drawer-toggle');toggle.setAttribute('aria-expanded',String(expanded));toggle.title=manual||sidebarState.mode==='pinned'?'Свернуть панель':'Развернуть панель';toggle.setAttribute('aria-label',toggle.title);toggle.querySelector('.dock-label').textContent=toggle.title;for(const id of sidebarState.order){const b=nav.querySelector('[data-action="'+id+'"]');if(b){b.hidden=sidebarState.hidden.includes(id);nav.append(b);}}nav.append(nav.querySelector('.spacer'));
-document.body.classList.toggle("motion-off",s.animations===false);window.applyAppearance(s.appearance);window.applyCustomization(s.customization);document.querySelector('nav').classList.toggle('horizontal',['top','bottom'].includes(s.position));const b=document.getElementById('vpn');b.classList.toggle('on',s.vpn_running);b.classList.toggle('failed',s.vpn_enabled&&!s.vpn_running);b.title=s.vpn_enabled?(s.vpn_running?'VPN: движок работает':'VPN: соединение остановлено'):'VPN выключен';};
+document.body.classList.toggle("motion-off",s.animations===false);window.applyAppearance(s.appearance);window.applyCustomization(s.customization);document.querySelector('nav').classList.toggle('horizontal',['top','bottom'].includes(s.position));};
 window.applyAppearance();window.refreshLiteIcons();send('dock_ready');
 </script></body></html>

@@ -217,6 +217,15 @@ enum UiCommand {
     },
     ShowSettings,
     DefaultBrowserSettings,
+    ShowPasswords,
+    ShowAbout,
+    SavePalette {
+        name: String,
+        value: Option<storage::Palette>,
+    },
+    PasswordAutosave {
+        enabled: bool,
+    },
     ShowSecurity,
     ShowAppearance,
     ShowVpn,
@@ -444,6 +453,9 @@ impl BrowserProxy {
 #[derive(Serialize)]
 struct ToolbarState<'a> {
     settings_tab: bool,
+    password_autosave: bool,
+    saved_palettes: &'a std::collections::BTreeMap<String, storage::Palette>,
+    service_panel: Option<&'static str>,
     sidebar: &'a layout::Sidebar,
     local_profiles: Catalog,
     profile_details: Option<&'a ProfileDetails>,
@@ -1244,6 +1256,9 @@ impl Browser {
         let url = self.current_url();
         let state = ToolbarState {
             settings_tab: url == storage::SETTINGS,
+            service_panel: storage::service_panel(url),
+            saved_palettes: &self.data.saved_palettes,
+            password_autosave: self.data.password_autosave && !self.private_mode,
             sidebar: &self.data.sidebar,
             local_profiles: self.local_profiles.for_ui(if self.private_mode {
                 ""
@@ -1319,11 +1334,7 @@ impl Browser {
             vpn_selected: self.vpn_vault.selected,
             vpn_importing: self.vpn_importing,
             active: self.data.active,
-            url: if url.starts_with("literust://") {
-                ""
-            } else {
-                url
-            },
+            url: if url == NEW_TAB { "" } else { url },
             loading: self
                 .pages
                 .get(&self.active_id())
@@ -1539,11 +1550,26 @@ impl Browser {
         self.notice_localized("Для сохранения страницы обновите Microsoft WebView2 Runtime.");
     }
 
-    fn open_manager(&self, panel: &'static str) {
-        debug_assert!(matches!(panel, "bookmarks-manager" | "downloads-manager"));
-        let _ = self
-            .toolbar
-            .evaluate_script(&format!("window.openPanel?.('{panel}');"));
+    fn open_service(&mut self, url: &str) {
+        if self.current_url() == url {
+            if let Some(panel) = storage::service_panel(url) {
+                let _ = self
+                    .toolbar
+                    .evaluate_script(&format!("window.openPanel?.('{panel}');"));
+            }
+            return;
+        }
+        if let Some(index) = self.data.tabs.iter().position(|tab| tab.url == url) {
+            self.data.split = None;
+            self.data.active = index;
+            self.show_active();
+            self.persist();
+        } else if self.data.tabs.len() < MAX_TABS {
+            self.data.split = None;
+            self.new_tab(Some(url));
+        } else {
+            self.notice_localized("Достигнут лимит 24 вкладок.");
+        }
     }
 
     fn notice_localized(&self, message: &str) {
@@ -1802,6 +1828,12 @@ impl Browser {
         #[cfg(not(windows))]
         let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
         #[cfg(windows)]
+        windows_platform::password_autosave(
+            &view,
+            self.data.password_autosave && !self.private_mode,
+        )
+        .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
+        #[cfg(windows)]
         windows_platform::page_focus(&view, self.proxy.clone(), tab_id, generation)
             .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(windows)]
@@ -1860,7 +1892,7 @@ impl Browser {
             .data
             .tabs
             .iter()
-            .any(|t| t.id == id && t.url == storage::SETTINGS)
+            .any(|t| t.id == id && storage::service_panel(&t.url).is_some())
         {
             return true;
         }
@@ -1950,7 +1982,7 @@ impl Browser {
 
     fn load_active(&mut self) {
         let id = self.active_id();
-        if self.current_url() == storage::SETTINGS {
+        if storage::service_panel(self.current_url()).is_some() {
             self.pages.remove(&id);
         } else if self.pages.contains_key(&id) {
             self.load_page(id);
@@ -2163,13 +2195,13 @@ impl Browser {
         match operation {
             Operation::Open { tab } => {
                 let active = self.active_id();
-                if self.current_url() == storage::SETTINGS
+                if storage::service_panel(self.current_url()).is_some()
                     || tab == active
                     || !self
                         .data
                         .tabs
                         .iter()
-                        .any(|item| item.id == tab && item.url != storage::SETTINGS)
+                        .any(|item| item.id == tab && storage::service_panel(&item.url).is_none())
                 {
                     return;
                 }
@@ -2339,6 +2371,10 @@ impl Browser {
                     | UiCommand::ShowDownloads
             )
         {
+            #[cfg(windows)]
+            if self.panel.as_deref() == Some("vpn") {
+                let _ = windows_platform::popup_region(&self.toolbar, None);
+            }
             self.appearance_open = false;
             self.panel = None;
             self.resize();
@@ -2534,6 +2570,48 @@ impl Browser {
                 self.persist();
                 self.sync_toolbar();
             }
+            UiCommand::PasswordAutosave { enabled } => {
+                if self.private_mode {
+                    return;
+                }
+                #[cfg(windows)]
+                if let Some(page) = self.pages.values().next() {
+                    if windows_platform::password_autosave(&page.view, enabled).is_err() {
+                        self.notice_localized("WebView2 не смог изменить настройки паролей.");
+                        self.sync_toolbar();
+                        return;
+                    }
+                }
+                self.data.password_autosave = enabled;
+                self.persist();
+                self.sync_toolbar();
+            }
+            UiCommand::ShowPasswords => self.open_service(storage::PASSWORDS),
+            UiCommand::ShowAbout => self.open_service(storage::ABOUT),
+            UiCommand::SavePalette { name, value } => {
+                let name = name.trim();
+                if self.private_mode
+                    || name.is_empty()
+                    || name.len() > 96
+                    || name.chars().any(char::is_control)
+                {
+                    return;
+                }
+                if let Some(palette) = value {
+                    if palette.background_color.is_some_and(|v| v > 0xffffff)
+                        || palette.accent.is_some_and(|v| v > 0xffffff)
+                        || (self.data.saved_palettes.len() >= 64
+                            && !self.data.saved_palettes.contains_key(name))
+                    {
+                        return;
+                    }
+                    self.data.saved_palettes.insert(name.into(), palette);
+                } else {
+                    self.data.saved_palettes.remove(name);
+                }
+                self.persist();
+                self.sync_toolbar();
+            }
             UiCommand::DefaultBrowserSettings => {
                 #[cfg(windows)]
                 if Command::new("explorer.exe")
@@ -2544,41 +2622,14 @@ impl Browser {
                     self.notice_localized("Откройте приложения по умолчанию в параметрах Windows.");
                 }
             }
-            UiCommand::ShowSettings => {
-                if self.current_url() == storage::SETTINGS {
-                    let _ = self
-                        .toolbar
-                        .evaluate_script("window.openPanel?.('settings');");
-                    return;
-                }
-                self.data.split = None;
-                if let Some(index) = self
-                    .data
-                    .tabs
-                    .iter()
-                    .position(|tab| tab.url == storage::SETTINGS)
-                {
-                    self.data.active = index;
-                    self.show_active();
-                    self.persist();
-                } else {
-                    self.new_tab(Some(storage::SETTINGS));
-                }
+            UiCommand::ShowSettings => self.open_service(storage::SETTINGS),
+            UiCommand::ShowTools => {
+                let _ = self.toolbar.evaluate_script("window.openPanel?.('tools');");
             }
-            UiCommand::ShowTools
-            | UiCommand::ShowAccounts
-            | UiCommand::ShowAppearance
-            | UiCommand::ShowVpn => {
-                let panel = match command {
-                    UiCommand::ShowTools => "tools",
-                    UiCommand::ShowAccounts => "accounts",
-                    UiCommand::ShowVpn => "vpn",
-                    UiCommand::ShowAppearance => "appearance",
-                    _ => "settings",
-                };
-                let _ = self
-                    .toolbar
-                    .evaluate_script(&format!("window.openPanel?.('{panel}');"));
+            UiCommand::ShowAccounts => self.open_service(storage::ACCOUNTS),
+            UiCommand::ShowAppearance => self.open_service(storage::APPEARANCE),
+            UiCommand::ShowVpn => {
+                let _ = self.toolbar.evaluate_script("window.openPanel?.('vpn');");
             }
             UiCommand::SetCustomIcon {
                 target,
@@ -2861,9 +2912,7 @@ impl Browser {
                 }
             }
             UiCommand::SavePage => self.save_page(),
-            UiCommand::PrintPage => {
-                let _ = self.toolbar.evaluate_script("window.openPanel?.('print');");
-            }
+            UiCommand::PrintPage => self.print_page(),
             UiCommand::PrintNative => self.print_page(),
             UiCommand::OpenCertificates =>
             {
@@ -3112,9 +3161,9 @@ impl Browser {
                     self.sync_toolbar();
                 }
             }
-            UiCommand::ShowBookmarks => self.open_manager("bookmarks-manager"),
+            UiCommand::ShowBookmarks => self.open_service(BOOKMARKS),
             UiCommand::ShowHistory => self.open_library(HISTORY),
-            UiCommand::ShowDownloads => self.open_manager("downloads-manager"),
+            UiCommand::ShowDownloads => self.open_service(DOWNLOADS),
             UiCommand::DownloadControl { id, operation } => {
                 #[cfg(windows)]
                 if !self.downloads.control(id, operation) {
@@ -3245,6 +3294,10 @@ impl Browser {
                 }
             }
             UiCommand::AppearancePanel { open, name } => {
+                #[cfg(windows)]
+                if self.panel.as_deref() == Some("vpn") && name.as_deref() != Some("vpn") {
+                    let _ = windows_platform::popup_region(&self.toolbar, None);
+                }
                 self.appearance_open = open;
                 self.panel = if open { name } else { None };
                 self.diagnostic_preview = None;
@@ -3260,7 +3313,9 @@ impl Browser {
                     let _ = self.toolbar.focus();
                 }
                 for (id, page) in &self.pages {
-                    let _ = page.view.set_visible(!open && self.is_visible_tab(*id));
+                    let _ = page.view.set_visible(
+                        (!open || self.panel.as_deref() == Some("vpn")) && self.is_visible_tab(*id),
+                    );
                 }
                 self.resize();
                 self.sync_manager();
@@ -3647,6 +3702,20 @@ impl Browser {
         }
         #[cfg(windows)]
         {
+            if self.panel.as_deref() == Some("vpn") {
+                let w = size.width - 2.0 * self.frame_inset();
+                let px = |value: f64| (value.max(0.0) * scale).round() as i32;
+                let _ = windows_platform::popup_region(
+                    &self.toolbar,
+                    Some((
+                        px(w),
+                        px(self.content_top()),
+                        px((w - 570.0).max(10.0)),
+                        px(w - 10.0),
+                        px((self.content_top() + 440.0).min(self.toolbar_height())),
+                    )),
+                );
+            }
             let _ = windows_platform::raise(if self.appearance_open || self.suggestion_rows > 0 {
                 &self.toolbar
             } else {
@@ -4219,7 +4288,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 browser.close_requested = false;
                 browser.notice_localized("Завершите печать или загрузку перед закрытием окна.");
                 if browser.pages.values().any(|page| page.downloads.get() > 0) {
-                    browser.open_manager("downloads-manager");
+                    browser.open_service(DOWNLOADS);
                 }
             }
         }
@@ -4760,6 +4829,13 @@ fn dispatch_browser_event(browser: &mut Browser, event: AppEvent) {
         }
         #[cfg(windows)]
         AppEvent::PageFocused { tab_id, generation } => {
+            if browser.panel.as_deref() == Some("vpn")
+                && browser.pages.get(&tab_id).is_some_and(|p| {
+                    p.generation == generation && windows_platform::has_page_focus(&p.view)
+                })
+            {
+                let _ = browser.toolbar.evaluate_script("window.openPanel?.(null);");
+            }
             if browser.ready
                 && !browser.appearance_open
                 && browser.pages.get(&tab_id).is_some_and(|page| {
