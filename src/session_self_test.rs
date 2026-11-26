@@ -151,6 +151,7 @@ pub fn downloads() -> Result<(), Box<dyn std::error::Error>> {
         proxy,
         Rc::new(RefCell::new(Default::default())),
         &downloads,
+        false,
     )?;
     unsafe {
         use webview2_com::{

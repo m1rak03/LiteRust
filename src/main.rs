@@ -628,6 +628,8 @@ struct Browser {
     next_generation: u64,
     usage_clock: u64,
     close_requested: bool,
+    #[cfg(windows)]
+    vpn_clipped: std::cell::Cell<bool>,
     appearance_open: bool,
     account_prompt_checked: bool,
     initial_page_pending: bool,
@@ -725,6 +727,8 @@ impl Browser {
             next_generation: 1,
             usage_clock: 0,
             close_requested: false,
+            #[cfg(windows)]
+            vpn_clipped: Default::default(),
             appearance_open: false,
             account_prompt_checked: false,
             initial_page_pending: true,
@@ -1085,9 +1089,7 @@ impl Browser {
             }
         }
         let new_customization = self.data.display_customization();
-        if old_customization.accent != new_customization.accent
-            || old_customization.compact_tabs != new_customization.compact_tabs
-        {
+        if old_customization != new_customization {
             self.sync_workspace_style();
         }
         if rules_changed {
@@ -1823,16 +1825,11 @@ impl Browser {
             self.proxy.clone(),
             self.shortcuts.clone(),
             &self.downloads,
+            self.data.password_autosave && !self.private_mode,
         )
         .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(not(windows))]
         let downloads = std::rc::Rc::new(std::cell::Cell::new(0));
-        #[cfg(windows)]
-        windows_platform::password_autosave(
-            &view,
-            self.data.password_autosave && !self.private_mode,
-        )
-        .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
         #[cfg(windows)]
         windows_platform::page_focus(&view, self.proxy.clone(), tab_id, generation)
             .map_err(|error| wry::Error::Io(std::io::Error::other(error.to_string())))?;
@@ -2371,10 +2368,6 @@ impl Browser {
                     | UiCommand::ShowDownloads
             )
         {
-            #[cfg(windows)]
-            if self.panel.as_deref() == Some("vpn") {
-                let _ = windows_platform::popup_region(&self.toolbar, None);
-            }
             self.appearance_open = false;
             self.panel = None;
             self.resize();
@@ -2702,9 +2695,24 @@ impl Browser {
                 });
             }
             UiCommand::SetCustomization { value } => {
-                self.data.customization = value.validated();
+                let previous = self.data.customization;
+                let next = value.validated();
+                if previous == next {
+                    return;
+                }
+                self.data.customization = next;
                 self.persist();
-                self.refresh_newtabs();
+                let colors_only = storage::Customization {
+                    accent: next.accent,
+                    background_color: next.background_color,
+                    palette: next.palette,
+                    ..previous
+                } == next;
+                if colors_only {
+                    self.sync_workspace_style();
+                } else {
+                    self.refresh_newtabs();
+                }
                 self.sync_toolbar();
             }
             UiCommand::SetBackground { value } => {
@@ -3294,10 +3302,6 @@ impl Browser {
                 }
             }
             UiCommand::AppearancePanel { open, name } => {
-                #[cfg(windows)]
-                if self.panel.as_deref() == Some("vpn") && name.as_deref() != Some("vpn") {
-                    let _ = windows_platform::popup_region(&self.toolbar, None);
-                }
                 self.appearance_open = open;
                 self.panel = if open { name } else { None };
                 self.diagnostic_preview = None;
@@ -3705,7 +3709,7 @@ impl Browser {
             if self.panel.as_deref() == Some("vpn") {
                 let w = size.width - 2.0 * self.frame_inset();
                 let px = |value: f64| (value.max(0.0) * scale).round() as i32;
-                let _ = windows_platform::popup_region(
+                let clipped = windows_platform::popup_region(
                     &self.toolbar,
                     Some((
                         px(w),
@@ -3715,6 +3719,13 @@ impl Browser {
                         px((self.content_top() + 440.0).min(self.toolbar_height())),
                     )),
                 );
+                if clipped.is_ok() {
+                    self.vpn_clipped.set(true);
+                }
+            } else if self.vpn_clipped.get()
+                && windows_platform::popup_region(&self.toolbar, None).is_ok()
+            {
+                self.vpn_clipped.set(false);
             }
             let _ = windows_platform::raise(if self.appearance_open || self.suggestion_rows > 0 {
                 &self.toolbar

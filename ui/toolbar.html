@@ -211,6 +211,7 @@ body.split-active{--page-start:172px}
   <div class="address-wrap"><span class="secure" id="secure">&#9675;</span>
     <span class="search-provider" data-search-provider title="Текущая поисковая система">Google</span>
     <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="Адрес сайта или поисковый запрос" aria-label="Адресная строка" role="combobox" aria-autocomplete="list" aria-controls="address-suggestions" aria-expanded="false"><div id="address-suggestions" role="listbox" hidden></div>
+    <button class="btn" id="toggle-site-adblock" hidden><span data-icon="shield"></span></button>
     <span class="loading" id="loading">Загрузка...</span>
   </div>
   <button class="btn" id="bookmark" title="Добавить в закладки" aria-label="Добавить в закладки"><span data-icon="bookmark"></span></button>
@@ -411,7 +412,7 @@ body.split-active{--page-start:172px}
   </div>
 </div>
 </section>
-<details id="site-actions"><summary aria-label="Действия для сайта">▾</summary></details><div id="menu" hidden>
+<div id="menu" hidden>
   <button id="show-settings">Настройки и положение панели</button>
   <button id="show-vpn">VPN-хаб</button>
   <button id="show-appearance">Оформление · 30 стилей вкладок / 330 тем</button>
@@ -420,7 +421,7 @@ body.split-active{--page-start:172px}
   <button id="new-window">Новое окно</button><button id="next-window">Следующее окно</button>
   <button id="new-private-window">Новое приватное окно (Ctrl+Shift+N)</button>
   <button id="toggle-network-blocking">Сетевой AdBlock: выкл. (эксперимент)</button>
-  <button id="toggle-site-adblock" disabled>AdBlock: исключение для этого сайта</button>
+
   <button id="toggle-auto-discard">Автовыгрузка: выкл. (сохранять формы)</button>
   <button id="cycle-memory-mode">Память: баланс (3 вкладки)</button>
   <button id="toggle-cosmetic-filter">Косметический фильтр рекламы: выкл.</button>
@@ -1013,7 +1014,9 @@ function render(){
   document.getElementById('cycle-memory-mode').textContent='Цель автовыгрузки: '+(state.live_tab_budget||3);
   const siteToggle=document.getElementById('toggle-site-adblock');
   siteToggle.disabled=!state.network_blocking||!state.site_host;
-  siteToggle.textContent=state.site_host
+  siteToggle.hidden=siteToggle.disabled;
+  siteToggle.setAttribute('aria-pressed',String(!state.site_adblock_exception));
+  siteToggle.title=state.site_host
     ? `AdBlock для ${state.site_host}: ${state.site_adblock_exception?'выкл. (исключение)':'вкл.'}`
     : 'AdBlock для сайта: откройте HTTP(S)-страницу';
   document.getElementById('toggle-cosmetic-filter').textContent='Косметический фильтр рекламы: '+(state.cosmetic_filter?'вкл.':'выкл.');
@@ -1041,7 +1044,6 @@ for(const [category,ids] of Object.entries(commandCategories)){
   for(const id of ids)card.append(document.getElementById(id));
 }
 document.getElementById('show-settings').hidden=true;
-document.getElementById('site-actions').append(document.getElementById('toggle-site-adblock'));
 document.getElementById('new-window').onclick=()=>{menu.classList.remove('open');send('new_window');};
 document.getElementById('next-window').onclick=()=>{menu.classList.remove('open');send('next_window');};
 document.getElementById('new-private-window').onclick=()=>{menu.classList.remove('open');send('new_private_window');};
@@ -1295,7 +1297,11 @@ window.openPanel=name=>{
   }
   if(name)document.getElementById(name).querySelector('button')?.focus();else document.getElementById('settings-button').focus();
 };
-function setAppearanceOpen(open){window.openPanel(open?'appearance':null);}
+function closeCurrentPanel(){
+  if(panelName && panelName===servicePanel(state))send('close_tab',{index:state.active,tab_id:state.tabs[state.active].id});
+  else window.openPanel(null);
+}
+function setAppearanceOpen(open){if(open)window.openPanel('appearance');else closeCurrentPanel();}
 
 const toolElements=Array.from(document.querySelectorAll('#tools [data-tool]'));
 const toolOptions=document.getElementById('tool-preference-options');
@@ -1689,7 +1695,7 @@ document.getElementById('bookmark-edit-cancel').onclick=()=>{
 };
 syncBookmarkFolders();renderBookmarkList();
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&['settings','vpn','accounts','tools','print'].some(id=>!document.getElementById(id).hidden))window.openPanel(null);});
-document.querySelectorAll('.close-panel').forEach(b=>b.onclick=()=>{if(panelName&&panelName===servicePanel(state))send('close_tab',{index:state.active,tab_id:state.tabs[state.active].id});else window.openPanel(null);});
+document.querySelectorAll('.close-panel').forEach(b=>b.onclick=closeCurrentPanel);
 
 document.getElementById('show-settings').onclick=()=>window.openPanel('settings');
 document.getElementById('show-vpn').onclick=()=>window.openPanel('vpn');
@@ -1806,7 +1812,7 @@ document.getElementById('show-appearance').onclick=()=>setAppearanceOpen(true);
 document.getElementById('close-appearance').onclick=()=>setAppearanceOpen(false);
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&!appearance.hidden)setAppearanceOpen(false);});
 function chooseAppearance(extra){
- if('theme' in extra){
+ if('theme' in extra && (state.customization?.background_color!=null || state.customization?.accent!=null || state.customization?.palette?.some(color=>color!=null))){
    state.customization={...state.customization,background_color:null,accent:null,palette:Array(32).fill(null)};
    window.applyCustomization(state.customization);send('set_customization',{value:state.customization});
  }

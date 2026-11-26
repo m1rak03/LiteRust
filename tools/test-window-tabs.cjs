@@ -32,12 +32,31 @@ async function run() {
     });
     assert.equal(await page.locator('.tab.active').getAttribute('data-tab-id'), '2');
     assert(await page.evaluate(() => kept === document.querySelector('[data-tab-id="2"]')));
-    await page.locator('#more').click();
+    await page.locator('#settings-button').click();
+    await page.locator('[data-settings-category="browser"]').click();
+    await page.evaluate(()=>{sent=[];});
     await page.locator('#new-window').click();
     assert.equal(await page.evaluate(() => sent.at(-1).action), 'new_window');
-    await page.locator('#more').click();
+    await page.locator('#settings-button').click();
+    await page.locator('[data-settings-category="browser"]').click();
+    await page.evaluate(()=>{sent=[];});
     await page.locator('#next-window').click();
     assert.equal(await page.evaluate(() => sent.at(-1).action), 'next_window');
+    // A service tab opens when Rust acknowledges the toolbar command.
+    const ordinary = await page.evaluate(() => ({...state, settings_tab:false, service_panel:null}));
+    await page.evaluate(value => { window.openPanel(null); window.browserUpdate(value); }, ordinary);
+    await page.locator('#settings-button').click();
+    assert.equal(await page.evaluate(() => sent.at(-1).action), 'show_settings');
+    assert(await page.locator('#settings').isHidden());
+    const appearance = {...ordinary, service_panel:'appearance'};
+    await page.evaluate(value => window.browserUpdate(value), appearance);
+    assert(await page.locator('#appearance').isVisible());
+    await page.locator('#close-appearance').click();
+    assert.deepEqual(await page.evaluate(() => sent.at(-1)), {
+      action:'close_tab', index:ordinary.active, tab_id:ordinary.tabs[ordinary.active].id
+    });
+    await page.evaluate(value => window.browserUpdate(value), ordinary);
+    assert(await page.locator('#appearance').isHidden());
     assert.deepEqual(errors, []);
     console.log('PASS: tab drag, active tab identity and ordinary window commands');
   } finally {

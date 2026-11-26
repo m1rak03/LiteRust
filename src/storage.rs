@@ -309,7 +309,7 @@ pub enum DownloadAction {
     Cancel,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Customization {
     pub animations: bool,

@@ -148,6 +148,7 @@ pub fn configure(
     proxy: BrowserProxy,
     shortcuts: Rc<RefCell<literust_browser::shortcuts::Runtime>>,
     downloads: &Downloads,
+    save_passwords: bool,
 ) -> windows::core::Result<Rc<Cell<usize>>> {
     install_shortcuts(view, proxy.clone(), shortcuts)?;
     let active = Rc::new(Cell::new(0usize));
@@ -165,7 +166,7 @@ pub fn configure(
         let reputation: ICoreWebView2Settings8 = base.cast()?;
         reputation.SetIsReputationCheckingRequired(true)?;
         let settings: ICoreWebView2Settings4 = base.cast()?;
-        settings.SetIsPasswordAutosaveEnabled(false)?;
+        settings.SetIsPasswordAutosaveEnabled(save_passwords)?;
         settings.SetIsGeneralAutofillEnabled(false)?;
         let downloads: ICoreWebView2_4 = core.cast()?;
         downloads.add_DownloadStarting(
@@ -401,8 +402,8 @@ pub fn popup_region(
                 return Err(windows::core::Error::from_thread());
             }
             // After success Windows owns the combined region.
-        } else {
-            SetWindowRgn(hwnd, None, true);
+        } else if SetWindowRgn(hwnd, None, true) == 0 {
+            return Err(windows::core::Error::from_thread());
         }
     }
     Ok(())
