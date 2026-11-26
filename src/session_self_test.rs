@@ -354,6 +354,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty_tab = 0;
     let mut pinned_tab = 0;
     let mut idle_tab = 0;
+    let mut settings_id = 0;
     let renderer_continued = Arc::new(AtomicI32::new(0));
     let page_position = Arc::new(AtomicI32::new(-1));
     let selection_result = Arc::new(std::sync::Mutex::new(None::<String>));
@@ -789,6 +790,39 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                         return Err("Closing Settings kept the export preview active");
                     }
                 }
+                23 => {
+                    browser.handle(UiCommand::ShowSettings);
+                    settings_id = browser.active_id();
+                }
+                24 if browser.panel.as_deref() == Some("settings") => {
+                    browser.handle(UiCommand::ShowSettings);
+                    if browser.active_id() != settings_id || browser.pages.contains_key(&settings_id) {
+                        return Err("Reopening Settings changed its identity or created a site WebView");
+                    }
+                    browser.handle(UiCommand::NewTab);
+                }
+                25 if !browser.appearance_open && browser.pages.contains_key(&browser.active_id()) => {
+                    let home = browser.active_id();
+                    let generation = browser.pages[&home].generation;
+                    let mut colors = browser.data.customization;
+                    colors.background_color = Some(0x182838);
+                    browser.handle(UiCommand::SetCustomization { value: colors });
+                    if browser.pages.get(&home).is_none_or(|page| page.generation != generation) {
+                        return Err("A color change recreated the home WebView");
+                    }
+                    browser.handle(UiCommand::ShowSettings);
+                }
+                26 if browser.panel.as_deref() == Some("settings") => {
+                    if browser.active_id() != settings_id || browser.data.tabs.iter().filter(|tab| tab.url == literust_browser::storage::SETTINGS).count() != 1 {
+                        return Err("Settings did not reuse its original tab");
+                    }
+                    browser.handle(UiCommand::CloseTab { index: browser.data.active, tab_id: Some(settings_id) });
+                }
+                27 if !browser.appearance_open => {
+                    if browser.data.tabs.iter().any(|tab| tab.id == settings_id) {
+                        return Err("Closing Settings kept its tab");
+                    }
+                }
                 _ => return Ok(false),
             }
             Ok(true)
@@ -798,7 +832,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = writeln!(log, "phase {stage}: true");
                 stage += 1;
                 since = Instant::now();
-                if stage == 23 {
+                if stage == 28 {
                     result = Ok(());
                     *flow = ControlFlow::Exit;
                 }
@@ -812,6 +846,10 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     result?;
+    writeln!(
+        log,
+        "PASS: Settings reuse, switch, closure and home WebView retention on recolor"
+    )?;
     writeln!(log,"PASS: separate native WebViews, navigation, scroll, resize, layout, swap, closure and group state")?;
     writeln!(log, "PASS: workspace switching retained the original WebViews, selection, groups, Split View and display preferences")?;
     writeln!(
