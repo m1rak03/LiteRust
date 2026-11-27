@@ -199,6 +199,14 @@ body.split-active{--page-start:172px}
 #resource-metrics dd{margin:0;max-width:120px;text-align:right;font-variant-numeric:tabular-nums;}
 #vpn.vpn-workspace{inset-inline:auto 10px;width:min(560px,calc(100% - 20px));bottom:auto;height:min(440px,calc(100vh - 110px));box-sizing:border-box;overflow:auto;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border:1px solid var(--line);border-radius:14px}
 #vpn .vpn-servers,#vpn .vpn-connection{min-width:0;padding:12px}#vpn .power-orbit{width:112px;height:112px;margin:8px auto}
+#vpn.vpn-workspace{grid-template-rows:minmax(0,1fr);overflow:hidden;top:var(--page-start,108px)}
+#vpn .vpn-connection{min-height:0;overflow-y:auto;scrollbar-width:thin}
+#vpn .vpn-mode{min-width:0}
+#vpn .vpn-mode select{width:100%;min-width:0;box-sizing:border-box}
+#vpn #vpn-power{width:94px;height:94px;max-width:100%;padding:4px}
+#vpn .selected-server{position:relative;min-width:0}
+#vpn .selected-server select{box-sizing:border-box;width:100%;min-width:0}
+#vpn .vpn-empty{padding:12px 8px}
 .vpn-actions,.panel-heading{flex-wrap:wrap}.vpn-actions button{max-width:100%}
 #palette-rows{display:grid;gap:8px}#palette-rows label{display:grid;align-items:center;grid-template-columns:minmax(90px,1fr) 44px 9ch auto;gap:6px}#palette-rows input{min-width:0;max-width:100%}#site-actions{position:absolute;right:6px;top:86px;z-index:11;background:var(--surface);font-size:12px}#site-actions:not([open]){background:transparent}#site-actions>summary{cursor:pointer}#site-actions button{padding:7px}
 </style></head><body>
