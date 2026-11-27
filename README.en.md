@@ -10,7 +10,7 @@ Drag home widgets to rearrange them or use their corner handles to resize them. 
 
 The toolbar VPN button controls a configured server. Browser proxy mode uses Xray and system tunnel mode uses sing-box. Password preferences can enable WebView2 save and update prompts. Previously saved credentials can remain available when saving is disabled. Google Password Manager and Yandex ID open as websites. Store extension installation and cross-browser password sync are unavailable in this version.
 
-Ctrl+P opens WebView2 print preview. Available printer settings depend on the Windows driver. Tools also includes PDF export with custom headers and footers.
+Ctrl+P opens WebView2 print preview. Available printer settings depend on the Windows driver. Under Tools → Print, select Save PDF to export with custom headers and footers, A4 or Letter paper, portrait or landscape orientation, 25–200% scale, and 0–40 mm margins.
 
 ## Install or build
 

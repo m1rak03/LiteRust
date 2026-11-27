@@ -76,6 +76,34 @@ fn routed_builder(builder: WebViewBuilder<'_>, port: Option<u16>) -> WebViewBuil
         builder
     }
 }
+#[derive(Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+enum Paper {
+    #[default]
+    Letter,
+    A4,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(default)]
+struct PdfLayout {
+    paper: Paper,
+    landscape: bool,
+    scale_percent: u16,
+    margin_mm: u8,
+}
+
+impl Default for PdfLayout {
+    fn default() -> Self {
+        Self {
+            paper: Paper::Letter,
+            landscape: false,
+            scale_percent: 100,
+            margin_mm: 10,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum UiCommand {
@@ -201,6 +229,8 @@ enum UiCommand {
         footer: String,
         captions: bool,
         backgrounds: bool,
+        #[serde(default)]
+        layout: PdfLayout,
     },
     Suggest {
         query: String,
@@ -2062,12 +2092,26 @@ impl Browser {
     }
 
     #[cfg(windows)]
-    fn print_pdf(&self, header: &str, footer: &str, captions: bool, backgrounds: bool) {
+    fn print_pdf(
+        &self,
+        header: &str,
+        footer: &str,
+        captions: bool,
+        backgrounds: bool,
+        layout: PdfLayout,
+    ) {
         let Some(page) = self.pages.get(&self.active_id()) else {
             return;
         };
         if page.loading || page.printing.get() {
             self.notice_localized("Дождитесь завершения текущей операции.");
+            return;
+        }
+        if !(25..=200).contains(&layout.scale_percent) || layout.margin_mm > 40 {
+            self.notice(self.ui_language.pick(
+                "Недопустимый масштаб или поля PDF.",
+                "Invalid PDF scale or margins.",
+            ));
             return;
         }
         if header.contains('\0')
@@ -2088,6 +2132,7 @@ impl Browser {
                         footer,
                         captions,
                         backgrounds,
+                        layout,
                     },
                     page.printing.clone(),
                     self.proxy.clone(),
@@ -2105,7 +2150,14 @@ impl Browser {
     }
 
     #[cfg(not(windows))]
-    fn print_pdf(&self, _header: &str, _footer: &str, _captions: bool, _backgrounds: bool) {
+    fn print_pdf(
+        &self,
+        _header: &str,
+        _footer: &str,
+        _captions: bool,
+        _backgrounds: bool,
+        _layout: PdfLayout,
+    ) {
         self.print_page();
     }
 
@@ -2940,8 +2992,9 @@ impl Browser {
                 footer,
                 captions,
                 backgrounds,
+                layout,
             } => {
-                self.print_pdf(&header, &footer, captions, backgrounds);
+                self.print_pdf(&header, &footer, captions, backgrounds, layout);
             }
             UiCommand::Suggest {
                 query,

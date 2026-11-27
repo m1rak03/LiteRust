@@ -545,6 +545,7 @@ pub struct PdfOptions<'a> {
     pub footer: &'a str,
     pub captions: bool,
     pub backgrounds: bool,
+    pub layout: super::PdfLayout,
 }
 
 pub fn save_page(
@@ -587,7 +588,24 @@ pub fn print_pdf(
         let core: ICoreWebView2_7 = view.webview().cast()?;
         let environment: ICoreWebView2Environment6 = view.environment().cast()?;
         let settings = environment.CreatePrintSettings()?;
-        settings.SetScaleFactor(1.0)?;
+        let layout = options.layout;
+        let (width, height) = match layout.paper {
+            super::Paper::A4 => (210.0 / 25.4, 297.0 / 25.4),
+            super::Paper::Letter => (8.5, 11.0),
+        };
+        settings.SetPageWidth(width)?;
+        settings.SetPageHeight(height)?;
+        settings.SetOrientation(if layout.landscape {
+            COREWEBVIEW2_PRINT_ORIENTATION_LANDSCAPE
+        } else {
+            COREWEBVIEW2_PRINT_ORIENTATION_PORTRAIT
+        })?;
+        settings.SetScaleFactor(f64::from(layout.scale_percent) / 100.0)?;
+        let margin = f64::from(layout.margin_mm) / 25.4;
+        settings.SetMarginTop(margin)?;
+        settings.SetMarginBottom(margin)?;
+        settings.SetMarginLeft(margin)?;
+        settings.SetMarginRight(margin)?;
         settings.SetShouldPrintBackgrounds(options.backgrounds)?;
         settings.SetShouldPrintHeaderAndFooter(options.captions)?;
         if options.captions {

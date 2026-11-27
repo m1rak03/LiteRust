@@ -3,6 +3,7 @@ const {chromium}=require('playwright'), assert=require('node:assert/strict'), fs
 const page=await browser.newPage({viewport:{width:1280,height:800}}), errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.setContent(fs.readFileSync('ui/toolbar.html','utf8').replace('/* APPEARANCE_SCRIPT */',fs.readFileSync('ui/appearance.js','utf8')));
 await page.evaluate(()=>{window.sent=[];window.ipc={postMessage:v=>sent.push(JSON.parse(v))};});
+fs.mkdirSync('audit-logs/screenshots',{recursive:true});
 const state={tabs:[{id:1,title:'Первая'},{id:2,title:'<img src=x onerror=alert(1)>'}],active:0,live_ids:[1],url:'',appearance:{design:29,theme:329},background_style:{mode:2,color_a:0x123456,color_b:0xabcdef,angle:90},account_prompt_always:true};
 await page.evaluate(s=>window.browserUpdate(s),state);
 await page.locator('#profile-account').click();assert(await page.locator('#accounts').isVisible());assert(await page.locator('#account-always').isChecked());await page.locator('[data-account=yandex]').click();assert.deepEqual(await page.evaluate(()=>sent.at(-1)),{action:'open_account',provider:'yandex'});
@@ -10,11 +11,23 @@ await page.evaluate(()=>{window.openPanel('tools');window.notesUpdate({reset:tru
 await page.locator('#tool-notes').fill('Черновик');await page.evaluate(s=>window.browserUpdate(s),state);assert.equal(await page.locator('#tool-notes').inputValue(),'Черновик');assert.deepEqual(await page.evaluate(()=>sent.filter(message=>message.action==='note_edit').at(-1)),{action:'note_edit',id:1,edit:{kind:'body',value:'Черновик'}});
 await page.locator('#tabs-search').fill('первая');assert.equal(await page.locator('#tools-tabs button').count(),1);
 await page.locator('#calc-a').fill('12');await page.locator('#calc-op').selectOption('×');await page.locator('#calc-b').fill('3');assert.equal(await page.locator('#calc-result').textContent(),'36');await page.locator('#calc-op').selectOption('÷');await page.locator('#calc-b').fill('0');assert.equal(await page.locator('#calc-result').textContent(),'Нет конечного результата');
-await page.evaluate(s=>window.browserUpdate({...s,tabs:[{id:1,title:'Рабочее пространство'},{id:2,title:'Документация'}],appearance:{design:5,theme:10}}),state);await page.locator('#tabs-search').fill('');await page.screenshot({path:'docs/assets/tools.png'});
+await page.evaluate(s=>window.browserUpdate({...s,tabs:[{id:1,title:'Рабочее пространство'},{id:2,title:'Документация'}],appearance:{design:5,theme:10}}),state);await page.locator('#tabs-search').fill('');await page.screenshot({path:'audit-logs/screenshots/tools.png'});
 await page.evaluate(()=>window.openPanel('settings'));await page.locator('[data-settings-category=all]').click();await page.locator('#bg-save').click();assert.deepEqual(await page.evaluate(()=>sent.at(-1)),{action:'set_background_style',value:state.background_style});
 await page.locator('#medical-site').click();assert.deepEqual(await page.evaluate(()=>sent.at(-1)),{action:'navigate',value:'https://lkmr.egisz.rosminzdrav.ru/'});
-await page.evaluate(()=>window.openPanel('appearance'));await page.locator('#theme-search').fill('Рубин');assert.equal(await page.locator('.theme-choice:visible').count(),5);await page.locator('#theme-search').fill('');await page.locator('#appearance').evaluate(e=>e.scrollTop=0);await page.screenshot({path:'docs/assets/appearance.png'});
-await page.evaluate(()=>window.openPanel('accounts'));await page.screenshot({path:'docs/assets/accounts.png'});
+await page.evaluate(()=>window.openPanel('appearance'));await page.locator('#appearance details').filter({has:page.locator('#theme-filter')}).locator('summary').click();await page.locator('#theme-search').fill('Рубин');assert.equal(await page.locator('.theme-choice:visible').count(),5);await page.locator('#theme-search').fill('');await page.locator('#appearance').evaluate(e=>e.scrollTop=0);await page.screenshot({path:'audit-logs/screenshots/appearance.png'});
+await page.evaluate(()=>window.openPanel('accounts'));await page.screenshot({path:'audit-logs/screenshots/accounts.png'});
 for(const name of ['tools','accounts','settings']){await page.evaluate(n=>window.openPanel(n),name);await page.setViewportSize({width:690,height:600});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
+await page.evaluate(()=>window.openPanel('tools'));
+await page.locator('#tool-print').click();
+await page.locator('#print-header').fill('Header');
+await page.locator('#print-footer').fill('Footer');
+await page.locator('#pdf-orientation').selectOption('landscape');
+await page.locator('#pdf-scale').fill('201');
+await page.locator('#print-pdf').click();
+assert(await page.locator('#print').isVisible());
+await page.locator('#pdf-scale').fill('90');
+await page.locator('#pdf-margin').fill('15');
+await page.locator('#print-pdf').click();
+assert.deepEqual(await page.evaluate(()=>sent.at(-1)),{action:'print_pdf',header:'Header',footer:'Footer',captions:true,backgrounds:false,layout:{paper:'a4',landscape:true,scale_percent:90,margin_mm:15}});
 assert.deepEqual(errors,[]);console.log('PASS: account choices, startup preference, safe tab search, note drafts, calculator, gradient command, TLS navigation, theme search, responsive panels');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

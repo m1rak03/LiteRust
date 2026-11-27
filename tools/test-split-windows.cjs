@@ -38,6 +38,16 @@ async function run() {
         const reportPath = path.join(fixture, 'results.log');
         const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf8') : 'No test report';
         assert.equal(exitCode, 0, report + '\n' + stderr);
+        const pdf = fs.readFileSync(path.join(fixture, 'fixture-print.pdf'));
+        assert.equal(pdf.toString('ascii', 0, 5), '%PDF-');
+        const boxes = [...pdf.toString('latin1').matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g)];
+        assert(boxes.length > 0 && boxes.every(([,w,h]) => Math.abs(w-842)<2 && Math.abs(h-595)<2), 'Expected landscape A4 pages');
+        if (process.env.LITERUST_PDF_TEST_PYTHON) {
+          require('node:child_process').execFileSync(process.env.LITERUST_PDF_TEST_PYTHON, [
+            '-c', 'import sys; from pypdf import PdfReader; pages=PdfReader(sys.argv[1]).pages; text=pages[0].extract_text(); assert all(s in text for s in ("First", "LiteRust header", "LiteRust footer")), repr(text)',
+            path.join(fixture, 'fixture-print.pdf')
+          ]);
+        }
         assert.match(report, /PASS: Settings reuse, switch, closure and home WebView retention on recolor/);
         assert.match(report, /PASS: separate native WebViews/);
         assert.match(report, /PASS: workspace switching retained the original WebViews/);

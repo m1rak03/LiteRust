@@ -355,6 +355,8 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut pinned_tab = 0;
     let mut idle_tab = 0;
     let mut settings_id = 0;
+    let mut pdf_result = None;
+    let pdf_path = root.join("fixture-print.pdf");
     let renderer_continued = Arc::new(AtomicI32::new(0));
     let page_position = Arc::new(AtomicI32::new(-1));
     let selection_result = Arc::new(std::sync::Mutex::new(None::<String>));
@@ -379,6 +381,9 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                     && sample.memory_coverage > 0 && sample.private_bytes.is_some_and(|bytes| bytes > 0)
                     && sample.cpu_coverage > 0 && sample.cpu_percent.is_some_and(|cpu| (0.0..=100.0).contains(&cpu));
                 let _ = writeln!(log, "resource sample: {sample:?}");
+            }
+            if let AppEvent::PdfFinished { path, success } = &event {
+                if path == &pdf_path { pdf_result = Some(*success); }
             }
             if let AppEvent::SavePageFinished { saved, .. } = &event {
                 page_saved = Some(*saved);
@@ -822,6 +827,23 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                     if browser.data.tabs.iter().any(|tab| tab.id == settings_id) {
                         return Err("Closing Settings kept its tab");
                     }
+                    browser.navigate_internal(&urls[0]);
+                }
+                28 if loaded(&browser, browser.active_id(), &urls[0]) => {
+                    let page = &browser.pages[&browser.active_id()];
+                    super::windows_platform::print_pdf(
+                        &page.view, pdf_path.clone(),
+                        super::windows_platform::PdfOptions {
+                            header: "LiteRust header", footer: "LiteRust footer", captions: true, backgrounds: true,
+                            layout: super::PdfLayout { paper: super::Paper::A4, landscape: true, scale_percent: 90, margin_mm: 15 },
+                        },
+                        page.printing.clone(), browser.proxy.clone(),
+                    ).map_err(|_| "WebView2 rejected PDF export")?;
+                }
+                29 if pdf_result.is_some() => {
+                    if pdf_result != Some(true) || browser.pages[&browser.active_id()].printing() {
+                        return Err("PDF export failed or the page remained busy");
+                    }
                 }
                 _ => return Ok(false),
             }
@@ -832,7 +854,7 @@ pub fn split(private_mode: bool) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = writeln!(log, "phase {stage}: true");
                 stage += 1;
                 since = Instant::now();
-                if stage == 28 {
+                if stage == 30 {
                     result = Ok(());
                     *flow = ControlFlow::Exit;
                 }

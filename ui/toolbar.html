@@ -439,6 +439,10 @@ body.split-active{--page-start:172px}
 <label><input id="print-captions" type="checkbox" checked> Колонтитулы в PDF</label>
 <label for="print-header">Заголовок страницы вверху</label><input id="print-header" type="text" maxlength="240">
 <label for="print-footer">Текст внизу страницы</label><input id="print-footer" type="text" maxlength="240">
+<label>Бумага <select id="pdf-paper"><option value="a4">A4</option><option value="letter">Letter</option></select></label>
+<label>Ориентация <select id="pdf-orientation"><option value="portrait">Книжная</option><option value="landscape">Альбомная</option></select></label>
+<label>Масштаб печати (%) <input type="number" id="pdf-scale" required min="25" max="200" value="100"></label>
+<label>Поля (мм) <input type="number" id="pdf-margin" required min="0" max="40" value="10"></label>
 <label><input id="print-backgrounds" type="checkbox"> Печатать фон страницы</label>
 <button id="print-pdf">Сохранить PDF</button><button id="print-native">Предпросмотр и печать</button>
 <p>Чтобы напечатать страницу с вашим текстом, сохраните PDF и отправьте его на принтер.</p>
@@ -2212,7 +2216,10 @@ document.getElementById('print-native').onclick=()=>{window.openPanel(null);send
 document.getElementById('print-pdf').onclick=()=>{
   const header=document.getElementById('print-header').value,footer=document.getElementById('print-footer').value;
   const captions=document.getElementById('print-captions').checked,backgrounds=document.getElementById('print-backgrounds').checked;
-  window.openPanel(null);send('print_pdf',{header,footer,captions,backgrounds});
+  const scale=document.getElementById('pdf-scale'),margin=document.getElementById('pdf-margin');
+  if(!scale.reportValidity()||!margin.reportValidity())return;
+  const layout={paper:document.getElementById('pdf-paper').value,landscape:document.getElementById('pdf-orientation').value==='landscape',scale_percent:scale.valueAsNumber,margin_mm:margin.valueAsNumber};
+  window.openPanel(null);send('print_pdf',{header,footer,captions,backgrounds,layout});
 };
 for(const [id,url] of [['tls-help','https://www.gosuslugi.ru/tls'],['tls-ca','https://nuc.voskhod.ru/'],['medical-site','https://lkmr.egisz.rosminzdrav.ru/']])document.getElementById(id).onclick=()=>{window.openPanel(null);send('navigate',{value:url});};
 function renderToolsTabs(){
