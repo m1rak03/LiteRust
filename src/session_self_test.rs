@@ -992,3 +992,111 @@ fn log_runtime_memory(view: &wry::WebView, label: &str, log: &mut std::fs::File)
         let _ = writeln!(log, "memory {label}: unavailable");
     }
 }
+
+/// Probe the runtime API using one generated, permission-free MV3 extension.
+pub fn extensions() -> Result<(), Box<dyn std::error::Error>> {
+    use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
+    use webview2_com::{
+        BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler,
+        Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile7, ICoreWebView2_13},
+        ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler,
+    };
+    use windows::core::{Interface, BOOL, HSTRING};
+    let root = PathBuf::from(
+        std::env::var_os("LITERUST_SESSION_TEST_ROOT").ok_or("Missing fixture directory")?,
+    );
+    if !root.is_absolute() || !root.is_dir() || !super::profile_root().starts_with(&root) {
+        return Err("Expected an isolated fixture directory".into());
+    }
+    let fixture = root.join("extension-probe");
+    fs::create_dir(&fixture)?;
+    let extension_dir = fixture.join("extension");
+    fs::create_dir(&extension_dir)?;
+    fs::write(
+        extension_dir.join("manifest.json"),
+        r#"{"manifest_version":3,"name":"LiteRust API probe","version":"1.0"}"#,
+    )?;
+    let events = EventLoopBuilder::<TestEvent>::with_user_event().build();
+    let window = WindowBuilder::new().with_visible(false).build(&events)?;
+    let mut context = WebContext::new(Some(fixture.join("runtime")));
+    let view = WebViewBuilder::new_with_web_context(&mut context)
+        .with_browser_extensions_enabled(true)
+        .build_as_child(&window)?;
+    let profile: ICoreWebView2Profile7 = unsafe {
+        view.webview()
+            .cast::<ICoreWebView2_13>()?
+            .Profile()?
+            .cast()?
+    };
+    let added = Rc::new(RefCell::new(None));
+    let result = added.clone();
+    let install = profile.clone();
+    ProfileAddBrowserExtensionCompletedHandler::wait_for_async_operation(
+        Box::new(move |handler| unsafe {
+            install
+                .AddBrowserExtension(&HSTRING::from(extension_dir.as_path()), &handler)
+                .map_err(Into::into)
+        }),
+        Box::new(move |status, ext| {
+            status?;
+            *result.borrow_mut() = ext;
+            Ok(())
+        }),
+    )
+    .map_err(|error| format!("Install fixture: {error}"))?;
+    let ext = added
+        .take()
+        .ok_or("Runtime did not return the installed extension")?;
+    for enabled in [false, true] {
+        let item = ext.clone();
+        BrowserExtensionEnableCompletedHandler::wait_for_async_operation(
+            Box::new(move |handler| unsafe { item.Enable(enabled, &handler).map_err(Into::into) }),
+            Box::new(|status| status),
+        )
+        .map_err(|error| format!("Enable({enabled}): {error}"))?;
+        let mut actual = BOOL::default();
+        unsafe { ext.IsEnabled(&mut actual)? };
+        if actual.as_bool() != enabled {
+            return Err("Runtime reported the wrong enabled state".into());
+        }
+    }
+    let mut raw_id = windows::core::PWSTR::null();
+    unsafe {
+        ext.Id(&mut raw_id)?;
+    }
+    let fixture_id = webview2_com::take_pwstr(raw_id);
+    BrowserExtensionRemoveCompletedHandler::wait_for_async_operation(
+        Box::new(move |handler| unsafe { ext.Remove(&handler).map_err(Into::into) }),
+        Box::new(|status| status),
+    )
+    .map_err(|error| format!("Remove fixture: {error}"))?;
+    ProfileGetBrowserExtensionsCompletedHandler::wait_for_async_operation(
+        Box::new(move |handler| unsafe {
+            profile.GetBrowserExtensions(&handler).map_err(Into::into)
+        }),
+        Box::new(move |status, list| {
+            status?;
+            let mut count = 0;
+            let list = list.ok_or_else(windows::core::Error::empty)?;
+            unsafe {
+                list.Count(&mut count)?;
+                for index in 0..count {
+                    let mut raw = windows::core::PWSTR::null();
+                    list.GetValueAtIndex(index)?.Id(&mut raw)?;
+                    if webview2_com::take_pwstr(raw) == fixture_id {
+                        return Err(windows::core::Error::new(
+                            windows::Win32::Foundation::E_FAIL,
+                            "Removed extension still present",
+                        ));
+                    }
+                }
+            }
+            Ok(())
+        }),
+    )?;
+    fs::write(
+        fixture.join("result.txt"),
+        "PASS: installed, disabled, enabled and removed the local MV3 fixture",
+    )?;
+    Ok(())
+}

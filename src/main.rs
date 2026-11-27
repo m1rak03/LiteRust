@@ -3976,6 +3976,7 @@ fn main() {
         let args: Vec<String> = std::env::args().collect();
         if let Some(pair) = args.windows(2).find(|a| a[0] == "--session-self-test") {
             let result = match pair[1].as_str() {
+                "extensions" => session_self_test::extensions(),
                 "downloads" => session_self_test::downloads(),
                 "split" => session_self_test::split(false),
                 "split-private" => session_self_test::split(true),
