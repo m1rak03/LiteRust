@@ -551,6 +551,7 @@ struct TabSummary<'a> {
     id: u64,
     group: Option<u32>,
     title: &'a str,
+    icon: &'static str,
 }
 
 #[derive(Serialize)]
@@ -1320,16 +1321,35 @@ impl Browser {
                 .data
                 .tabs
                 .iter()
-                .map(|t| TabSummary {
-                    id: t.id,
-                    group: t.group,
-                    title: if t.url == NEW_TAB {
-                        self.ui_language.pick("Новая вкладка", "New tab")
-                    } else if t.url == storage::SETTINGS {
-                        self.ui_language.pick("Настройки", "Settings")
-                    } else {
-                        &t.title
-                    },
+                .map(|t| {
+                    let (icon, title) = match t.url.as_str() {
+                        NEW_TAB => ("home", self.ui_language.pick("Новая вкладка", "New tab")),
+                        storage::SETTINGS => {
+                            ("settings", self.ui_language.pick("Настройки", "Settings"))
+                        }
+                        storage::APPEARANCE => (
+                            "appearance",
+                            self.ui_language.pick("Оформление", "Appearance"),
+                        ),
+                        storage::PASSWORDS => ("key", self.ui_language.pick("Пароли", "Passwords")),
+                        storage::ABOUT => (
+                            "info",
+                            self.ui_language.pick("О браузере", "About LiteRust"),
+                        ),
+                        storage::ACCOUNTS => {
+                            ("user", self.ui_language.pick("Аккаунты", "Accounts"))
+                        }
+                        BOOKMARKS => ("bookmarks", self.ui_language.pick("Закладки", "Bookmarks")),
+                        HISTORY => ("history", self.ui_language.pick("История", "History")),
+                        DOWNLOADS => ("downloads", self.ui_language.pick("Загрузки", "Downloads")),
+                        _ => ("globe", t.title.as_str()),
+                    };
+                    TabSummary {
+                        id: t.id,
+                        group: t.group,
+                        title,
+                        icon,
+                    }
                 })
                 .collect(),
             tab_groups: self.data.tab_groups.entries(),

@@ -57,6 +57,12 @@ async function run() {
     });
     await page.evaluate(value => window.browserUpdate(value), ordinary);
     assert(await page.locator('#appearance').isHidden());
+    await page.evaluate(value => window.browserUpdate({
+      ...value, live_ids:[], tabs:value.tabs.map(tab=>tab.id===1?{...tab,title:'Passwords',icon:'key'}:tab)
+    }), ordinary);
+    const key = page.locator('[data-tab-id="1"] [data-icon="key"]');
+    assert.equal(await key.count(), 1);
+    assert.equal(await key.evaluate(el=>getComputedStyle(el).opacity), '1');
     assert.deepEqual(errors, []);
     console.log('PASS: tab drag, active tab identity and ordinary window commands');
   } finally {

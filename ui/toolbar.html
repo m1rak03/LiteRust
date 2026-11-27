@@ -922,7 +922,6 @@ function renderTabStrip(){
         }
       };
       item.oncontextmenu=event=>showTabGroupMenu(event,item,tab.id,null);
-      item.children[0].dataset.icon='globe';
       item.children[2].dataset.icon='close';
       item.children[2].title='Закрыть вкладку';
       item.children[2].onclick=event=>{
@@ -937,8 +936,10 @@ function renderTabStrip(){
     item.setAttribute('aria-selected',String(index===state.active));
     const title=tab.title||'Новая вкладка';
     if(item.title!==title)item.title=title;
-    window.updateLiteIcon(item.children[0],'globe');
-    item.children[0].style.opacity=live.has(tab.id)?'1':'.4';
+    const icon=tab.icon||'globe';
+    if(item.children[0].dataset.icon!==icon)item.children[0].dataset.icon=icon;
+    window.updateLiteIcon(item.children[0],icon);
+    item.children[0].style.opacity=icon!=='globe'||live.has(tab.id)?'1':'.4';
     setText(item.children[1],title);
     window.updateLiteIcon(item.children[2],'close');
     ordered.push(item);
