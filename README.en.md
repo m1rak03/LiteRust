@@ -4,6 +4,10 @@
 
 LiteRust is a Windows browser built with Rust, Tao, Wry and Microsoft WebView2. Separate profiles keep work and personal browsing apart. Workspaces within a profile share site logins.
 
+![LiteRust on Windows](docs/assets/alpha7/home.png)
+
+[View settings, VPN and print preview](docs/screenshots.md)
+
 The browser supports ordinary and private windows, tab groups, Split View, bookmarks, downloads, local notes and an address bar with local suggestions. Settings, appearance, accounts, password preferences, downloads, bookmarks and history have internal addresses. Opening a service page again selects the existing tab.
 
 Drag home widgets to rearrange them or use their corner handles to resize them. The appearance editor supports background and accent colors, individual control colors, named palettes and JSON import and export.
